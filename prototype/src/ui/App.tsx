@@ -5,6 +5,7 @@ import { FY_2026_27 } from '../engine/rules';
 import { sampleState } from '../sample';
 import { loadState, saveState, type AppState } from '../store';
 import { AppCtx, type Ctx } from './app-context';
+import { addSnapshot, loadMarket, snapshotOf, withPrices, type Market } from './market';
 import { Svg, Icon } from './parts';
 import { Home } from './screens/Home';
 import { MemberScreen } from './screens/Member';
@@ -39,7 +40,27 @@ export function App() {
     return () => window.removeEventListener('hashchange', on);
   }, []);
 
-  const fam = useMemo(() => computeFamily(state, asOf, FY_2026_27), [state, asOf]);
+  const [market, setMarket] = useState<Market>({ latest: null, previous: null });
+  useEffect(() => { void loadMarket().then(setMarket); }, []);
+
+  // The sample family keeps its own made-up prices; real families are re-priced at the latest close.
+  const live = !state.isSample;
+  const fam = useMemo(
+    () => computeFamily(live ? { ...state, securities: withPrices(state.securities, market.latest) } : state, asOf, FY_2026_27),
+    [state, asOf, market, live],
+  );
+  const famPrev = useMemo(
+    () => (live && market.previous ? computeFamily({ ...state, securities: withPrices(state.securities, market.previous) }, asOf, FY_2026_27) : null),
+    [state, asOf, market, live],
+  );
+
+  useEffect(() => {
+    if (!live || !market.latest || state.members.length === 0) return;
+    const snap = snapshotOf(fam, market.latest.date);
+    const prev = state.history.find((h) => h.date === snap.date);
+    if (prev && JSON.stringify(prev) === JSON.stringify(snap)) return;
+    setState((s) => ({ ...s, history: addSnapshot(s.history, snap) }));
+  }, [fam, market.latest, live, state.history, state.members.length]);
   const toast = useCallback((m: string) => {
     setToast(m);
     window.clearTimeout(timer.current);
@@ -47,7 +68,7 @@ export function App() {
   }, []);
 
   const ctx: Ctx = {
-    state, fam, asOf, toast,
+    state, fam, famPrev, market, asOf, toast,
     update: (fn) => setState((s) => fn(s)),
     go: (r) => { location.hash = r; },
     indexOf: (id) => Math.max(0, state.members.findIndex((m) => m.id === id)),

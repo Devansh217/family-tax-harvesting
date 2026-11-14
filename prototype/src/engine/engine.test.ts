@@ -175,3 +175,58 @@ describe('income bands', () => {
     expect(slabRate(member({ otherIncome: undefined }), R)).toBeNull();
   });
 });
+
+describe('intraday and F&O', () => {
+  it('treats same-day buy and sell in one account as intraday, not a capital gain', () => {
+    const l = buildLedger([
+      tx('m1', 'A', '2024-01-10', 'buy', 10, 100),
+      tx('m1', 'A', '2026-07-01', 'buy', 5, 200),
+      tx('m1', 'A', '2026-07-01', 'sell', 5, 210),
+    ], [sec('A')]);
+    expect(l.intraday).toEqual([expect.objectContaining({ qty: q(5), pnl: rs(50) })]);
+    expect(l.realised).toHaveLength(0);
+    expect(l.lots.get('m1|A|')![0]!.qty).toBe(q(10));
+  });
+
+  it('only the matched quantity is intraday', () => {
+    const l = buildLedger([
+      tx('m1', 'A', '2024-01-10', 'buy', 10, 100),
+      tx('m1', 'A', '2026-07-01', 'buy', 2, 200),
+      tx('m1', 'A', '2026-07-01', 'sell', 6, 210),
+    ], [sec('A')]);
+    expect(l.intraday[0]).toMatchObject({ qty: q(2), pnl: rs(20) });
+    expect(l.realised).toEqual([expect.objectContaining({ qty: q(4), term: 'lt', gain: rs(440) })]);
+  });
+
+  const sell = (buy: string, sellDate: string, cost: number, proceeds: number) =>
+    buildLedger([tx('m1', 'A', buy, 'buy', 1, cost), tx('m1', 'A', sellDate, 'sell', 1, proceeds)], [sec('A')]).realised;
+
+  it('an F&O loss offsets short-term gains first, then long-term', () => {
+    const realised = [...sell('2026-05-01', '2026-06-01', 10_000, 60_000), ...sell('2024-01-01', '2026-06-01', 1_00_000, 3_00_000)];
+    const s = summariseYear(member(), realised, R, { speculative: 0, nonSpeculative: rs(-80_000) });
+    expect(s.business.setOffAgainstGains).toBe(rs(80_000));
+    expect(s.stNet).toBe(0);
+    expect(s.ltNet).toBe(rs(1_70_000));
+    expect(s.business.carryForward.nonSpeculative).toBe(0);
+  });
+
+  it('an intraday loss never offsets capital gains and carries forward', () => {
+    const s = summariseYear(member(), sell('2026-05-01', '2026-06-01', 10_000, 60_000), R, { speculative: rs(-30_000), nonSpeculative: 0 });
+    expect(s.stNet).toBe(rs(50_000));
+    expect(s.business.carryForward.speculative).toBe(rs(30_000));
+  });
+
+  it('taxes trading profit at the slab, with the 87A rebate below ₹12 L', () => {
+    const low = summariseYear(member({ otherIncome: rs(6_00_000) }), [], R, { speculative: 0, nonSpeculative: rs(2_00_000) });
+    expect(low.business.tax).toBe(0); // total ₹8 L: slab tax ₹20,000 fully rebated
+    const high = summariseYear(member({ otherIncome: rs(20_00_000) }), [], R, { speculative: 0, nonSpeculative: rs(2_00_000) });
+    expect(high.business.tax).toBe(rs(52_000)); // ₹2 L in the 25% slab, plus cess
+    const unknown = summariseYear(member({ otherIncome: undefined }), [], R, { speculative: rs(1_00_000), nonSpeculative: 0 });
+    expect(unknown.business).toMatchObject({ tax: rs(31_200), assumedTopSlab: true });
+  });
+
+  it('trading profit uses up basic exemption that would otherwise be bonus room', () => {
+    const s = summariseYear(member({ otherIncome: rs(1_00_000) }), [], R, { speculative: 0, nonSpeculative: rs(2_00_000) });
+    expect(s.bonus.total).toBe(rs(1_00_000));
+  });
+});

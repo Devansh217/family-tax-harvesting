@@ -1,6 +1,6 @@
 import { isLongTerm } from './dates';
 import { FY_2026_27, type TaxRules } from './rules';
-import { QTY_SCALE, type Ledger, type Lot, type Paise, type Qty, type Realised, type Security, type Txn } from './types';
+import { QTY_SCALE, type IntradayTrade, type Ledger, type Lot, type Paise, type Qty, type Realised, type Security, type Txn } from './types';
 
 export const lotKey = (memberId: string, isin: string, account = '') => `${memberId}|${isin}|${account}`;
 
@@ -31,7 +31,8 @@ export function effectiveCost(
  */
 export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules = FY_2026_27): Ledger {
   const bySec = new Map(securities.map((s) => [s.isin, s]));
-  const ordered = [...txns].sort(
+  const { delivery, intraday } = splitIntraday(txns);
+  const ordered = [...delivery].sort(
     (a, b) => a.date.localeCompare(b.date) || (a.side === b.side ? 0 : a.side === 'sell' ? -1 : 1),
   );
   const lots = new Map<string, Lot[]>();
@@ -84,5 +85,45 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
       });
     }
   }
-  return { lots, realised, warnings };
+  return { lots, realised, intraday, warnings };
+}
+
+/**
+ * Buys and sells of the same security on the same day in the same account square off: that matched quantity is
+ * intraday (speculative business income at slab rates), not a capital gain. Only the unmatched rest goes to lots.
+ * This also catches a same-day sell-and-buy-back, which is why harvest moves say to buy back the next trading day.
+ */
+export function splitIntraday(txns: Txn[]): { delivery: Txn[]; intraday: IntradayTrade[] } {
+  const groups = new Map<string, Txn[]>();
+  for (const t of txns) {
+    const k = `${t.memberId}|${t.account ?? ''}|${t.isin}|${t.date}`;
+    const g = groups.get(k) ?? [];
+    g.push(t);
+    groups.set(k, g);
+  }
+  const delivery: Txn[] = [];
+  const intraday: IntradayTrade[] = [];
+  for (const g of groups.values()) {
+    const buys = g.filter((t) => t.side === 'buy'), sells = g.filter((t) => t.side === 'sell');
+    const bq = buys.reduce((a, t) => a + t.qty, 0), sq = sells.reduce((a, t) => a + t.qty, 0);
+    const matched = Math.min(bq, sq);
+    if (matched === 0 || buys.some((t) => t.estimated)) { delivery.push(...g); continue; }
+    const ba = buys.reduce((a, t) => a + t.amount, 0), sa = sells.reduce((a, t) => a + t.amount, 0);
+    const first = g[0]!;
+    intraday.push({
+      memberId: first.memberId, isin: first.isin, account: first.account ?? '', date: first.date, qty: matched,
+      pnl: prorate(sa, matched, sq) - prorate(ba, matched, bq),
+    });
+    const shrink = (side: Txn[], total: Qty) => {
+      const keep = total - matched;
+      if (keep === 0) return;
+      for (const t of side) {
+        const q = Math.round((t.qty * keep) / total);
+        if (q > 0) delivery.push({ ...t, qty: q, amount: prorate(t.amount, q, t.qty) });
+      }
+    };
+    shrink(buys, bq);
+    shrink(sells, sq);
+  }
+  return { delivery, intraday };
 }

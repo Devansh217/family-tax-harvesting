@@ -12,6 +12,15 @@ import { SampleBanner } from './Home';
 const rupees = (p: number) => String(Math.round(p / 100));
 const toPaise = (t: string) => Math.max(0, Math.round((Number(t.replace(/[,₹\s]/g, '')) || 0) * 100));
 const toOptionalPaise = (t: string) => (t.trim() === '' ? undefined : toPaise(t));
+/** Signed: profits positive, losses negative ("-25000" or "(25,000)"). Blank stays undefined. */
+const toSignedPaise = (t: string) => {
+  const s = t.trim().replace(/[,₹\s]/g, '');
+  if (s === '') return undefined;
+  const neg = /^\(.*\)$/.test(s) || s.startsWith('-');
+  const n = Number(s.replace(/[()-]/g, ''));
+  return Number.isFinite(n) ? Math.round(n * 100) * (neg ? -1 : 1) : undefined;
+};
+const signed = (p?: number) => (p == null ? '' : String(p / 100));
 
 function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m: Member) => void; onCancel: () => void }) {
   const [m, setM] = useState(initial);
@@ -21,6 +30,9 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
   const bands = incomeBands(m, FY_2026_27);
   const [cfSt, setCfSt] = useState(rupees(initial.carriedLoss?.st ?? 0));
   const [cfLt, setCfLt] = useState(rupees(initial.carriedLoss?.lt ?? 0));
+  const [intraday, setIntraday] = useState(signed(initial.business?.intraday));
+  const [fno, setFno] = useState(signed(initial.business?.fno));
+  const [turnover, setTurnover] = useState(initial.business?.fnoTurnover == null ? '' : rupees(initial.business.fnoTurnover));
   const f = `mf-${initial.id}`;
   return (
     <form
@@ -31,7 +43,8 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
         const incomeFields = mode === 'exact' ? { otherIncome: toOptionalPaise(income), incomeBand: undefined }
           : mode === 'slab' && picked ? { otherIncome: picked.assumed, incomeBand: picked.label }
           : { otherIncome: undefined, incomeBand: undefined };
-        onSave({ ...m, name: m.name.trim() || 'Member', ...incomeFields, carriedLoss: { st: toPaise(cfSt), lt: toPaise(cfLt) } });
+        const business = { intraday: toSignedPaise(intraday), fno: toSignedPaise(fno), fnoTurnover: toOptionalPaise(turnover) };
+        onSave({ ...m, name: m.name.trim() || 'Member', ...incomeFields, carriedLoss: { st: toPaise(cfSt), lt: toPaise(cfLt) }, business });
       }}
     >
       <div className="form-grid">
@@ -65,6 +78,15 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
         <label className="field" htmlFor={`${f}-cfst`}>Short-term loss brought forward (₹)<input id={`${f}-cfst`} inputMode="numeric" value={cfSt} onChange={(e) => setCfSt(e.target.value)} /></label>
         <label className="field" htmlFor={`${f}-cflt`}>Long-term loss brought forward (₹)<input id={`${f}-cflt`} inputMode="numeric" value={cfLt} onChange={(e) => setCfLt(e.target.value)} /></label>
       </div>
+      <details>
+        <summary>Intraday and F&amp;O this year</summary>
+        <div className="form-grid" style={{ marginTop: 10 }}>
+          <label className="field" htmlFor={`${f}-intra`}>Intraday profit or loss (₹)<input id={`${f}-intra`} inputMode="text" placeholder="Blank: use tradebooks" value={intraday} onChange={(e) => setIntraday(e.target.value)} /></label>
+          <label className="field" htmlFor={`${f}-fno`}>F&amp;O profit or loss (₹)<input id={`${f}-fno`} inputMode="text" placeholder="e.g. -25000 for a loss" value={fno} onChange={(e) => setFno(e.target.value)} /></label>
+          <label className="field" htmlFor={`${f}-turn`}>F&amp;O turnover (₹)<input id={`${f}-turn`} inputMode="numeric" placeholder="From the tax P&L" value={turnover} onChange={(e) => setTurnover(e.target.value)} /></label>
+        </div>
+        <p className="tiny muted" style={{ marginTop: 6 }}>Take these from the broker&rsquo;s tax P&amp;L for {FY_2026_27.label}. Use a minus sign for a loss.</p>
+      </details>
       <p className="tiny muted">Other income is salary, pension, interest and rent before capital gains. Below the basic exemption, the gap becomes bonus room for gains. A slab is read at its top end, so bonus room is never overstated; "Not sure" assumes none. Long-term and short-term gains on delivery shares are taxed at fixed rates whatever the slab.</p>
       <div className="row"><button className="btn primary" type="submit">Save</button><button className="btn" type="button" onClick={onCancel}>Cancel</button></div>
     </form>

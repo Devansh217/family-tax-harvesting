@@ -46,7 +46,7 @@ export function sampleState(): AppState {
     t('s', 'INF0SAMPLE02', '2020-02-01', 'buy', 1000, 400),
   ];
   return {
-    version: 1, isSample: true, members, securities, txns, positions: [], done: {}, plannedSales: [], needSoon: {},
+    version: 1, isSample: true, members, securities, txns, positions: [], done: {}, plannedSales: [], needSoon: {}, history: [],
     imports: [{ id: 'sample', memberId: 'a', fileName: 'Sample family', format: 'Sample data', at: '2026-11-14T00:00:00Z', txns: txns.length, prices: securities.length, warnings: [] }],
   };
 }

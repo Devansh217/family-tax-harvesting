@@ -29,6 +29,21 @@ export interface Member {
   incomeBand?: string;
   /** Losses brought forward from earlier years. */
   carriedLoss?: { st: Paise; lt: Paise };
+  /**
+   * Trading income for this tax year, from the broker's tax P&L. Intraday (speculative) is also detected from
+   * tradebooks; a figure entered here replaces the detected one.
+   */
+  business?: { intraday?: Paise; fno?: Paise; fnoTurnover?: Paise };
+}
+
+/** Delivery shares bought and sold on the same day in the same account: speculative business income. */
+export interface IntradayTrade {
+  memberId: string;
+  isin: string;
+  account: string;
+  date: ISODate;
+  qty: Qty;
+  pnl: Paise;
 }
 
 export interface Security {
@@ -98,5 +113,6 @@ export interface Ledger {
   /** Open lots, oldest first, keyed `${memberId}|${isin}|${account}`. */
   lots: Map<string, Lot[]>;
   realised: Realised[];
+  intraday: IntradayTrade[];
   warnings: LedgerWarning[];
 }

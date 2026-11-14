@@ -61,7 +61,7 @@ export function About() {
 
       <Block title="What is covered">
         <p className="small muted" style={{ maxWidth: '72ch' }}>
-          Listed shares and equity mutual funds held for delivery, for resident individuals, FY 2026-27 rules: 12.5% long-term tax above ₹1.25 L, 20% short-term, 4% cess, 31 Jan 2018 grandfathering, loss set-off and carry-forward. Intraday trading, futures and options are business income taxed at slab rates and are not included in these numbers yet. Surcharge, NRI rules, debt funds, gold and property are not covered.
+          Listed shares and equity mutual funds held for delivery, for resident individuals, FY 2026-27 rules: 12.5% long-term tax above ₹1.25 L, 20% short-term, 4% cess, 31 Jan 2018 grandfathering, loss set-off and carry-forward. Intraday share trades (detected from tradebooks) and F&O profit or loss (entered from the broker's tax P&L) are taxed at the member's slab; an F&O loss is set off against capital gains, short-term first. F&O figures are not computed from individual contracts. Surcharge, NRI rules, debt funds, gold and property are not covered.
         </p>
       </Block>
     </>

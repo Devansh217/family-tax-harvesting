@@ -96,7 +96,7 @@ export function parseTable(rows: string[][], headerIdx: number, m: Mapping, form
     }
   }
   if (kind === 'unknown') warnings.push('Could not tell whether this is a trade history or a holdings file. Pick the columns below.');
-  if (segSkipped) warnings.push(`${segSkipped} rows from derivatives or other segments were left out.`);
+  if (segSkipped) warnings.push(`${segSkipped} F&O or other non-delivery rows were left out of share lots. Enter the F&O profit or loss from the broker's tax P&L on the Family page; intraday share trades are picked up automatically.`);
   if (txns.some((t) => t.isin.startsWith('SYM:')) || prices.some((p) => p.isin.startsWith('SYM:'))) {
     warnings.push('Some rows have no ISIN, so they are matched by symbol. Check names line up across files.');
   }

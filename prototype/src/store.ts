@@ -1,4 +1,5 @@
 import type { PlannedSale } from './engine/family';
+import type { Snapshot } from './ui/market';
 import type { ISODate, Member, Qty, Security, Txn } from './engine/types';
 import type { ParsedPrice, ParseResult } from './parsers';
 
@@ -26,6 +27,8 @@ export interface AppState {
   imports: ImportRecord[];
   done: Record<string, boolean>;
   plannedSales: PlannedSale[];
+  /** One row per closing date: family value, gains and room, for the daily "since last close" view. */
+  history: Snapshot[];
   /** The person confirmed they read that suggestions are tax arithmetic, not buy or sell advice. */
   ackGuidance?: boolean;
   /** `${memberId}|${isin}` → money needed within 12 months. */
@@ -36,7 +39,7 @@ export interface AppState {
 const KEY = 'fasal-prototype-v1';
 
 export const emptyState = (): AppState => ({
-  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {},
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [],
 });
 
 export function loadState(): AppState | null {
@@ -44,7 +47,7 @@ export function loadState(): AppState | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as AppState;
-    return s.version === 1 ? { ...s, plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {} } : null;
+    return s.version === 1 ? { ...s, plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [] } : null;
   } catch {
     return null;
   }

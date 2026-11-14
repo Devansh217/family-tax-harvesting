@@ -34,7 +34,7 @@ describe('broker trade files', () => {
     const r = parseTablePreview(p, p.mapping, 'tradebook.csv');
     expect(r.txns).toHaveLength(2);
     expect(r.txns[1]).toMatchObject({ date: '2026-06-02', isin: 'INE009A01021', side: 'sell', qty: 40_000, amount: 7_60_200 });
-    expect(r.warnings.join(' ')).toMatch(/derivatives/);
+    expect(r.warnings.join(' ')).toMatch(/F&O or other non-delivery rows/);
   });
 
   it('finds the header below a title block and reads B/S and DD-MM-YYYY (Angel One / Groww style)', () => {

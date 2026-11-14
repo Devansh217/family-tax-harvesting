@@ -5,6 +5,7 @@ import { inr, inrShort } from '../format';
 import { Avatar, Disclaimer, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow, movesNotDone } from './Plan';
 import { FirstRunNotice } from './About';
+import { SinceClose } from './SinceClose';
 import { isLaterBenefit } from '../../engine/family';
 
 export function SampleBanner() {
@@ -106,6 +107,8 @@ export function Home({ days }: { days: number }) {
           </div>
         </Section>
       </div>
+
+      <SinceClose />
 
       {(warnings > 0 || unpriced > 0 || uncertain > 0) && (
         <div className="banner warn" role="status">

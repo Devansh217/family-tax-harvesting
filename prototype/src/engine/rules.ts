@@ -120,3 +120,33 @@ export function slabRate(member: Member, r: TaxRules): number | null {
   for (const b of bands.slice(0, -1)) if (member.otherIncome <= b.assumed) return b.rate;
   return bands.at(-1)!.rate;
 }
+
+/** Slabs as [upper limit, rate]; the last has no limit. New regime per Budget 2025; old regime by age. */
+function slabs(member: Pick<Member, 'regime' | 'age'>, r: TaxRules): Array<[Paise | null, number]> {
+  if (member.regime === 'new') {
+    return [[4 * L, 0], [8 * L, 0.05], [12 * L, 0.1], [16 * L, 0.15], [20 * L, 0.2], [24 * L, 0.25], [null, 0.3]];
+  }
+  const basic = basicExemption(member as Member, r);
+  const s: Array<[Paise | null, number]> = [[basic, 0]];
+  if (basic < 5 * L) s.push([5 * L, 0.05]);
+  s.push([10 * L, 0.2], [null, 0.3]);
+  return s;
+}
+
+/**
+ * Tax on income charged at slab rates (salary, pension, business), before cess. Section 87A rebate (new regime:
+ * total income up to ₹12 L, up to ₹60,000; old regime: up to ₹5 L, up to ₹12,500) is applied to this slab tax only,
+ * never to special-rate capital gains. Marginal relief just above ₹12 L is not modelled.
+ */
+export function slabTax(normalIncome: Paise, totalIncome: Paise, member: Pick<Member, 'regime' | 'age'>, r: TaxRules): Paise {
+  let tax = 0, lower = 0;
+  for (const [upper, rate] of slabs(member, r)) {
+    const top = upper == null ? normalIncome : Math.min(normalIncome, upper);
+    if (top > lower) tax += (top - lower) * rate;
+    if (upper == null || normalIncome <= upper) break;
+    lower = upper;
+  }
+  const [limit, maxRebate] = member.regime === 'new' ? [12 * L, 60_000_00] : [5 * L, 12_500_00];
+  if (totalIncome <= limit) tax -= Math.min(tax, maxRebate);
+  return Math.round(tax);
+}

@@ -105,6 +105,25 @@ export function MemberScreen({ id }: { id: string }) {
         </Section>
       </div>
 
+      {(v.business.speculative !== 0 || v.business.nonSpeculative !== 0) && (
+        <Section title="Intraday and F&O" id="biz-h" action={<a className="small" href="#family" style={{ fontWeight: 600, textDecoration: 'none' }}>Edit</a>}>
+          <div className="sheet">
+            <div className="li"><span className="grow">Intraday {member.business?.intraday == null ? <span className="tiny muted">(from tradebooks)</span> : null}</span><span className={`fig ${v.business.speculative < 0 ? 'bad' : ''}`}>{inr(v.business.speculative)}</span></div>
+            <div className="li"><span className="grow">Futures and options</span><span className={`fig ${v.business.nonSpeculative < 0 ? 'bad' : ''}`}>{inr(v.business.nonSpeculative)}</span></div>
+            {year.business.setOffAgainstGains > 0 && <div className="li"><span className="grow muted">F&amp;O loss set off against capital gains</span><span className="fig good">{inr(year.business.setOffAgainstGains)}</span></div>}
+            {year.business.tax > 0 && <div className="li"><span className="grow muted">Tax on trading profit at your slab{year.business.assumedTopSlab ? ' (30% assumed: income not entered)' : ''}</span><span className="fig bad">{inr(year.business.tax)}</span></div>}
+            {(year.business.carryForward.speculative > 0 || year.business.carryForward.nonSpeculative > 0) && (
+              <div className="li"><span className="grow muted">Carried forward: intraday loss {inr(year.business.carryForward.speculative)} (4 years), F&amp;O loss {inr(year.business.carryForward.nonSpeculative)} (8 years)</span></div>
+            )}
+          </div>
+          <ul className="warnlist">
+            <li>Trading income needs ITR-3, not ITR-2.</li>
+            {(member.business?.fnoTurnover ?? 0) > 10_00_00_000_00 && <li>F&amp;O turnover above ₹10 crore usually needs a tax audit (s.44AB).</li>}
+            {v.business.nonSpeculative < 0 && <li>An F&amp;O loss with income above the basic exemption can trigger a tax audit. Check with a CA.</li>}
+          </ul>
+        </Section>
+      )}
+
       {myWarnings.length > 0 && (
         <div className="banner warn"><ul className="warnlist grow">{myWarnings.map((w, i) => <li key={i}>{fam.securities.get(w.isin)?.name ?? w.isin}, {dateLabel(w.date)}: {w.message}</li>)}</ul></div>
       )}

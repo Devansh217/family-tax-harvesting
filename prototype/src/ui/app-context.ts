@@ -2,11 +2,15 @@ import { createContext, useContext } from 'react';
 import type { FamilyView, Move } from '../engine/family';
 import type { ISODate } from '../engine/types';
 import type { AppState } from '../store';
+import type { Market } from './market';
 
 export interface Ctx {
   state: AppState;
   update: (fn: (s: AppState) => AppState) => void;
   fam: FamilyView;
+  /** The same family at the previous close, when the site has yesterday's prices. */
+  famPrev: FamilyView | null;
+  market: Market;
   asOf: ISODate;
   go: (route: string) => void;
   toast: (msg: string) => void;

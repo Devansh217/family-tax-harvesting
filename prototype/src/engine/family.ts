@@ -1,7 +1,8 @@
 import { daysBetween, isLongTerm, longTermFrom } from './dates';
 import { buildLedger, effectiveCost, lotKey, prorate } from './ledger';
 import { giftTransferCost, ltRate, roundTripCost, stRate, type TaxRules } from './rules';
-import { summariseYear, type YearSummary } from './tax';
+import { summariseYear, type BusinessIncome, type YearSummary } from './tax';
+import { inRange } from './dates';
 import {
   QTY_SCALE, type ISODate, type Ledger, type Lot, type Member, type Paise, type Qty, type Realised, type Security, type Term, type Txn,
 } from './types';
@@ -62,6 +63,8 @@ export const isLaterBenefit = (m: Move) => m.kind === 'harvest_gain' || m.kind =
 
 export interface MemberView {
   member: Member;
+  /** Intraday and F&O income used in the tax figures; `intradayDetected` is what the tradebooks show. */
+  business: BusinessIncome & { intradayDetected: Paise };
   /** Booked so far. */
   year: YearSummary;
   /** Booked plus planned sales: what moves and room are worked out from. */
@@ -224,7 +227,15 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   const LT = ltRate(rules), ST = stRate(rules);
 
   const views: MemberView[] = state.members.map((member) => {
-    const year = summariseYear(member, ledger.realised, rules);
+    const intradayDetected = ledger.intraday
+      .filter((t) => t.memberId === member.id && inRange(t.date, rules.start, rules.end))
+      .reduce((a, t) => a + t.pnl, 0);
+    const business = {
+      speculative: member.business?.intraday ?? intradayDetected,
+      nonSpeculative: member.business?.fno ?? 0,
+      intradayDetected,
+    };
+    const year = summariseYear(member, ledger.realised, rules, business);
     const plan = year;
     const isins = new Set<string>();
     for (const [key, lots] of ledger.lots) if (key.startsWith(`${member.id}|`) && lots.length) isins.add(lots[0]!.isin);
@@ -253,7 +264,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
       });
     }
     holdings.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
-    return { member, year, plan, planned: { gain: 0, tax: 0, roomUsed: 0 }, holdings, roomAfterPlan: 0 };
+    return { member, business, year, plan, planned: { gain: 0, tax: 0, roomUsed: 0 }, holdings, roomAfterPlan: 0 };
   });
 
   // Planned sales come first: they take their lots out of the queues and use room before any move is suggested.
@@ -265,7 +276,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   }
   for (const v of views) {
     const mine = plannedRealised.filter((r) => r.memberId === v.member.id);
-    v.plan = mine.length ? summariseYear(v.member, [...ledger.realised, ...mine], rules) : v.year;
+    v.plan = mine.length ? summariseYear(v.member, [...ledger.realised, ...mine], rules, v.business) : v.year;
     v.planned = {
       gain: mine.reduce((a, r) => a + r.gain, 0),
       tax: v.plan.tax - v.year.tax,
@@ -414,7 +425,7 @@ export function simulateSale(fam: FamilyView, memberId: string, isin: string, qt
   const available = queues(fam.ledger, memberId, isin).reduce((a, q) => a + q.lots.reduce((b, l) => b + l.qty, 0), 0);
   const sold = sellAcrossAccounts(fam.ledger, memberId, sec, Math.min(qty, available), asOf, rules, false);
   const plannedMine = fam.plannedRealised.filter((r) => r.memberId === memberId);
-  const after = summariseYear(v.member, [...fam.ledger.realised, ...plannedMine, ...sold], rules);
+  const after = summariseYear(v.member, [...fam.ledger.realised, ...plannedMine, ...sold], rules, v.business);
   const s = (t: Term) => sold.filter((r) => r.term === t).reduce((a, r) => a + r.gain, 0);
   return {
     qty: Math.min(qty, available), available,

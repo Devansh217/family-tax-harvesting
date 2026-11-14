@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Weekdays 23:30 IST, after NSE/BSE bhavcopies (~18:00) and AMFI NAVs (~23:00) are out: refreshes closing prices.
+  schedule:
+    - cron: '0 18 * * 1-5'
 permissions:
   contents: read
   pages: write
@@ -23,15 +26,24 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: prototype/package-lock.json
+      - id: pages
+        uses: actions/configure-pages@v5
       - run: npm ci
       - run: npm test
       - run: npm run build
-      # Prototype v0.2 at the site root; the original single-file v0.1 stays at /v0.1/
+      # Closing prices: fetch the latest bhavcopies and NAVs, and carry yesterday's file over from the live site.
+      - name: Closing prices
+        run: |
+          px="$RUNNER_TEMP/prices"
+          bash scripts/fetch-prices.sh "$px"
+          curl -sfL "${{ steps.pages.outputs.base_url }}/prices/latest.json" -o "$px/prev-latest.json" || true
+          curl -sfL "${{ steps.pages.outputs.base_url }}/prices/previous.json" -o "$px/prev-previous.json" || true
+          npx vite-node scripts/build-prices.ts "$px" dist
+      # Prototype at the site root; the original single-file v0.1 stays at /v0.1/
       - run: |
           mkdir -p ../_site/v0.1
           cp -r dist/. ../_site/
           cp ../index.html ../_site/v0.1/index.html
-      - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
   deploy:
     needs: build
