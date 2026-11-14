@@ -34,7 +34,7 @@ export const RELATIONS: Record<Member['relation'], string> = {
 };
 
 const TINTS: Array<[string, string]> = [
-  ['#E4E8FB', '#3A4FD0'], ['#F6E4EF', '#8E2A63'], ['#E2F2EA', '#0A6A4A'], ['#FDF0DC', '#8A4D00'],
+  ['#E4E8FB', '#3A4FD0'], ['#F6E4EF', '#8E2A63'], ['#FBF2D9', '#7E5F0B'], ['#FBEAE1', '#A8471F'],
   ['#E1EDF6', '#1F5F8B'], ['#EFE8F8', '#6A3FA0'], ['#F3EBE1', '#7A4A1F'], ['#E6F0F0', '#22625F'],
 ];
 export const tint = (index: number) => TINTS[index % TINTS.length]!;
