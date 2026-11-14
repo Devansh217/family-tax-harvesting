@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { loadFamily, loadProfile, saveFamily, signOut, supabase, type CloudFamily, type Profile, type Session } from '../cloud';
+import { loadFamily, loadProfile, namesFromLogin, saveFamily, saveProfile, signOut, supabase, type CloudFamily, type Profile, type Session } from '../cloud';
 import { sampleState } from '../sample';
 import { hasRealData, normalizeState, type AppState } from '../store';
 
@@ -74,7 +74,17 @@ export function useCloud(state: AppState, setState: Dispatch<SetStateAction<AppS
     setStatus('loading');
     void (async () => {
       try {
-        const [p, cloud] = await Promise.all([loadProfile(uid), loadFamily(uid)]);
+        const [loaded, cloud] = await Promise.all([loadProfile(uid), loadFamily(uid)]);
+        let p = loaded;
+        // Fill a missing name from the login (Google shares it) and keep it on the profile.
+        if (p && (!p.first_name || !p.last_name) && session?.user) {
+          const fromLogin = namesFromLogin(session.user.user_metadata);
+          const merged = { first_name: p.first_name || fromLogin.first_name, last_name: p.last_name || fromLogin.last_name };
+          if (merged.first_name !== p.first_name || merged.last_name !== p.last_name) {
+            await saveProfile(uid, merged).catch(() => undefined);
+            p = merged;
+          }
+        }
         setProfileState(p);
         const local = stateRef.current;
         if (cloud) {

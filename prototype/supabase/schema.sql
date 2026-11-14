@@ -27,20 +27,25 @@ drop policy if exists "profiles: update own" on public.profiles;
 create policy "profiles: update own" on public.profiles
   for update to authenticated using ((select auth.uid()) = id) with check ((select auth.uid()) = id);
 
--- A profile is created automatically at sign-up, from the names given on the email form
--- (first_name / last_name) or by Google (given_name / family_name).
+-- A profile is created automatically at sign-up. Email sign-ups send first_name / last_name. Google may send
+-- given_name / family_name (directly or under custom_claims), or only a full name, which is split at the first space.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  meta jsonb := coalesce(new.raw_user_meta_data, '{}'::jsonb);
+  full_name text := trim(coalesce(meta ->> 'full_name', meta ->> 'name', ''));
+  first_part text := nullif(split_part(full_name, ' ', 1), '');
+  rest_part text := nullif(trim(substr(full_name, length(split_part(full_name, ' ', 1)) + 1)), '');
 begin
   insert into public.profiles (id, first_name, last_name)
   values (
     new.id,
-    left(coalesce(new.raw_user_meta_data ->> 'first_name', new.raw_user_meta_data ->> 'given_name', ''), 80),
-    left(coalesce(new.raw_user_meta_data ->> 'last_name', new.raw_user_meta_data ->> 'family_name', ''), 80)
+    left(coalesce(nullif(meta ->> 'first_name', ''), nullif(meta ->> 'given_name', ''), nullif(meta -> 'custom_claims' ->> 'given_name', ''), first_part, ''), 80),
+    left(coalesce(nullif(meta ->> 'last_name', ''), nullif(meta ->> 'family_name', ''), nullif(meta -> 'custom_claims' ->> 'family_name', ''), rest_part, ''), 80)
   )
   on conflict (id) do nothing;
   return new;
@@ -105,3 +110,22 @@ create trigger family_data_touch before update on public.family_data
 revoke all on public.profiles, public.family_data from anon;
 grant select, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.family_data to authenticated;
+
+-- 5. Backfill names for people who signed up before the name fix (safe to run again) ----------------------------
+update public.profiles p
+set
+  first_name = left(coalesce(
+    nullif(p.first_name, ''),
+    nullif(u.raw_user_meta_data ->> 'given_name', ''),
+    nullif(u.raw_user_meta_data -> 'custom_claims' ->> 'given_name', ''),
+    nullif(split_part(trim(coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name', '')), ' ', 1), ''),
+    ''), 80),
+  last_name = left(coalesce(
+    nullif(p.last_name, ''),
+    nullif(u.raw_user_meta_data ->> 'family_name', ''),
+    nullif(u.raw_user_meta_data -> 'custom_claims' ->> 'family_name', ''),
+    nullif(trim(substr(trim(coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name', '')),
+      length(split_part(trim(coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name', '')), ' ', 1)) + 1)), ''),
+    ''), 80)
+from auth.users u
+where u.id = p.id and (p.first_name = '' or p.last_name = '');

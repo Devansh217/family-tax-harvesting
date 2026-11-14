@@ -65,6 +65,22 @@ export async function signOut() {
 
 export interface Profile { first_name: string; last_name: string }
 
+/**
+ * First and last name from what the sign-in provider shared. Google sends given_name / family_name (sometimes under
+ * custom_claims) or only a full name, which is split at the first space.
+ */
+export function namesFromLogin(meta: Record<string, unknown> | undefined): Profile {
+  const m = (meta ?? {}) as Record<string, string | Record<string, string> | undefined>;
+  const claims = (typeof m.custom_claims === 'object' ? m.custom_claims : {}) as Record<string, string>;
+  const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  const full = str(m.full_name) || str(m.name);
+  const [head = '', ...tail] = full.split(/\s+/);
+  return {
+    first_name: str(m.first_name) || str(m.given_name) || str(claims.given_name) || head,
+    last_name: str(m.last_name) || str(m.family_name) || str(claims.family_name) || tail.join(' '),
+  };
+}
+
 export async function loadProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase.from('profiles').select('first_name, last_name').eq('id', userId).maybeSingle();
   if (error) throw new Error(friendly(error.message));
