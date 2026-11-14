@@ -34,7 +34,8 @@ export function parseMutualFundCAS(lines: string[]): ParseResult {
   const prices: ParsedPrice[] = [];
   const warnings: string[] = [];
   let skipped = 0;
-  let cur: { isin: string; name: string; units: number; closing: number | null; cost: number | null } | null = null;
+  let cur: { isin: string; name: string; units: number; closing: number | null; cost: number | null; folio?: string } | null = null;
+  let folio: string | undefined;
 
   const closeScheme = () => {
     if (cur && cur.closing != null && Math.abs(cur.closing - cur.units) > 0.002) {
@@ -44,10 +45,12 @@ export function parseMutualFundCAS(lines: string[]): ParseResult {
 
   for (const raw of lines) {
     const line = raw.replace(/\s+/g, ' ').trim();
+    const f = line.match(/Folio\s*No\s*:?\s*([0-9A-Z]+(?:\s*\/\s*[0-9A-Z]+)?)/i);
+    if (f) folio = `Folio ${f[1]!.replace(/\s+/g, '')}`;
     const isin = findIsin(line);
     if (isin && /ISIN/i.test(line) && isin.startsWith('INF')) {
       closeScheme();
-      cur = { isin, name: schemeName(line), units: 0, closing: null, cost: null };
+      cur = { isin, name: schemeName(line), units: 0, closing: null, cost: null, folio };
       continue;
     }
     if (!cur) continue;
@@ -75,7 +78,7 @@ export function parseMutualFundCAS(lines: string[]): ParseResult {
     cur.units += units;
     txns.push({
       date, isin: cur.isin, name: cur.name, kind: kindFromIsin(cur.isin, cur.name),
-      side: units < 0 ? 'sell' : 'buy', qty: toQty(Math.abs(units)), amount: toPaise(Math.abs(amount)),
+      side: units < 0 ? 'sell' : 'buy', qty: toQty(Math.abs(units)), amount: toPaise(Math.abs(amount)), account: cur.folio,
     });
   }
   closeScheme();

@@ -53,11 +53,17 @@ export interface Txn {
   amount: Paise;
   /** Where it came from, e.g. "Zerodha tradebook". */
   source: string;
+  /** Demat account or MF folio. First-in-first-out matching happens within one account. */
+  account?: string;
+  /** Date or cost was guessed (holdings with no trade history). Never used for suggested moves. */
+  estimated?: boolean;
 }
 
 export interface Lot {
   memberId: string;
   isin: string;
+  account: string;
+  estimated?: boolean;
   date: ISODate;
   qty: Qty;
   cost: Paise;
@@ -69,6 +75,7 @@ export type Term = 'st' | 'lt';
 export interface Realised {
   memberId: string;
   isin: string;
+  account?: string;
   buyDate: ISODate;
   sellDate: ISODate;
   qty: Qty;
@@ -86,7 +93,7 @@ export interface LedgerWarning {
 }
 
 export interface Ledger {
-  /** Open lots, oldest first, keyed `${memberId}|${isin}`. */
+  /** Open lots, oldest first, keyed `${memberId}|${isin}|${account}`. */
   lots: Map<string, Lot[]>;
   realised: Realised[];
   warnings: LedgerWarning[];

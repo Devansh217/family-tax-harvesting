@@ -2,7 +2,7 @@ import { isLongTerm } from './dates';
 import { FY_2026_27, type TaxRules } from './rules';
 import { QTY_SCALE, type Ledger, type Lot, type Paise, type Qty, type Realised, type Security, type Txn } from './types';
 
-export const lotKey = (memberId: string, isin: string) => `${memberId}|${isin}`;
+export const lotKey = (memberId: string, isin: string, account = '') => `${memberId}|${isin}|${account}`;
 
 /** Share of `total` for `part` of `whole`, rounded to the paisa. */
 export const prorate = (total: Paise, part: Qty, whole: Qty): Paise => (whole === 0 ? 0 : Math.round((total * part) / whole));
@@ -25,7 +25,8 @@ export function effectiveCost(
 }
 
 /**
- * Replays every transaction in date order and matches sells to buys first-in-first-out, per member and security.
+ * Replays every transaction in date order and matches sells to buys first-in-first-out, per member, security and
+ * account (demat or folio), as the depositories do.
  * Sells on a date are applied before buys on that date, so a same-day buyback is never consumed by its own sale.
  */
 export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules = FY_2026_27): Ledger {
@@ -38,12 +39,13 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
   const warnings: Ledger['warnings'] = [];
 
   for (const t of ordered) {
-    const key = lotKey(t.memberId, t.isin);
+    const account = t.account ?? '';
+    const key = lotKey(t.memberId, t.isin, account);
     const queue = lots.get(key) ?? [];
     lots.set(key, queue);
 
     if (t.side === 'buy') {
-      queue.push({ memberId: t.memberId, isin: t.isin, date: t.date, qty: t.qty, cost: t.amount, source: t.source });
+      queue.push({ memberId: t.memberId, isin: t.isin, account, date: t.date, qty: t.qty, cost: t.amount, source: t.source, estimated: t.estimated });
       continue;
     }
 
@@ -58,6 +60,7 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
       realised.push({
         memberId: t.memberId,
         isin: t.isin,
+        account,
         buyDate: lot.date,
         sellDate: t.date,
         qty: take,
@@ -77,7 +80,7 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
         memberId: t.memberId,
         isin: t.isin,
         date: t.date,
-        message: `Sold ${(remaining / QTY_SCALE).toLocaleString('en-IN')} more units than the history shows were bought. Import older statements for exact gains.`,
+        message: `Sold ${(remaining / QTY_SCALE).toLocaleString('en-IN')} more units than the history shows were bought${account ? ` in ${account}` : ''}. Import older statements for exact gains.`,
       });
     }
   }

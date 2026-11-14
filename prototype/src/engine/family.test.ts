@@ -23,7 +23,41 @@ describe('harvest gain moves', () => {
     }, ASOF, R);
     const m = fam.moves.find((x) => x.kind === 'harvest_gain')!;
     expect(m).toMatchObject({ memberId: 'a', isin: 'X', qty: q(125), gain: rs(1_25_000) });
-    expect(m.saving).toBe(rs(16_250));
+    expect(m.taxAvoided).toBe(rs(16_250));
+    expect(m.costs).toBeGreaterThan(rs(500)); // ~0.23% of ₹2.5 L plus a depository charge
+    expect(m.costs).toBeLessThan(rs(700));
+    expect(m.saving).toBe(m.taxAvoided - m.costs);
+  });
+
+  it('skips moves too small to beat their trading costs', () => {
+    const fam = computeFamily({
+      members: [person('a', 'self')],
+      securities: [{ isin: 'X', name: 'X', kind: 'equity', price: rs(1400) }],
+      txns: [buy('a', 'X', '2023-01-01', 10, 1000)], // ₹4,000 gain → ₹520 avoided, less ~₹45 costs
+    }, ASOF, R);
+    expect(fam.moves.filter((x) => x.kind === 'harvest_gain')).toHaveLength(0);
+  });
+
+  it('never suggests moves on lots with guessed dates or a missing 31 Jan 2018 value', () => {
+    const base = { members: [person('a', 'self')], securities: [{ isin: 'X', name: 'X', kind: 'equity' as const, price: rs(2000) }] };
+    const estimated = computeFamily({ ...base, txns: [{ ...buy('a', 'X', '2023-01-01', 100, 1000), estimated: true }] }, ASOF, R);
+    expect(estimated.moves).toHaveLength(0);
+    expect(estimated.totals.uncertainLots).toBe(1);
+
+    const old = computeFamily({ ...base, txns: [buy('a', 'X', '2015-01-01', 100, 1000)] }, ASOF, R);
+    expect(old.moves).toHaveLength(0);
+    const withFmv = computeFamily({ ...base, securities: [{ ...base.securities[0]!, fmv2018: rs(1200) }], txns: [buy('a', 'X', '2015-01-01', 100, 1000)] }, ASOF, R);
+    expect(withFmv.moves.find((x) => x.kind === 'harvest_gain')).toMatchObject({ gain: rs(80_000) });
+  });
+
+  it('harvests from each demat account separately', () => {
+    const fam = computeFamily({
+      members: [person('a', 'self')],
+      securities: [{ isin: 'X', name: 'X', kind: 'equity', price: rs(2000) }],
+      txns: [{ ...buy('a', 'X', '2023-01-01', 40, 1000), account: 'Zerodha' }, { ...buy('a', 'X', '2023-06-01', 40, 1000), account: 'Angel One' }],
+    }, ASOF, R);
+    const h = fam.moves.filter((x) => x.kind === 'harvest_gain');
+    expect(h.map((x) => [x.account, x.gain])).toEqual([['Zerodha', rs(40_000)], ['Angel One', rs(40_000)]]);
   });
 
   it('never sells into short-term lots', () => {
@@ -102,7 +136,8 @@ describe('wait and loss moves', () => {
     }, ASOF, R);
     const l = fam.moves.find((x) => x.kind === 'harvest_loss')!;
     expect(l).toMatchObject({ isin: 'L', loss: rs(50_000), qty: q(100) });
-    expect(l.saving).toBe(rs(10_400));
+    expect(l.taxAvoided).toBe(rs(10_400));
+    expect(l.saving).toBe(l.taxAvoided - l.costs);
   });
 });
 

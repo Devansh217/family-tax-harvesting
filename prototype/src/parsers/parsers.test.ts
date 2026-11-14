@@ -89,6 +89,7 @@ describe('CAS PDFs (text lines)', () => {
     expect(r.txns[2]).toMatchObject({ side: 'sell', qty: 500_000, amount: 4_000_00 });
     expect(r.prices[0]).toMatchObject({ isin: 'INF879O01027', price: 85_12, priceDate: '2026-11-13' });
     expect(r.txns[0]!.name).toBe('Parag Parikh Flexi Cap Fund - Direct Plan Growth');
+    expect(r.txns[0]!.account).toBe('Folio 1234567/89');
     expect(r.warnings).toHaveLength(0);
   });
 

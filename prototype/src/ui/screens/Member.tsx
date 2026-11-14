@@ -133,7 +133,8 @@ export function MemberScreen({ id }: { id: string }) {
                   const pre2018 = h.lots.some((l) => l.date <= fam.rules.grandfatherDate);
                   return (
                     <tr key={h.isin}>
-                      <td><span style={{ fontWeight: 600 }}>{h.name}</span><br /><span className="tiny muted">{h.isin.startsWith('SYM:') ? 'No ISIN' : h.isin} · {h.lots.length} {h.lots.length === 1 ? 'lot' : 'lots'}</span></td>
+                      <td><span style={{ fontWeight: 600 }}>{h.name}</span><br /><span className="tiny muted">{h.isin.startsWith('SYM:') ? 'No ISIN' : h.isin} · {h.lots.length} {h.lots.length === 1 ? 'lot' : 'lots'}{h.accounts.filter(Boolean).length > 0 ? ` · ${h.accounts.filter(Boolean).join(', ')}` : ''}</span>
+                        {h.uncertainLots > 0 && <><br /><span className="tiny" style={{ color: 'var(--time)' }}>{h.uncertainLots} {h.uncertainLots === 1 ? 'lot' : 'lots'} {pre2018 && !sec?.fmv2018 ? 'need the 31 Jan 2018 value' : 'have an estimated date'}; no moves use {h.uncertainLots === 1 ? 'it' : 'them'}</span></>}</td>
                       <td>{units(h.qty)}</td>
                       <td><PriceInput key={`${h.isin}-${sec?.price}`} value={sec?.price} label={`Price of ${h.name}`} onCommit={(p) => setSecurity(h.isin, { price: p })} /></td>
                       <td>{inr(h.value)}</td>
@@ -183,7 +184,7 @@ export function MemberScreen({ id }: { id: string }) {
           </div>
         )}
       </Section>
-      <p className="tiny muted">Units are matched first in, first out across all of {possessive(member.name).toLowerCase() === 'your' ? 'your' : possessive(member.name)} accounts.</p>
+      <p className="tiny muted">Units are matched first in, first out within each demat account or folio, across all of {possessive(member.name).toLowerCase() === 'your' ? 'your' : possessive(member.name)} accounts.</p>
     </>
   );
 }

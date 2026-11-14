@@ -23,4 +23,4 @@ export const useApp = () => {
 
 /** Stable across recomputes so a ticked move stays ticked. */
 export const moveKey = (m: Move) =>
-  m.kind === 'gift' ? `gift|${m.fromId}>${m.toId}|${m.isin}` : `${m.kind}|${m.memberId}|${m.isin}`;
+  m.kind === 'gift' ? `gift|${m.fromId}>${m.toId}|${m.isin}|${m.account}` : `${m.kind}|${m.memberId}|${m.isin}|${m.account}`;

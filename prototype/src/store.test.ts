@@ -22,6 +22,7 @@ describe('importing', () => {
   it('matches symbol-only holdings to ISINs from the trade history and prices them', () => {
     let s = applyImport(withMember(), 'a', 'tb.csv', parse(tradebook));
     s = applyImport(s, 'a', 'h.csv', parse(holdings), { openingDate: '2024-01-01' });
+    expect(s.txns.find((t) => t.source.startsWith('Opening'))!.estimated).toBe(true);
     const infy = s.securities.find((x) => x.isin === 'INE009A01021')!;
     expect(infy.price).toBe(1900_00);
     // INFY already has history, so only TCS gets an estimated opening lot

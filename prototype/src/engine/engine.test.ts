@@ -42,7 +42,7 @@ describe('ledger FIFO', () => {
     const [first, second] = l.realised;
     expect(first).toMatchObject({ buyDate: '2024-01-10', qty: q(10), cost: rs(1000), proceeds: rs(2000), gain: rs(1000), term: 'lt' });
     expect(second).toMatchObject({ buyDate: '2026-02-01', qty: q(5), cost: rs(750), proceeds: rs(1000), gain: rs(250), term: 'st' });
-    const open = l.lots.get('m1|A')!;
+    const open = l.lots.get('m1|A|')!;
     expect(open).toHaveLength(1);
     expect(open[0]).toMatchObject({ qty: q(5), cost: rs(750) });
   });
@@ -69,13 +69,27 @@ describe('ledger FIFO', () => {
     expect(l.realised).toHaveLength(0);
   });
 
+  it('matches sells within the same demat account', () => {
+    const l = buildLedger(
+      [
+        { ...tx('m1', 'A', '2020-01-10', 'buy', 10, 100), account: 'Zerodha' },
+        { ...tx('m1', 'A', '2026-02-01', 'buy', 10, 150), account: 'Angel One' },
+        { ...tx('m1', 'A', '2026-06-01', 'sell', 10, 200), account: 'Angel One' },
+      ],
+      [sec('A')],
+    );
+    expect(l.realised).toHaveLength(1);
+    expect(l.realised[0]).toMatchObject({ account: 'Angel One', buyDate: '2026-02-01', gain: rs(500), term: 'st' });
+    expect(l.lots.get('m1|A|Zerodha')![0]!.qty).toBe(q(10));
+  });
+
   it('keeps members separate', () => {
     const l = buildLedger(
       [tx('m1', 'A', '2024-01-10', 'buy', 10, 100), tx('m2', 'A', '2024-01-10', 'buy', 5, 100)],
       [sec('A')],
     );
-    expect(l.lots.get('m1|A')![0]!.qty).toBe(q(10));
-    expect(l.lots.get('m2|A')![0]!.qty).toBe(q(5));
+    expect(l.lots.get('m1|A|')![0]!.qty).toBe(q(10));
+    expect(l.lots.get('m2|A|')![0]!.qty).toBe(q(5));
   });
 });
 

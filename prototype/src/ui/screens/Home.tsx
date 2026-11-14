@@ -4,6 +4,7 @@ import { useApp } from '../app-context';
 import { inr, inrShort } from '../format';
 import { Avatar, Disclaimer, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow, movesNotDone } from './Plan';
+import { isLaterBenefit } from '../../engine/family';
 
 export function SampleBanner() {
   const { state, update, go, toast } = useApp();
@@ -37,7 +38,10 @@ export function Home({ days }: { days: number }) {
   const { totals } = fam;
   const used = totals.limit - totals.freeRoom;
   const open = movesNotDone(fam.moves, state.done);
-  const openSaving = open.reduce((a, m) => a + m.saving, 0);
+  const openGain = open.reduce((a, m) => a + (m.kind === 'harvest_gain' || m.kind === 'gift' ? m.gain : 0), 0);
+  const openLater = open.filter(isLaterBenefit).reduce((a, m) => a + m.saving, 0);
+  const openNow = open.filter((m) => !isLaterBenefit(m)).reduce((a, m) => a + m.saving, 0);
+  const uncertain = fam.totals.uncertainLots;
   const warnings = fam.ledger.warnings.length;
   const unpriced = fam.members.flatMap((v) => v.holdings).filter((h) => h.price == null).length;
 
@@ -70,9 +74,13 @@ export function Home({ days }: { days: number }) {
             <p className="small muted">Plus <strong className="fig good">{inr(totals.bonusFree)}</strong> of unused basic exemption that low-income members can set against gains.</p>
           )}
           <div className="row-between" style={{ alignItems: 'center', paddingTop: 14, borderTop: '1px solid var(--line)' }}>
-            <span className="small muted">Moves still to do avoid tax of</span>
-            <span className="chip room" style={{ fontSize: 15, padding: '4px 12px' }}>{inr(openSaving)}</span>
+            <span className="small muted">Moves still to do make this much of your gains tax-free</span>
+            <span className="chip room" style={{ fontSize: 15, padding: '4px 12px' }}>{inr(openGain)}</span>
           </div>
+          <p className="tiny muted" style={{ marginTop: -8 }}>
+            That avoids up to {inr(openLater)} of tax later, when you sell, in a year your gains would pass {inr(fam.rules.ltcgExemption)}.
+            {openNow > 0 && <> Plus {inr(openNow)} less tax this year from losses and waiting.</>}
+          </p>
           <a className="btn primary block" href="#plan">See the plan <Svg size={18}>{Icon.arrow}</Svg></a>
         </section>
 
@@ -96,11 +104,12 @@ export function Home({ days }: { days: number }) {
         </Section>
       </div>
 
-      {(warnings > 0 || unpriced > 0) && (
+      {(warnings > 0 || unpriced > 0 || uncertain > 0) && (
         <div className="banner warn" role="status">
           <span className="grow">
             {warnings > 0 && <>{warnings} {warnings === 1 ? 'sale has' : 'sales have'} no matching purchase history. </>}
             {unpriced > 0 && <>{unpriced} {unpriced === 1 ? 'holding has' : 'holdings have'} no current price, so their gains are not counted. </>}
+            {uncertain > 0 && <>{uncertain} {uncertain === 1 ? 'lot has' : 'lots have'} an estimated purchase date or no 31 Jan 2018 value, so no moves use {uncertain === 1 ? 'it' : 'them'}. </>}
             Import more statements or add prices on the member pages.
           </span>
         </div>

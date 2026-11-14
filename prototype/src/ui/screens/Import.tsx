@@ -4,7 +4,7 @@ import {
   detectKind, FIELD_LABELS, FIELDS, parseStatementLines, parseTablePreview, PdfPasswordError, previewTable,
   type Field, type Mapping, type ParseResult, type TablePreview,
 } from '../../parsers';
-import { applyImport, removeImport } from '../../store';
+import { applyImport, guessAccount, removeImport } from '../../store';
 import { useApp } from '../app-context';
 import { dateLabel, inr, units } from '../format';
 import { Icon, Svg } from '../parts';
@@ -68,10 +68,10 @@ export function Import() {
     if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files);
   };
 
-  const add = (item: Item) => {
+  const add = (item: Item, account: string) => {
     const r = resultOf(item);
     if (!r || !member) return;
-    update((s) => applyImport(s, member.id, item.name, r, { openingDate: opening ? openingDate : undefined }));
+    update((s) => applyImport(s, member.id, item.name, r, { openingDate: opening ? openingDate : undefined, account: account.trim() || undefined }));
     setItems((xs) => xs.map((x) => (x.id === item.id && (x.status === 'pdf' || x.status === 'table') ? { ...x, added: true } : x)));
     toast(`Added to ${member.name}`);
   };
@@ -142,10 +142,10 @@ export function Import() {
         <section className="stack" aria-label="Files">
           <label className="row small" style={{ gap: 8 }}>
             <input type="checkbox" checked={opening} onChange={(e) => setOpening(e.target.checked)} />
-            <span>For holdings with no trade history, assume they were bought on</span>
+            <span>For holdings with no trade history, record them as bought on (estimated, never used for moves)</span>
             <input type="date" value={openingDate} onChange={(e) => setOpeningDate(e.target.value)} style={{ width: 160 }} disabled={!opening} />
           </label>
-          {items.map((it) => <ItemCard key={it.id} item={it} memberName={member?.name ?? ''} onChange={(n) => set(it.id, n)} onAdd={() => add(it)} onPassword={(pw) => { if (it.status === 'password') { set(it.id, { id: it.id, name: it.name, file: it.file, status: 'reading' }); void readPdf(it.id, it.file, pw); } }} onDismiss={() => setItems((xs) => xs.filter((x) => x.id !== it.id))} />)}
+          {items.map((it) => <ItemCard key={it.id} item={it} memberName={member?.name ?? ''} onChange={(n) => set(it.id, n)} onAdd={(acct) => add(it, acct)} onPassword={(pw) => { if (it.status === 'password') { set(it.id, { id: it.id, name: it.name, file: it.file, status: 'reading' }); void readPdf(it.id, it.file, pw); } }} onDismiss={() => setItems((xs) => xs.filter((x) => x.id !== it.id))} />)}
         </section>
       )}
 
@@ -170,10 +170,13 @@ export function Import() {
 }
 
 function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDismiss }: {
-  item: Item; memberName: string; onChange: (i: Item) => void; onAdd: () => void; onPassword: (pw: string) => void; onDismiss: () => void;
+  item: Item; memberName: string; onChange: (i: Item) => void; onAdd: (account: string) => void; onPassword: (pw: string) => void; onDismiss: () => void;
 }) {
   const [pw, setPw] = useState('');
   const r = resultOf(item);
+  const [account, setAccount] = useState<string | null>(null);
+  const acct = account ?? (r ? guessAccount(item.name, r.format) : '');
+  const hasFolios = !!r?.txns.some((t) => t.account);
   const added = (item.status === 'pdf' || item.status === 'table') && item.added;
 
   return (
@@ -247,8 +250,12 @@ function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDismiss }: 
               <pre className="lines">{item.lines.slice(0, 200).join('\n')}</pre>
             </details>
           )}
-          <div className="row">
-            <button className="btn primary" type="button" disabled={added || (r.txns.length === 0 && r.prices.length === 0)} onClick={onAdd}>
+          <div className="row wrap" style={{ alignItems: 'flex-end' }}>
+            <label className="field" style={{ width: 220 }}>
+              {hasFolios ? 'Account (folios are read from the CAS)' : 'Demat account or platform'}
+              <input value={acct} placeholder="e.g. Zerodha" onChange={(e) => setAccount(e.target.value)} disabled={added} />
+            </label>
+            <button className="btn primary" type="button" disabled={added || (r.txns.length === 0 && r.prices.length === 0)} onClick={() => onAdd(acct)}>
               {added ? `Added to ${memberName}` : `Add to ${memberName}`}
             </button>
           </div>

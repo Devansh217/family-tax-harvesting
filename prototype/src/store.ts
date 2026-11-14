@@ -78,6 +78,8 @@ function upsertSecurity(list: Security[], p: { isin: string; name: string; kind:
 }
 
 export interface ImportOptions {
+  /** Demat account or platform for rows the file does not label, e.g. "Zerodha". */
+  account?: string;
   /** For holdings with no trade history: create an opening lot dated this, at the statement's cost if known. */
   openingDate?: ISODate;
 }
@@ -101,7 +103,8 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
     seen.set(base, n);
     const id = `${base}|${n}`;
     if (existing.has(id)) continue;
-    s.txns.push({ id, memberId, isin, date: t.date, side: t.side, qty: t.qty, amount: t.amount, source: r.format, importId });
+    const account = t.account ?? opts.account ?? '';
+    s.txns.push({ id, memberId, isin, date: t.date, side: t.side, qty: t.qty, amount: t.amount, source: r.format, importId, account });
     added++;
   }
 
@@ -112,12 +115,12 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
       s.positions = s.positions.filter((x) => !(x.memberId === memberId && x.isin === isin && x.source === r.format));
       s.positions.push({ memberId, isin, qty: p.qty, asOf: p.priceDate, source: r.format, importId });
     }
-    const hasHistory = s.txns.some((t) => t.memberId === memberId && t.isin === isin);
+    const hasHistory = s.txns.some((t) => t.memberId === memberId && t.isin === isin && (t.account ?? '') === (opts.account ?? ''));
     if (opts.openingDate && p.qty && p.qty > 0 && !hasHistory) {
       const cost = p.cost ?? Math.round((p.price * p.qty) / 10_000);
       s.txns.push({
         id: `${memberId}|${isin}|opening|${importId}`, memberId, isin, date: opts.openingDate, side: 'buy', qty: p.qty, amount: cost,
-        source: 'Opening balance (estimated date)', importId,
+        source: 'Opening balance (estimated date)', importId, account: opts.account ?? '', estimated: true,
       });
       added++;
     }
@@ -153,3 +156,16 @@ export const startOwnFamily = (): AppState => ({
   ...emptyState(),
   members: [{ id: 'me', name: 'You', relation: 'self', age: 35, regime: 'new' }],
 });
+
+/** A sensible account name from the file name or format; the user can change it before adding. */
+export function guessAccount(fileName: string, format: string): string {
+  const f = `${fileName} ${format}`.toLowerCase();
+  if (/zerodha|console|kite|tradebook/.test(f)) return 'Zerodha';
+  if (/groww/.test(f)) return 'Groww';
+  if (/angel/.test(f)) return 'Angel One';
+  if (/upstox/.test(f)) return 'Upstox';
+  if (/et\s?money|etmoney/.test(f)) return 'ET Money';
+  if (/nsdl|cdsl|demat cas/.test(f)) return 'Demat (CAS)';
+  if (/mutual fund cas|cams|kfin/.test(f)) return 'MF folios';
+  return '';
+}

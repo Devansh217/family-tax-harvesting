@@ -85,6 +85,8 @@ export interface ParsedTxn {
   side: 'buy' | 'sell';
   qty: Qty;
   amount: Paise;
+  /** Folio or demat account when the statement says, e.g. "Folio 1234567/89". */
+  account?: string;
 }
 
 export interface ParsedPrice {
