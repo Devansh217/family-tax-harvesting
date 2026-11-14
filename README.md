@@ -2,7 +2,7 @@
 
 See how much tax-free capital gains room each PAN in the family has left this year, and how to use it.
 
-**Live app:** https://devansh217.github.io/family-tax-harvesting/
+**Live app:** https://devansh217.github.io/family-tax-harvesting/ (prototype v0.2) · original single-file v0.1 at [/v0.1/](https://devansh217.github.io/family-tax-harvesting/v0.1/)
 
 ## What it does today (prototype v0.1)
 
