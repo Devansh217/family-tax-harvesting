@@ -6,32 +6,36 @@
 
 1. **One number first.** Every screen leads with the single figure that matters there (family room left, saving on this move, tax on this sale), written as the start of a sentence, never as a label-over-number stat tile.
 2. **Rupees, not percentages.** Savings and tax are always shown in ₹, in Indian grouping (₹1,25,000; ₹4.95 L above 1 lakh in summaries).
-3. **Calm, then urgent.** The palette is quiet most of the year. Amber appears only for time pressure (days left, lots about to turn long-term).
+3. **Calm, then urgent.** The palette is quiet most of the year. Terracotta appears only for time pressure (days left, lots about to turn long-term).
 4. **Show the arithmetic.** Any number can be tapped to see how it was computed. Trust comes from transparency, not branding.
 5. **Never pretend to trade.** The app explains and checks; the broker app executes. No "Sell" buttons, only "Add to plan" and "Mark done".
 6. **Fast is a feature.** No spinners on navigation. Skeletons only on first load; after that, cached data plus a quiet "Updated 2 min ago".
 
 ## 2. Tokens
 
-### Colour
+### Colour (white and gold, light only)
 
-| Token | Light | Dark | Use |
-|---|---|---|---|
-| `ground` | `#F2F4F1` | `#0C1210` | App background |
-| `surface` | `#FFFFFF` | `#141B18` | Cards, sheets |
-| `ink` | `#0D1B16` | `#E6ECE8` | Primary text, figures |
-| `ink-2` | `#4A5952` | `#9AA8A1` | Secondary text (≥ 4.5:1 on surface) |
-| `line` | `#E1E6E1` | `#25302B` | Dividers, borders |
-| `track` | `#E9EDE9` | `#1E2723` | Empty part of meters |
-| `room` | `#0B7A55` | `#4CC992` | Free room, savings, positive |
-| `room-soft` | `#E2F2EA` | `#13291F` | Saving chips |
-| `plan` | `#3A4FD0` | `#8C9CFF` | Planned (in plan, not done), links |
-| `used` | `#A3AEA8` | `#56625C` | Used room (decorative fill only) |
-| `time` | `#A35C00` | `#F0B45C` | Days left, wait alerts |
-| `time-soft` | `#FDF0DC` | `#2E2412` | Deadline banner |
-| `tax` | `#B4352B` | `#FF8A80` | Tax due beyond room |
+Chosen 14 Nov 2026 after the first green-on-dark version: lighter and warmer. There is no dark theme; the app stays light even when the device is in dark mode.
 
-Meter segments differ in lightness as well as hue (used light grey, planned mid indigo, free dark green, 2 px gaps between), so they read for colour-blind users and in greyscale.
+| Token | Value | Use |
+|---|---|---|
+| `ground` | `#FAF9F6` | App background, warm white |
+| `surface` | `#FFFFFF` | Cards, sheets |
+| `sunk` | `#F6F4EE` | Table headers, notes |
+| `ink` | `#1D1B17` | Primary text, figures, primary buttons |
+| `ink-2` | `#5F5A50` | Secondary text (6.9:1 on white) |
+| `line` / `line-strong` | `#ECE7DD` / `#DCD5C7` | Dividers, field borders |
+| `track` | `#F1EDE4` | Empty part of meters |
+| `room` | `#C79A1E` | Free room fill, logo mark (fills only; text on it uses `ink`) |
+| `room-ink` | `#7E5F0B` | Room and saving figures as text (5.9:1 on white) |
+| `room-soft` | `#FBF2D9` | Saving chips, banners, verdicts |
+| `plan` / `plan-soft` | `#2E4C9E` / `#E6ECF8` | Planned room, links |
+| `used` | `#D2CBBD` | Used room (fill only) |
+| `time` / `time-soft` | `#A8471F` / `#FBEAE1` | Days left, wait alerts (terracotta, kept apart from gold) |
+| `tax` / `tax-soft` | `#B3261E` / `#FBE6E3` | Tax due beyond room |
+| `club` / `club-soft` | `#5C4A86` / `#EEEAF6` | Clubbing tags |
+
+Meter segments differ in lightness as well as hue (used pale grey-beige, planned navy, free gold, bonus pale gold), so they read for colour-blind users and in greyscale.
 
 ### Type
 
