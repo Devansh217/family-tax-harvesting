@@ -1,0 +1,5 @@
+# Never commit real portfolio data
+*.csv
+*.pdf
+data/private/
+.env

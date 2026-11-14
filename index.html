@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Family Tax Harvesting App (India)</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: sticky ledger header, family summary strip, member tabs, then two-column workspace (buckets + actions | holdings) */
+:root{
+  --bg:#f5f6f2; --surface:#ffffff; --ink:#17201c; --muted:#5b685f; --line:#dde2da; --track:#e8ebe4;
+  --accent:#2347c5; --accent-soft:#e7ecfb;
+  --good:#1b7a48; --good-soft:#e1f1e7; --warn:#9a5a00; --warn-soft:#fbeed6; --bad:#b02c2c; --bad-soft:#f8e2df;
+  --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body:"Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --f-num:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1412; --surface:#161d1a; --ink:#e5ebe7; --muted:#93a199; --line:#28322d; --track:#222b26;
+  --accent:#8aa3ff; --accent-soft:#1d2747; --good:#62c991; --good-soft:#15291e; --warn:#efb257; --warn-soft:#2e2412; --bad:#ff8c82; --bad-soft:#341b19; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1412; --surface:#161d1a; --ink:#e5ebe7; --muted:#93a199; --line:#28322d; --track:#222b26;
+  --accent:#8aa3ff; --accent-soft:#1d2747; --good:#62c991; --good-soft:#15291e; --warn:#efb257; --warn-soft:#2e2412; --bad:#ff8c82; --bad-soft:#341b19; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:22px}
+h2{font-size:17px}
+h3{font-size:15px}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+header.top .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding-block:12px}
+.fy{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);font-size:12px;white-space:nowrap}
+.chip.accent{background:var(--accent-soft);border-color:transparent;color:var(--accent);font-weight:600}
+.chip.good{background:var(--good-soft);color:var(--good);border-color:transparent}
+.chip.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.chip.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-block:18px}
+.stat{background:var(--surface);padding:14px 16px;min-width:0}
+.stat .v{font-family:var(--f-num);font-size:22px;font-weight:600;margin-top:4px}
+.stat .s{font-size:12px;color:var(--muted)}
+@media (max-width:760px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat .v{font-size:18px}}
+nav.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.tab{font:inherit;padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.tab[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.tab.add{border-style:dashed;color:var(--muted)}
+button,.btn{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:6px 12px}
+button.primary{background:var(--accent);color:var(--surface);border-color:var(--accent);font-weight:600}
+button.link{border:0;background:none;padding:0;color:var(--accent);text-decoration:underline}
+button.danger{color:var(--bad)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,.tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 8px;min-width:0}
+textarea{width:100%;font-family:var(--f-num);font-size:12px}
+.grid2{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:18px;align-items:start}
+@media (max-width:900px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;min-width:0}
+.stack{display:flex;flex-direction:column;gap:18px}
+.phead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.meter{display:flex;flex-direction:column;gap:6px;padding-block:10px;border-top:1px solid var(--line)}
+.meter:first-of-type{border-top:0}
+.meter .row{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
+.bar{height:10px;background:var(--track);border-radius:5px;overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.bar .used{background:var(--muted);opacity:.55}
+.bar .left{background:var(--good)}
+.bar .plan{background:var(--accent)}
+.bar .tax{background:var(--bad)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;background:var(--c)}
+.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.form label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);min-width:0}
+.form label.full{grid-column:1/-1}
+.form .chk{flex-direction:row;align-items:center;gap:8px}
+.acts{display:flex;flex-direction:column;gap:10px}
+.act{border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.act.gain{border-left-color:var(--good)}
+.act.loss{border-left-color:var(--accent)}
+.act.gift{border-left-color:var(--warn)}
+.act.info{border-left-color:var(--line)}
+.act .t{font-weight:600}
+.act .m{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.act .m b{color:var(--ink);font-family:var(--f-num);font-weight:600}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+th:first-child,td:first-child{text-align:left}
+td input{width:84px;text-align:right;font-family:var(--f-num);font-size:12px}
+td input.sym{width:110px;text-align:left}
+td input[type=date]{width:130px;text-align:left}
+td select{font-size:12px}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+.famgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.famcard{cursor:pointer}
+.famcard:hover{border-color:var(--accent)}
+.notes{columns:2 320px;column-gap:28px;font-size:13px;color:var(--muted)}
+.notes p{margin:0 0 10px;break-inside:avoid}
+.notes b{color:var(--ink)}
+details summary{cursor:pointer;font-family:var(--f-display);font-weight:600;font-size:15px}
+.row-btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.banner{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:10px 12px;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.banner button{border-color:transparent}
+footer{padding-block:24px 40px;font-size:12px;color:var(--muted)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;z-index:20}
+@media (prefers-reduced-motion:no-preference){.bar i{transition:width .3s ease}}
+</style>
+</head>
+<body>
+
+<header class="top"><div class="wrap">
+  <h1>Family Tax Harvesting</h1>
+  <div class="fy" id="fy"></div>
+</div></header>
+
+<div class="wrap">
+  <section class="stats" id="stats"></section>
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+  <main id="view"></main>
+
+  <section class="panel" style="margin-top:18px">
+    <details id="settings">
+      <summary>Tax rules, import and backup</summary>
+      <div id="settingsBody" style="margin-top:14px"></div>
+    </details>
+  </section>
+
+  <section class="panel" style="margin-top:18px">
+    <h2 style="margin-bottom:12px">How the rules work</h2>
+    <div class="notes">
+      <p><b>Long-term vs short-term.</b> Listed shares and equity mutual funds held more than 12 months are long-term. LTCG is taxed at 12.5% after a ₹1.25 lakh yearly exemption per PAN. STCG is taxed at 20%. Add 4% cess, plus surcharge at high incomes.</p>
+      <p><b>Gain harvesting.</b> If a PAN has unused exemption, sell long-term winners up to that amount and buy them back. The gain is tax-free and your cost price resets higher, so less gain is taxed later. The buyback starts a new 12-month clock.</p>
+      <p><b>Loss harvesting.</b> Selling a loss-making holding books a capital loss. Short-term losses offset short- or long-term gains. Long-term losses offset only long-term gains. Unused losses carry forward 8 years if you file your ITR on time.</p>
+      <p><b>Buy back the next trading day.</b> India has no wash-sale rule today. Do not sell and rebuy the same stock on the same day: the exchange nets the two trades into an intraday trade, which is speculative income, not a capital gain or loss. Sell on day T, rebuy on T+1.</p>
+      <p><b>Basic exemption shortfall.</b> A resident whose other income is below the basic exemption (₹4 lakh in the new regime) can use the gap against STCG and LTCG. The 87A rebate does not apply to these gains. This is why a parent with little income can take a lot of tax-free gains.</p>
+      <p><b>Using another family member's bucket.</b> Gifting shares to a relative is tax-free, and their cost and holding period carry over from you. Income from gifts to your <b>spouse</b>, a <b>minor child</b>, a <b>son's wife</b> or your HUF is clubbed back to you, so those PANs do not help. Gifts to parents, adult children and siblings are not clubbed. Use an off-market transfer with a gift deed. The shares and the sale money then belong to them.</p>
+      <p><b>Mandatory set-off.</b> Losses must be set off against gains, including gains that the ₹1.25 lakh exemption would have covered. A carried-forward long-term loss can eat next year's exemption, so booking a loss only helps when there are taxable gains to cancel.</p>
+      <p><b>Check before acting.</b> From 1 April 2026 these rules sit in the Income-tax Act, 2025 (old 111A/112A are now sections 196/198). This app is a planning aid, not tax advice. Rates are editable below. Confirm large moves with a CA.</p>
+    </div>
+  </section>
+  <footer>Your data is saved only in this browser. The starting holdings are examples. Import your own from Kite under Tax rules, import and backup.</footer>
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+const KEY = 'fth-india-v1';
+const DEFAULTS = {
+  settings:{ fyLabel:'2026-27', fyEnd:'2027-03-31', ltcgExempt:125000, ltcgRate:12.5, stcgRate:20, cess:4, costPct:0.12 },
+  members:[
+    { id:'m1', name:'You (example)', relation:'self', regime:'new', age:'below60', resident:true, otherIncome:'', stcg:0, ltcg:0, stcl:0, ltcl:0, cfStcl:0, cfLtcl:0,
+      holdings:[
+        {sym:'INFY',qty:40,avg:1180,ltp:1610,buy:'2023-06-12',term:'?'},
+        {sym:'HDFCBANK',qty:30,avg:1450,ltp:1985,buy:'2022-11-03',term:'?'},
+        {sym:'TATAMOTORS',qty:60,avg:910,ltp:705,buy:'2024-08-20',term:'?'},
+        {sym:'ITC',qty:150,avg:330,ltp:418,buy:'',term:'?'},
+        {sym:'NIFTYBEES',qty:200,avg:215,ltp:288,buy:'2023-01-16',term:'?'},
+        {sym:'ZOMATO',qty:120,avg:245,ltp:268,buy:'2026-03-02',term:'?'}
+      ]},
+    { id:'m2', name:'Mother (example)', relation:'parent', regime:'new', age:'60to80', resident:true, otherIncome:0, stcg:0, ltcg:0, stcl:0, ltcl:0, cfStcl:0, cfLtcl:0, holdings:[] },
+    { id:'m3', name:'Spouse (example)', relation:'spouse', regime:'new', age:'below60', resident:true, otherIncome:'', stcg:0, ltcg:0, stcl:0, ltcl:0, cfStcl:0, cfLtcl:0, holdings:[] }
+  ]
+};
+const REL = {self:'Self', spouse:'Spouse', parent:'Parent', adultchild:'Adult child (18+)', minorchild:'Minor child', sibling:'Sibling', grandparent:'Grandparent', huf:'HUF', other:'Other'};
+
+let state = load();
+let tab = 'family';
+let confirmReset = false;
+
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(KEY)); if(s && s.members) return s; }catch(e){}
+  return JSON.parse(JSON.stringify(DEFAULTS));
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+
+/* ---------- dates ---------- */
+const TODAY = (()=>{const d=new Date(); d.setHours(0,0,0,0); return d;})();
+function nextWeekday(d, includeSelf){ const x=new Date(d); if(!includeSelf) x.setDate(x.getDate()+1); while(x.getDay()===0||x.getDay()===6) x.setDate(x.getDate()+1); return x; }
+const SELL_DAY = nextWeekday(TODAY, true);
+const BUY_DAY = nextWeekday(SELL_DAY, false);
+function addMonths(d,n){ return new Date(d.getFullYear(), d.getMonth()+n, d.getDate()); }
+const LT_CUTOFF = addMonths(SELL_DAY,-12); // bought before this date => long-term when sold on SELL_DAY
+const fmtD = d => d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
+const fmtDY = d => d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+
+/* ---------- money ---------- */
+const N = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+const inr = n => (n<0?'−':'') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN');
+function lakh(n){ const a=Math.abs(n); const s = a>=1e7 ? (a/1e7).toFixed(2)+' Cr' : a>=1e5 ? (a/1e5).toFixed(2)+' L' : Math.round(a).toLocaleString('en-IN'); return (n<0?'−':'')+'₹'+s; }
+const esc = s => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- tax engine ---------- */
+function basicExemption(m){
+  if(m.regime==='new') return 400000;
+  return m.age==='above80' ? 500000 : m.age==='60to80' ? 300000 : 250000;
+}
+function termOf(h){
+  if(h.buy){ const d=new Date(h.buy); if(!isNaN(d)) return d < LT_CUTOFF ? 'LT' : 'ST'; }
+  return h.term || '?';
+}
+function compute(m, extra){
+  const S=state.settings; extra = extra||{};
+  let st = N(m.stcg)+N(extra.stcg) - N(m.stcl)-N(extra.stcl);
+  let lt = N(m.ltcg)+N(extra.ltcg) - N(m.ltcl)-N(extra.ltcl);
+  let cfST=0, cfLT=0;
+  if(lt<0){ cfLT+=-lt; lt=0; }
+  if(st<0){ const u=Math.min(-st,lt); lt-=u; st+=u; if(st<0){ cfST+=-st; st=0; } }
+  let rem=N(m.cfStcl), u=Math.min(rem,st); st-=u; rem-=u; u=Math.min(rem,lt); lt-=u; rem-=u; cfST+=rem;
+  u=Math.min(N(m.cfLtcl),lt); lt-=u; cfLT+=N(m.cfLtcl)-u;
+  const exUsed=Math.min(lt,S.ltcgExempt), exLeft=S.ltcgExempt-exUsed;
+  let ltTax=lt-exUsed;
+  const incomeKnown = m.otherIncome!=='' && m.otherIncome!=null;
+  const beTotal = (m.resident && incomeKnown) ? Math.max(0, basicExemption(m)-N(m.otherIncome)) : 0;
+  let beLeft=beTotal; u=Math.min(beLeft,st); let stTax=st-u; beLeft-=u; u=Math.min(beLeft,ltTax); ltTax-=u; beLeft-=u;
+  const tax=(stTax*S.stcgRate/100 + ltTax*S.ltcgRate/100)*(1+S.cess/100);
+  return {st,lt,exUsed,exLeft,stTax,ltTax,beTotal,beLeft,tax,cfST,cfLT,incomeKnown};
+}
+
+/* clubbing / eligibility of a gift from donor to recipient */
+function giftCheck(donor, rec){
+  const r=rec.relation, d=donor.relation;
+  if(donor.id===rec.id) return {ok:false};
+  if(r==='spouse'||d==='spouse' && r==='self') return {ok:false, why:'Gifts between spouses are clubbed back to the giver.'};
+  if(r==='spouse') return {ok:false, why:'Clubbed with the giver.'};
+  if(r==='minorchild') return {ok:false, why:"A minor's income is clubbed with the parent."};
+  if(r==='huf') return {ok:false, why:'Gifts to your HUF are clubbed back to you.'};
+  if(r==='other') return {ok:false, why:'Not a relative: gifts above ₹50,000 are taxable to them.'};
+  if((r==='parent'&&d==='parent')||(r==='grandparent'&&d==='grandparent')) return {ok:false, why:'Treated as spouses: clubbed.'};
+  return {ok:true};
+}
+
+function plan(){
+  const S=state.settings, k=(1+S.cess/100);
+  const out = {}; // id -> {r, acts:[], roomLeft, avail:[]}
+  state.members.forEach(m=>{
+    const r=compute(m); const acts=[];
+    const hs = m.holdings.map((h,i)=>({...h, i, term:termOf(h), gpu:N(h.ltp)-N(h.avg), qty:Math.floor(N(h.qty)), left:Math.floor(N(h.qty))}));
+    // 1. loss harvest against taxable gains
+    if(r.stTax+r.ltTax>0){
+      let work={stcl:0,ltcl:0};
+      const losers = hs.filter(h=>h.gpu<0 && h.qty>0).sort((a,b)=> (a.term==='ST'?0:1)-(b.term==='ST'?0:1) || a.gpu*a.qty - b.gpu*b.qty);
+      for(const h of losers){
+        const cur=compute(m,work); const need=h.term==='ST'? cur.stTax+cur.ltTax : cur.ltTax;
+        if(need<=0) continue;
+        const q=Math.min(h.qty, Math.ceil(need/-h.gpu)); const loss=q*-h.gpu;
+        const key=h.term==='ST'?'stcl':'ltcl'; const nxt={...work,[key]:work[key]+loss};
+        const saved=cur.tax-compute(m,nxt).tax; if(saved<=0) continue;
+        work=nxt; h.left-=q;
+        acts.push({type:'loss', m, sym:h.sym, qty:q, amt:loss, saved, cost:2*q*N(h.ltp)*S.costPct/100, term:h.term});
+      }
+    }
+    // 2. gain harvest into own exemption + basic exemption
+    let room = r.exLeft + r.beLeft;
+    const ltWinners = hs.filter(h=>h.term!=='ST' && h.gpu>0 && h.left>0).sort((a,b)=>b.gpu*b.left-a.gpu*a.left);
+    for(const h of ltWinners){
+      if(room<1) break;
+      const q=Math.min(h.left, Math.floor(room/h.gpu)); if(q<1) continue;
+      const g=q*h.gpu; room-=g; h.left-=q;
+      acts.push({type:'gain', m, sym:h.sym, qty:q, amt:g, saved:g*S.ltcgRate/100*k, cost:2*q*N(h.ltp)*S.costPct/100, unconfirmed:h.term==='?', full:q===h.qty});
+    }
+    // ST winners only fit in leftover basic-exemption room
+    let stRoom = Math.min(room, r.beLeft);
+    hs.filter(h=>h.term==='ST' && h.gpu>0 && h.left>0).sort((a,b)=>b.gpu*b.left-a.gpu*a.left).forEach(h=>{
+      if(stRoom<1) return; const q=Math.min(h.left, Math.floor(stRoom/h.gpu)); if(q<1) return;
+      const g=q*h.gpu; stRoom-=g; room-=g; h.left-=q;
+      acts.push({type:'gain', m, sym:h.sym, qty:q, amt:g, saved:g*S.stcgRate/100*k, cost:2*q*N(h.ltp)*S.costPct/100, st:true});
+    });
+    // 3. short-term winners about to turn long-term before FY end
+    const fyEnd=new Date(S.fyEnd);
+    hs.filter(h=>h.term==='ST' && h.buy && h.gpu>0).forEach(h=>{
+      const ltOn=addMonths(new Date(h.buy),12); ltOn.setDate(ltOn.getDate()+1);
+      if(ltOn<=fyEnd) acts.push({type:'info', m, sym:h.sym, text:`Hold ${esc(h.sym)} until ${fmtDY(ltOn)}. It becomes long-term, taxed at ${S.ltcgRate}% instead of ${S.stcgRate}%, and can use the exemption.`, saved:0});
+    });
+    // 4. losses with nothing to offset
+    if(r.stTax+r.ltTax<=0){
+      const idle=hs.filter(h=>h.gpu<0 && h.left>0); const tot=idle.reduce((s,h)=>s+h.left*-h.gpu,0);
+      if(tot>500) acts.push({type:'info', m, text:`${idle.map(h=>esc(h.sym)).join(', ')} show ${inr(tot)} in unrealised losses. With no taxable gains this year, booking them only adds to carry-forward. Do it if you expect taxable gains in later years.`, saved:0});
+    }
+    out[m.id]={r, acts, roomLeft:Math.max(0,room), hs};
+  });
+  // 5. cross-PAN gifts: fill recipients' leftover room with donors' remaining LT gains
+  const gifts=[];
+  const recips = state.members.filter(m=>out[m.id].roomLeft>=1000).sort((a,b)=>out[b.id].roomLeft-out[a.id].roomLeft);
+  for(const rec of recips){
+    for(const donor of state.members){
+      const chk=giftCheck(donor,rec); if(!chk.ok) continue;
+      const pool=out[donor.id].hs.filter(h=>h.term!=='ST' && h.gpu>0 && h.left>0).sort((a,b)=>b.gpu*b.left-a.gpu*a.left);
+      for(const h of pool){
+        let room=out[rec.id].roomLeft; if(room<1) break;
+        const q=Math.min(h.left, Math.floor(room/h.gpu)); if(q<1) continue;
+        const g=q*h.gpu; out[rec.id].roomLeft-=g; h.left-=q;
+        gifts.push({type:'gift', from:donor, to:rec, sym:h.sym, qty:q, amt:g, saved:g*S.ltcgRate/100*k, cost:2*q*N(h.ltp)*S.costPct/100, unconfirmed:h.term==='?'});
+      }
+    }
+  }
+  return {out, gifts};
+}
+
+/* ---------- rendering ---------- */
+function meter(title, total, parts, foot){
+  const seg = parts.map(p=> total>0 ? `<i class="${p.cls}" style="width:${Math.max(0,Math.min(100,p.v/total*100))}%"></i>` : '').join('');
+  return `<div class="meter"><div class="row"><span class="label">${title}</span><span class="num">${foot}</span></div><div class="bar" role="img" aria-label="${esc(title)}">${seg}</div></div>`;
+}
+function bucketsHTML(m, P){
+  const S=state.settings, o=P.out[m.id], r=o.r;
+  const own=o.acts.filter(a=>a.type==='gain').reduce((s,a)=>s+a.amt,0);
+  const giftIn=P.gifts.filter(g=>g.to.id===m.id).reduce((s,g)=>s+g.amt,0);
+  const planned=own+giftIn;
+  const exPlan=Math.min(planned, r.exLeft), bePlan=Math.min(Math.max(0,planned-r.exLeft), r.beLeft);
+  let h = meter('LTCG exemption ₹1.25 L', S.ltcgExempt, [{cls:'used',v:r.exUsed},{cls:'plan',v:exPlan},{cls:'left',v:r.exLeft-exPlan}], `${inr(r.exLeft)} left`);
+  if(!m.resident) h += `<div class="meter"><span class="label">Basic exemption</span><span class="small muted">Not available to non-residents.</span></div>`;
+  else if(!r.incomeKnown) h += `<div class="meter"><span class="label">Basic exemption</span><span class="small muted">Enter other income to see if any is unused.</span></div>`;
+  else if(r.beTotal<=0) h += `<div class="meter"><span class="label">Basic exemption</span><span class="small muted">Fully used by other income.</span></div>`;
+  else h += meter(`Basic exemption gap (${m.regime==='new'?'new':'old'} regime)`, r.beTotal, [{cls:'used',v:r.beTotal-r.beLeft},{cls:'plan',v:bePlan},{cls:'left',v:r.beLeft-bePlan}], `${inr(r.beLeft)} left`);
+  const taxable=r.stTax+r.ltTax;
+  h += `<div class="meter"><div class="row"><span class="label">Tax on gains booked so far</span><span class="num ${taxable>0?'neg':''}">${inr(r.tax)}</span></div>
+    <div class="small muted">Taxable STCG ${inr(r.stTax)} · taxable LTCG ${inr(r.ltTax)}${r.cfST+r.cfLT>0?` · losses to carry forward ${inr(r.cfST+r.cfLT)}`:''}</div></div>`;
+  h += `<div class="legend"><span style="--c:var(--muted)">Used</span><span style="--c:var(--accent)">Planned below</span><span style="--c:var(--good)">Still free</span></div>`;
+  return h;
+}
+function actHTML(a, showWho){
+  const S=state.settings;
+  const who = showWho && a.m ? `<span class="chip">${esc(a.m.name)}</span> ` : '';
+  if(a.type==='gain') return `<div class="act gain"><div class="t">${who}Sell ${a.qty} ${esc(a.sym)} on ${fmtD(SELL_DAY)}, buy ${a.qty} back on ${fmtD(BUY_DAY)}</div>
+    <div class="m"><span>Books <b>${inr(a.amt)}</b> ${a.st?'STCG':'LTCG'} at zero tax</span><span>Future tax saved ≈ <b>${inr(a.saved)}</b></span><span>Charges ≈ ${inr(a.cost)}</span></div>
+    ${a.unconfirmed?`<div class="small"><span class="chip warn">Confirm bought before ${fmtDY(LT_CUTOFF)}</span></div>`:''}${a.st?`<div class="small muted">Uses the basic exemption gap. Short-term gain, so it is only tax-free inside that gap.</div>`:''}</div>`;
+  if(a.type==='loss') return `<div class="act loss"><div class="t">${who}Sell ${a.qty} ${esc(a.sym)} on ${fmtD(SELL_DAY)}, buy ${a.qty} back on ${fmtD(BUY_DAY)}</div>
+    <div class="m"><span>Books <b>${inr(a.amt)}</b> ${a.term==='ST'?'short-term':'long-term'} loss</span><span>Cuts this year's tax by <b>${inr(a.saved)}</b></span><span>Charges ≈ ${inr(a.cost)}</span></div></div>`;
+  if(a.type==='gift') return `<div class="act gift"><div class="t">Gift ${a.qty} ${esc(a.sym)} from ${esc(a.from.name)} to ${esc(a.to.name)}</div>
+    <div class="m"><span>${esc(a.to.name)} sells on a later day and rebuys next day: <b>${inr(a.amt)}</b> LTCG tax-free</span><span>Tax avoided ≈ <b>${inr(a.saved)}</b></span><span>Charges ≈ ${inr(a.cost)} + DP fee</span></div>
+    <div class="small muted">Off-market transfer with a gift deed. Cost and holding period carry over from ${esc(a.from.name)}.</div>
+    ${a.unconfirmed?`<div class="small"><span class="chip warn">Confirm bought before ${fmtDY(LT_CUTOFF)}</span></div>`:''}</div>`;
+  return `<div class="act info"><div class="small">${who}${a.text}</div></div>`;
+}
+function statsHTML(P){
+  const ms=state.members; let ex=0,be=0,tax=0,save=0;
+  ms.forEach(m=>{const r=P.out[m.id].r; ex+=r.exLeft; be+=r.beLeft; tax+=r.tax; P.out[m.id].acts.forEach(a=>save+=a.saved||0);});
+  P.gifts.forEach(g=>save+=g.saved);
+  return `<div class="stat"><div class="label">LTCG exemption left</div><div class="v">${lakh(ex)}</div><div class="s">across ${ms.length} PANs</div></div>
+  <div class="stat"><div class="label">Basic exemption gap left</div><div class="v">${lakh(be)}</div><div class="s">low-income members</div></div>
+  <div class="stat"><div class="label">Tax on gains so far</div><div class="v">${lakh(tax)}</div><div class="s">FY ${state.settings.fyLabel}, incl. cess</div></div>
+  <div class="stat"><div class="label">Tax you can save</div><div class="v" style="color:var(--good)">${lakh(save)}</div><div class="s">if you act on the plan</div></div>`;
+}
+function unknownBanner(m){
+  const n=m.holdings.filter(h=>termOf(h)==='?').length; if(!n) return '';
+  return `<div class="banner"><span>${n} holding${n>1?'s':''} without a buy date. The plan assumes they are long-term. Bought before <b>${fmtDY(LT_CUTOFF)}</b>?</span>
+    <span class="row-btns"><button data-act="markAll" data-m="${m.id}" data-v="LT">Mark all long-term</button><button data-act="markAll" data-m="${m.id}" data-v="ST">Mark all short-term</button></span></div>`;
+}
+function familyView(P){
+  const all=[...state.members.flatMap(m=>P.out[m.id].acts), ...P.gifts].filter(a=>a.type==='info'||a.saved>=50).sort((a,b)=>b.saved-a.saved);
+  const blocked = state.members.filter(m=>['spouse','minorchild','huf','other'].includes(m.relation));
+  return `<div class="stack">
+  <div class="famgrid">${state.members.map(m=>{const r=P.out[m.id].r; const v=m.holdings.reduce((s,h)=>s+N(h.qty)*N(h.ltp),0); const pl=m.holdings.reduce((s,h)=>s+N(h.qty)*(N(h.ltp)-N(h.avg)),0);
+    return `<div class="panel famcard" data-act="tab" data-v="${m.id}" tabindex="0" role="button" aria-label="Open ${esc(m.name)}">
+    <div class="phead"><h3>${esc(m.name)}</h3><span class="chip">${REL[m.relation]}</span></div>
+    <div class="small muted">Portfolio <span class="num">${lakh(v)}</span> · unrealised <span class="num ${pl>=0?'pos':'neg'}">${lakh(pl)}</span></div>
+    ${bucketsHTML(m,P)}</div>`}).join('')}</div>
+  <div class="panel"><div class="phead"><h2>Family action plan</h2><span class="small muted">Sell ${fmtD(SELL_DAY)} · rebuy ${fmtD(BUY_DAY)} · ${daysLeft()} days left in FY</span></div>
+    <div class="acts">${all.length? all.map(a=>actHTML(a,true)).join('') : '<p class="muted">No moves right now. Add realised gains or buy dates, or add a family member with unused exemption.</p>'}</div>
+    ${blocked.length?`<p class="small muted" style="margin:12px 0 0">Not used as gift recipients: ${blocked.map(m=>`${esc(m.name)} (${esc(giftCheck(state.members[0],m).why||'clubbed')})`).join('; ')}. They can still harvest their own holdings.</p>`:''}
+  </div></div>`;
+}
+function memberView(m, P){
+  const o=P.out[m.id];
+  const gifts=P.gifts.filter(g=>g.to.id===m.id||g.from.id===m.id);
+  const acts=[...o.acts,...gifts].filter(a=>a.type==='info'||a.saved>=50).sort((a,b)=>b.saved-a.saved);
+  const tv=m.holdings.reduce((s,h)=>s+N(h.qty)*N(h.ltp),0), tc=m.holdings.reduce((s,h)=>s+N(h.qty)*N(h.avg),0);
+  const f=(k,lab,cls)=>`<label class="${cls||''}">${lab}<input type="number" inputmode="decimal" id="${m.id}-${k}" data-m="${m.id}" data-f="${k}" value="${esc(m[k]??'')}"></label>`;
+  return `<div class="grid2">
+  <div class="stack">
+    <div class="panel"><div class="phead"><h2>Tax buckets</h2><span class="small muted">FY ${state.settings.fyLabel}</span></div>${bucketsHTML(m,P)}</div>
+    <div class="panel"><div class="phead"><h2>Actions</h2><span class="small muted">best first</span></div>
+      <div class="acts">${acts.length?acts.map(a=>actHTML(a,false)).join(''):'<p class="muted">Nothing to do for this PAN right now.</p>'}</div></div>
+    <div class="panel"><div class="phead"><h2>Profile and gains booked</h2></div>
+      <div class="form">
+        <label>Name<input id="${m.id}-name" data-m="${m.id}" data-f="name" value="${esc(m.name)}"></label>
+        <label>Relation to you<select id="${m.id}-relation" data-m="${m.id}" data-f="relation">${Object.entries(REL).map(([k,v])=>`<option value="${k}" ${m.relation===k?'selected':''}>${v}</option>`).join('')}</select></label>
+        <label>Tax regime<select id="${m.id}-regime" data-m="${m.id}" data-f="regime"><option value="new" ${m.regime==='new'?'selected':''}>New</option><option value="old" ${m.regime==='old'?'selected':''}>Old</option></select></label>
+        <label>Age<select id="${m.id}-age" data-m="${m.id}" data-f="age"><option value="below60" ${m.age==='below60'?'selected':''}>Below 60</option><option value="60to80" ${m.age==='60to80'?'selected':''}>60 to 80</option><option value="above80" ${m.age==='above80'?'selected':''}>Above 80</option></select></label>
+        ${f('otherIncome','Other taxable income (salary, interest, rent)','full')}
+        ${f('stcg','STCG booked this FY')}${f('ltcg','LTCG booked this FY')}
+        ${f('stcl','ST losses booked this FY')}${f('ltcl','LT losses booked this FY')}
+        ${f('cfStcl','ST losses carried forward')}${f('cfLtcl','LT losses carried forward')}
+        <label class="chk full"><input type="checkbox" id="${m.id}-resident" data-m="${m.id}" data-f="resident" ${m.resident?'checked':''}> Resident in India</label>
+      </div>
+      <p class="small muted" style="margin:10px 0 0">Booked gains are in Kite Console → Reports → Tax P&amp;L. Losses carried forward are in last year's ITR (Schedule CFL).</p>
+      ${m.relation!=='self'?`<div class="row-btns" style="margin-top:12px">${confirmReset===m.id?`<span class="small">Remove ${esc(m.name)} and their holdings?</span><button class="danger" data-act="delMember" data-m="${m.id}">Remove</button><button data-act="cancel">Keep</button>`:`<button class="danger" data-act="askDel" data-m="${m.id}">Remove member</button>`}</div>`:''}
+    </div>
+  </div>
+  <div class="panel" style="min-width:0"><div class="phead"><h2>Portfolio</h2><span class="small muted">Value <span class="num">${inr(tv)}</span> · P&amp;L <span class="num ${tv-tc>=0?'pos':'neg'}">${inr(tv-tc)}</span></span></div>
+    ${unknownBanner(m)}
+    <div class="tablewrap" style="margin-top:10px"><table>
+      <thead><tr><th>Stock / fund</th><th>Qty</th><th>Avg cost</th><th>LTP</th><th>P&amp;L</th><th>Bought on</th><th>Term</th><th></th></tr></thead>
+      <tbody>${m.holdings.map((h,i)=>{const pl=N(h.qty)*(N(h.ltp)-N(h.avg)); const t=termOf(h);
+        const hf=(k,cls,type)=>`<input class="${cls||''}" type="${type||'number'}" ${type?'':'inputmode="decimal" step="any"'} id="${m.id}-h${i}-${k}" data-m="${m.id}" data-h="${i}" data-f="${k}" value="${esc(h[k]??'')}" aria-label="${k}">`;
+        return `<tr><td>${hf('sym','sym','text')}</td><td>${hf('qty')}</td><td>${hf('avg')}</td><td>${hf('ltp')}</td>
+        <td class="num ${pl>=0?'pos':'neg'}">${inr(pl)}</td><td>${hf('buy','','date')}</td>
+        <td>${h.buy?`<span class="chip ${t==='LT'?'good':'accent'}">${t}</span>`:`<select id="${m.id}-h${i}-term" data-m="${m.id}" data-h="${i}" data-f="term" aria-label="term"><option value="?" ${t==='?'?'selected':''}>?</option><option value="LT" ${t==='LT'?'selected':''}>LT</option><option value="ST" ${t==='ST'?'selected':''}>ST</option></select>`}</td>
+        <td><button class="link" data-act="delHolding" data-m="${m.id}" data-h="${i}" aria-label="Remove ${esc(h.sym)}">✕</button></td></tr>`}).join('')}</tbody>
+    </table></div>
+    <div class="row-btns" style="margin-top:12px"><button data-act="addHolding" data-m="${m.id}">Add holding</button><span class="small muted">LT = held over 12 months. A buy date sets it automatically. Equity mutual funds follow the same rules.</span></div>
+  </div></div>`;
+}
+function settingsHTML(){
+  const s=state.settings; const sf=(k,lab)=>`<label>${lab}<input type="number" step="any" id="s-${k}" data-s="${k}" value="${esc(s[k])}"></label>`;
+  return `<div class="stack">
+  <div class="form">${sf('ltcgExempt','LTCG exemption per PAN (₹)')}${sf('ltcgRate','LTCG rate %')}${sf('stcgRate','STCG rate %')}${sf('cess','Cess %')}${sf('costPct','Charges per side % (STT, brokerage, stamp)')}
+   <label>Financial year ends<input type="date" id="s-fyEnd" data-s="fyEnd" value="${esc(s.fyEnd)}"></label></div>
+  <div><h3 style="margin-bottom:6px">Import holdings from Kite</h3>
+   <p class="small muted" style="margin:0 0 8px">In Kite, go to Holdings → Download, open the CSV and paste it here. Existing stocks are updated; buy dates you entered are kept. You can also paste <span class="num">symbol,qty,avg,ltp,buy_date</span> lines.</p>
+   <div class="row-btns" style="margin-bottom:8px"><label class="small muted" for="impTo">Into</label><select id="impTo">${state.members.map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select></div>
+   <textarea id="impText" rows="5" placeholder="Instrument,Qty.,Avg. cost,LTP,..."></textarea>
+   <div class="row-btns" style="margin-top:8px"><button class="primary" data-act="importCsv">Import</button></div></div>
+  <div><h3 style="margin-bottom:6px">Backup</h3>
+   <p class="small muted" style="margin:0 0 8px">Everything is stored in this browser only. Copy the backup to move it to another device, and paste a backup here to restore it.</p>
+   <textarea id="bk" rows="4"></textarea>
+   <div class="row-btns" style="margin-top:8px"><button data-act="exportJson">Show backup</button><button data-act="copyJson">Copy</button><button data-act="importJson">Restore from box</button>
+   ${confirmReset==='all'?`<span class="small">Reset to the starting data?</span><button class="danger" data-act="reset">Reset</button><button data-act="cancel">Cancel</button>`:`<button class="danger" data-act="askReset">Reset all</button>`}</div></div>
+  </div>`;
+}
+function daysLeft(){ return Math.max(0, Math.round((new Date(state.settings.fyEnd)-TODAY)/864e5)); }
+function render(){
+  const P=plan();
+  document.getElementById('fy').innerHTML = `<span class="chip accent">FY ${esc(state.settings.fyLabel)}</span><span class="chip">${daysLeft()} days to 31 Mar</span><span class="chip">LT if bought before ${fmtDY(LT_CUTOFF)}</span>`;
+  document.getElementById('stats').innerHTML = statsHTML(P);
+  if(tab!=='family' && !state.members.find(m=>m.id===tab)) tab='family';
+  document.getElementById('tabs').innerHTML = [`<button class="tab" role="tab" aria-selected="${tab==='family'}" data-act="tab" data-v="family">Family</button>`,
+    ...state.members.map(m=>`<button class="tab" role="tab" aria-selected="${tab===m.id}" data-act="tab" data-v="${m.id}">${esc(m.name)}</button>`),
+    `<button class="tab add" data-act="addMember">+ Family member</button>`].join('');
+  document.getElementById('view').innerHTML = tab==='family' ? familyView(P) : memberView(state.members.find(m=>m.id===tab), P);
+  const sb=document.getElementById('settingsBody'); const keep=document.getElementById('impText')?.value||''; const keepBk=document.getElementById('bk')?.value||'';
+  sb.innerHTML=settingsHTML(); document.getElementById('impText').value=keep; document.getElementById('bk').value=keepBk;
+}
+function toast(t){ const el=document.getElementById('toast'); el.textContent=t; el.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>el.hidden=true,2200); }
+const byId = id => state.members.find(m=>m.id===id);
+
+/* ---------- import ---------- */
+function splitCsv(line){ const out=[]; let cur='', q=false; for(const c of line){ if(c==='"'){q=!q;continue;} if(c===','&&!q){out.push(cur);cur='';continue;} cur+=c; } out.push(cur); return out.map(s=>s.trim()); }
+function importCsv(text, m){
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean); if(!lines.length) return 0;
+  let head=splitCsv(lines[0]).map(s=>s.toLowerCase()); let idx={sym:0,qty:1,avg:2,ltp:3,buy:4}; let start=0;
+  const find=re=>head.findIndex(h=>re.test(h));
+  if(head.some(h=>/instrument|symbol|qty|quantity/.test(h))){
+    idx={sym:find(/instrument|symbol|scheme|fund/), qty:find(/^qty|quantity|units/), avg:find(/avg/), ltp:find(/ltp|last|nav|price/), buy:find(/buy|date/)}; start=1;
+  }
+  let n=0;
+  for(const l of lines.slice(start)){
+    const c=splitCsv(l); const sym=(c[idx.sym]||'').toUpperCase(); const qty=N(c[idx.qty]); if(!sym||!qty) continue;
+    const row={sym, qty, avg:N(c[idx.avg]), ltp:N(c[idx.ltp])}; const buy=idx.buy>=0?c[idx.buy]:'';
+    const ex=m.holdings.find(h=>h.sym===sym);
+    if(ex) Object.assign(ex,row, buy?{buy}:{}); else m.holdings.push({...row, buy:buy||'', term:'?'});
+    n++;
+  }
+  return n;
+}
+
+/* ---------- events ---------- */
+document.addEventListener('change', e=>{
+  const t=e.target, d=t.dataset;
+  if(d.s){ state.settings[d.s] = t.type==='number'? N(t.value) : t.value; }
+  else if(d.m && d.f){
+    const m=byId(d.m); const tgt = d.h!=null ? m.holdings[+d.h] : m;
+    let v = t.type==='checkbox' ? t.checked : t.value;
+    if(t.type==='number' && !(d.f==='otherIncome' && v==='')) v=N(v);
+    if(d.f==='sym') v=String(v).toUpperCase();
+    tgt[d.f]=v;
+  } else return;
+  save(); render();
+});
+document.addEventListener('keydown', e=>{ if((e.key==='Enter'||e.key===' ') && e.target.classList.contains('famcard')){ e.preventDefault(); e.target.click(); }});
+document.addEventListener('click', e=>{
+  const b=e.target.closest('[data-act]'); if(!b) return; const a=b.dataset.act, m=b.dataset.m?byId(b.dataset.m):null;
+  if(a==='tab'){ tab=b.dataset.v; confirmReset=false; render(); window.scrollTo({top:0}); return; }
+  if(a==='addMember'){ const id='m'+Date.now(); state.members.push({id,name:'New member',relation:'parent',regime:'new',age:'below60',resident:true,otherIncome:'',stcg:0,ltcg:0,stcl:0,ltcl:0,cfStcl:0,cfLtcl:0,holdings:[]}); tab=id; }
+  else if(a==='askDel'){ confirmReset=m.id; }
+  else if(a==='delMember'){ state.members=state.members.filter(x=>x.id!==m.id); tab='family'; confirmReset=false; toast('Member removed'); }
+  else if(a==='cancel'){ confirmReset=false; }
+  else if(a==='addHolding'){ m.holdings.push({sym:'',qty:0,avg:0,ltp:0,buy:'',term:'?'}); }
+  else if(a==='delHolding'){ m.holdings.splice(+b.dataset.h,1); }
+  else if(a==='markAll'){ m.holdings.forEach(h=>{ if(!h.buy) h.term=b.dataset.v; }); toast('Updated'); }
+  else if(a==='importCsv'){ const tm=byId(document.getElementById('impTo').value); const n=importCsv(document.getElementById('impText').value, tm); document.getElementById('impText').value=''; toast(n?`Imported ${n} holdings into ${tm.name}`:'No rows found. Check the first line has column names.'); }
+  else if(a==='exportJson'){ document.getElementById('bk').value=JSON.stringify(state); return; }
+  else if(a==='copyJson'){ const el=document.getElementById('bk'); if(!el.value) el.value=JSON.stringify(state);
+    navigator.clipboard?.writeText(el.value).then(()=>toast('Backup copied'), ()=>{el.select(); toast('Select and copy the text');}) ?? (el.select(), toast('Select and copy the text')); return; }
+  else if(a==='importJson'){ try{ const s=JSON.parse(document.getElementById('bk').value); if(!s.members) throw 0; state=s; tab='family'; toast('Backup restored'); }catch(err){ toast('That text is not a valid backup'); return; } }
+  else if(a==='askReset'){ confirmReset='all'; }
+  else if(a==='reset'){ state=JSON.parse(JSON.stringify(DEFAULTS)); confirmReset=false; tab='family'; toast('Reset done'); }
+  else return;
+  save(); render();
+});
+render();
+</script>
+</body>
+</html>
