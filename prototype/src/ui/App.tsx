@@ -14,6 +14,8 @@ import { Simulate } from './screens/Simulate';
 import { Family } from './screens/Family';
 import { Import } from './screens/Import';
 import { About, Footer } from './screens/About';
+import { Account, ChooseCopy } from './screens/Account';
+import { useCloud } from './useCloud';
 
 const TABS = [
   { route: 'home', label: 'Home', icon: Icon.home },
@@ -40,6 +42,12 @@ export function App() {
     return () => window.removeEventListener('hashchange', on);
   }, []);
 
+  const toast = useCallback((m: string) => {
+    setToast(m);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setToast(null), 2600);
+  }, []);
+  const cloud = useCloud(state, setState, toast);
   const [market, setMarket] = useState<Market>({ latest: null, previous: null });
   useEffect(() => { void loadMarket().then(setMarket); }, []);
 
@@ -61,14 +69,9 @@ export function App() {
     if (prev && JSON.stringify(prev) === JSON.stringify(snap)) return;
     setState((s) => ({ ...s, history: addSnapshot(s.history, snap) }));
   }, [fam, market.latest, live, state.history, state.members.length]);
-  const toast = useCallback((m: string) => {
-    setToast(m);
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setToast(null), 2600);
-  }, []);
 
   const ctx: Ctx = {
-    state, fam, famPrev, market, asOf, toast,
+    state, fam, famPrev, market, cloud, asOf, toast,
     update: (fn) => setState((s) => fn(s)),
     go: (r) => { location.hash = r; },
     indexOf: (id) => Math.max(0, state.members.findIndex((m) => m.id === id)),
@@ -84,6 +87,7 @@ export function App() {
   else if (route === 'family') screen = <Family />;
   else if (route === 'import') screen = <Import />;
   else if (route === 'about') screen = <About />;
+  else if (route === 'account') screen = <Account />;
   else screen = <Home days={days} />;
 
   return (
@@ -100,13 +104,17 @@ export function App() {
               ))}
             </nav>
             <span className="spacer" />
-            <a className="privacy-note" href="#about" style={{ textDecoration: 'none' }}><Svg size={14}>{Icon.lock}</Svg>Your files stay in this browser</a>
+            <a className="privacy-note" href="#about" style={{ textDecoration: 'none' }}><Svg size={14}>{Icon.lock}</Svg>{cloud.session ? 'Saved to your account' : 'Your files stay in this browser'}</a>
+            <a className="btn sm" href="#account" aria-current={route === 'account' ? 'page' : undefined}>
+              {cloud.session ? (cloud.profile?.first_name || 'Account') : 'Sign in'}
+            </a>
           </div>
         </header>
         <main>
           {saveFailed && (
             <div className="banner warn" role="status">This browser is not saving data (private window or storage blocked). Changes will be lost when you close the tab.</div>
           )}
+          <ChooseCopy />
           {screen}
           <Footer />
         </main>

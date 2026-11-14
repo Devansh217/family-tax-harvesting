@@ -12,10 +12,11 @@
     "check:private": "vite-node scripts/check-private.ts"
   },
   "dependencies": {
-    "pdfjs-dist": "^4.10.38",
+    "@supabase/supabase-js": "2.118.0",
+    "pdfjs-dist": "4.10.38",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "read-excel-file": "^9.3.14"
+    "read-excel-file": "9.3.14"
   },
   "devDependencies": {
     "@types/node": "^22.15.21",

@@ -3,6 +3,7 @@ import type { FamilyView, Move } from '../engine/family';
 import type { ISODate } from '../engine/types';
 import type { AppState } from '../store';
 import type { Market } from './market';
+import type { Cloud } from './useCloud';
 
 export interface Ctx {
   state: AppState;
@@ -11,6 +12,7 @@ export interface Ctx {
   /** The same family at the previous close, when the site has yesterday's prices. */
   famPrev: FamilyView | null;
   market: Market;
+  cloud: Cloud;
   asOf: ISODate;
   go: (route: string) => void;
   toast: (msg: string) => void;

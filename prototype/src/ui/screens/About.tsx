@@ -45,8 +45,8 @@ export function About() {
           <div className="li" style={{ alignItems: 'flex-start' }}>
             <Svg size={20}>{Icon.lock}</Svg>
             <span className="grow stack" style={{ gap: 2 }}>
-              <strong>Stays on this device</strong>
-              <span className="small muted">In this version files are read in your browser and kept in its local storage. Nothing is uploaded to a server. Clearing site data, or Delete all data on the Family page, removes it.</span>
+              <strong>Where it is kept</strong>
+              <span className="small muted">Statement files are always read in your browser; the files themselves are never uploaded. Without an account, the results stay in this browser only. If you sign in, your family&rsquo;s data (members, transactions, plan and daily history) is saved to your account in our database, hosted by Supabase, locked so that only your login can read it. You can delete it from the Account page at any time.</span>
             </span>
           </div>
           <div className="li" style={{ alignItems: 'flex-start' }}>
@@ -87,7 +87,7 @@ export function FirstRunNotice() {
       <h2 id="first-h">Before you start</h2>
       <ul className="small" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
         {NOT_ADVICE_POINTS.map((p) => <li key={p.title}><strong>{p.title}.</strong> <span className="muted">{p.body}</span></li>)}
-        <li><strong>Your data is never used for ads or sold.</strong> <span className="muted">It stays in this browser.</span></li>
+        <li><strong>Your data is never used for ads or sold.</strong> <span className="muted">It stays in this browser, or in your account if you sign in, where only you can read it.</span></li>
       </ul>
       <div className="row wrap">
         <button className="btn primary" type="button" onClick={() => update((s) => ({ ...s, ackGuidance: true }))}>I understand</button>

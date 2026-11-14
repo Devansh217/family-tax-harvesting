@@ -47,11 +47,20 @@ export function loadState(): AppState | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as AppState;
-    return s.version === 1 ? { ...s, plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [] } : null;
+    return normalizeState(s);
   } catch {
     return null;
   }
 }
+
+/** Fills fields added after a copy was saved (older browser data or an account copy). Null if unusable. */
+export function normalizeState(s: AppState | null | undefined): AppState | null {
+  if (!s || s.version !== 1 || !Array.isArray(s.members)) return null;
+  return { ...s, plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done: s.done ?? {}, positions: s.positions ?? [] };
+}
+
+/** True when the state holds a real family worth keeping, not the sample or an untouched start. */
+export const hasRealData = (s: AppState) => !s.isSample && s.members.length > 0 && (s.txns.length > 0 || s.members.length > 1);
 
 export function saveState(s: AppState): boolean {
   try {
