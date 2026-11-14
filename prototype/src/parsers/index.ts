@@ -5,7 +5,7 @@ import { detectKind, findHeaderRow, guessMapping, parseTable, type Mapping } fro
 export * from './common';
 export { FIELDS, FIELD_LABELS, detectKind, guessMapping, parseTable, type Field, type Mapping } from './table';
 export { extractLines, PdfPasswordError, type PdfJsLike } from './pdfText';
-export { isZerodhaTaxPnl, parseZerodhaTaxPnl, type BrokerSummary } from './zerodhaTaxPnl';
+export { isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseZerodhaTaxPnl, type BrokerSummary } from './zerodhaTaxPnl';
 
 export interface TablePreview {
   rows: string[][];

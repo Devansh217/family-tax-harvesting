@@ -115,3 +115,39 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
     txns, prices: [], warnings, skipped, brokerSummary: summary, fmv2018,
   };
 }
+
+/** Zerodha Console holdings workbook: "Equity" and "Mutual Funds" sheets ("Combined" repeats them and is skipped). */
+export const isZerodhaHoldings = (sheets: Sheet[]) =>
+  sheets.some((s) => s.data.some((r) => r.map(text).includes('Quantity Available') && r.map(text).includes('Previous Closing Price')));
+
+export function parseZerodhaHoldings(sheets: Sheet[]): ParseResult {
+  const named = sheets.filter((s) => !/^Combined$/i.test(s.sheet));
+  const use = named.length ? named : sheets;
+  const prices: ParseResult['prices'] = [];
+  let skipped = 0;
+  for (const s of use) {
+    const hi = s.data.findIndex((r) => r.map(text).includes('Quantity Available'));
+    if (hi < 0) continue;
+    const head = s.data[hi]!.map(text);
+    const col = (name: string) => head.indexOf(name);
+    const qtyCols = head.map((h, i) => (/^Quantity (Available|Discrepant|Pledged)/i.test(h) ? i : -1)).filter((i) => i >= 0);
+    for (const r of s.data.slice(hi + 1)) {
+      const symbol = text(r[col('Symbol')]);
+      const isin = findIsin(text(r[col('ISIN')])) ?? (symbol ? `SYM:${symbol.toUpperCase()}` : null);
+      const units = qtyCols.reduce((a, i) => a + (num(r[i]) ?? 0), 0);
+      const avg = num(r[col('Average Price')]);
+      const close = num(r[col('Previous Closing Price')]);
+      if (!isin || !symbol || units <= 0 || close == null) { if (symbol) skipped++; continue; }
+      const lt = col('Quantity Long Term') >= 0 ? num(r[col('Quantity Long Term')]) : null;
+      prices.push({
+        isin, name: symbol, kind: kindFromIsin(isin, symbol),
+        price: toPaise(close), qty: toQty(units), cost: avg != null ? toPaise(avg * units) : undefined,
+        ltQty: lt != null ? toQty(lt) : undefined,
+      });
+    }
+  }
+  return {
+    format: 'Zerodha holdings', txns: [], prices, skipped,
+    warnings: ['Holdings give current units, average cost and the previous close. Buy dates come from the tradebooks.'],
+  };
+}

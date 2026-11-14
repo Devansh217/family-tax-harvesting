@@ -17,7 +17,22 @@ export interface FamilyState {
   plannedSales?: PlannedSale[];
   /** `${memberId}|${isin}` → the money is needed within 12 months, so no sell-and-buy-back or gift is suggested. */
   needSoon?: Record<string, boolean>;
+  /** Broker tax P&L totals. Where the engine's own gains for that account and period differ, the broker's are used. */
+  brokerSummaries?: Array<{ memberId: string; account: string; summary: BrokerTotals }>;
 }
+
+export interface BrokerTotals {
+  broker: string;
+  from: ISODate | null;
+  to: ISODate | null;
+  equityShortTerm: Paise | null;
+  equityLongTerm: Paise | null;
+  mfShortTerm: Paise | null;
+  mfLongTerm: Paise | null;
+}
+
+/** One booked-gain correction per category where the broker's total and the engine's differ. */
+export interface BrokerAdjustment { memberId: string; account: string; broker: string; label: string; term: Term; gain: Paise }
 
 export interface HoldingLot {
   account: string;
@@ -81,6 +96,10 @@ export interface FamilyView {
   members: MemberView[];
   moves: Move[];
   ledger: Ledger;
+  /** Corrections that make booked gains equal the broker's tax P&L where trade history is incomplete. */
+  brokerAdjustments: BrokerAdjustment[];
+  /** Realised gains used for tax: the ledger's plus any broker adjustments. */
+  booked: Realised[];
   /** Gains the planned sales would realise. Their lots are already removed from `ledger.lots`. */
   plannedRealised: Realised[];
   securities: Map<string, Security>;
@@ -226,6 +245,30 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   const id = () => `mv${++n}`;
   const LT = ltRate(rules), ST = stRate(rules);
 
+  // Where history is incomplete, trust the broker's booked totals so room and tax are right.
+  const brokerAdjustments: BrokerAdjustment[] = [];
+  for (const b of state.brokerSummaries ?? []) {
+    const s = b.summary;
+    const from = s.from ?? rules.start, to = s.to ?? rules.end;
+    const mine = ledger.realised.filter((r) => r.memberId === b.memberId && (r.account ?? '') === b.account && inRange(r.sellDate, from, to));
+    const isEq = (isin: string) => (secs.get(isin)?.kind ?? 'equity') === 'equity';
+    const cats: Array<[string, Paise | null, Term, boolean]> = [
+      ['Shares, short-term', s.equityShortTerm, 'st', true], ['Shares, long-term', s.equityLongTerm, 'lt', true],
+      ['Mutual funds, short-term', s.mfShortTerm, 'st', false], ['Mutual funds, long-term', s.mfLongTerm, 'lt', false],
+    ];
+    for (const [label, broker, term, eq] of cats) {
+      if (broker == null) continue;
+      const ours = mine.filter((r) => r.term === term && isEq(r.isin) === eq).reduce((a, r) => a + r.gain, 0);
+      const diff = broker - ours;
+      if (Math.abs(diff) > Math.max(100, Math.abs(broker) * 0.0005)) brokerAdjustments.push({ memberId: b.memberId, account: b.account, broker: s.broker, label, term, gain: diff });
+    }
+  }
+  const adjRealised: Realised[] = brokerAdjustments.map((a) => ({
+    memberId: a.memberId, isin: `ADJ:${a.label}`, account: a.account, buyDate: rules.start, sellDate: rules.start,
+    qty: 0, proceeds: 0, cost: 0, gain: a.gain, term: a.term,
+  }));
+  const booked = [...ledger.realised, ...adjRealised];
+
   const views: MemberView[] = state.members.map((member) => {
     const intradayDetected = ledger.intraday
       .filter((t) => t.memberId === member.id && inRange(t.date, rules.start, rules.end))
@@ -235,7 +278,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
       nonSpeculative: member.business?.fno ?? 0,
       intradayDetected,
     };
-    const year = summariseYear(member, ledger.realised, rules, business);
+    const year = summariseYear(member, booked, rules, business);
     const plan = year;
     const isins = new Set<string>();
     for (const [key, lots] of ledger.lots) if (key.startsWith(`${member.id}|`) && lots.length) isins.add(lots[0]!.isin);
@@ -276,7 +319,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   }
   for (const v of views) {
     const mine = plannedRealised.filter((r) => r.memberId === v.member.id);
-    v.plan = mine.length ? summariseYear(v.member, [...ledger.realised, ...mine], rules, v.business) : v.year;
+    v.plan = mine.length ? summariseYear(v.member, [...booked, ...mine], rules, v.business) : v.year;
     v.planned = {
       gain: mine.reduce((a, r) => a + r.gain, 0),
       tax: v.plan.tax - v.year.tax,
@@ -388,7 +431,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   const later = moves.filter(isLaterBenefit);
   const now = moves.filter((m) => !isLaterBenefit(m));
   return {
-    asOf, rules, members: views, moves, ledger, plannedRealised, securities: secs,
+    asOf, rules, members: views, moves, ledger, brokerAdjustments, booked, plannedRealised, securities: secs,
     totals: {
       freeRoom: sum((v) => v.plan.room.free),
       bonusFree: sum((v) => v.plan.bonus.free),
@@ -425,7 +468,7 @@ export function simulateSale(fam: FamilyView, memberId: string, isin: string, qt
   const available = queues(fam.ledger, memberId, isin).reduce((a, q) => a + q.lots.reduce((b, l) => b + l.qty, 0), 0);
   const sold = sellAcrossAccounts(fam.ledger, memberId, sec, Math.min(qty, available), asOf, rules, false);
   const plannedMine = fam.plannedRealised.filter((r) => r.memberId === memberId);
-  const after = summariseYear(v.member, [...fam.ledger.realised, ...plannedMine, ...sold], rules, v.business);
+  const after = summariseYear(v.member, [...fam.booked, ...plannedMine, ...sold], rules, v.business);
   const s = (t: Term) => sold.filter((r) => r.term === t).reduce((a, r) => a + r.gain, 0);
   return {
     qty: Math.min(qty, available), available,

@@ -70,10 +70,10 @@ export function Import() {
     if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files);
   };
 
-  const add = (item: Item, account: string) => {
+  const add = (item: Item, account: string, checkOnly = false) => {
     const r = resultOf(item);
     if (!r || !member) return;
-    update((s) => applyImport(s, member.id, item.name, r, { openingDate: opening ? openingDate : undefined, account: account.trim() || undefined }));
+    update((s) => applyImport(s, member.id, item.name, r, { openingDate: opening ? openingDate : undefined, account: account.trim() || undefined, checkOnly }));
     setItems((xs) => xs.map((x) => (x.id === item.id && (x.status === 'pdf' || x.status === 'table' || x.status === 'statement') ? { ...x, added: true } : x)));
     toast(`Added to ${member.name}`);
   };
@@ -148,7 +148,8 @@ export function Import() {
             <span>For holdings with no trade history, record them as bought on (estimated, never used for moves)</span>
             <input type="date" value={openingDate} onChange={(e) => setOpeningDate(e.target.value)} style={{ width: 160 }} disabled={!opening} />
           </label>
-          {items.map((it) => <ItemCard key={it.id} item={it} memberName={member?.name ?? ''} onChange={(n) => set(it.id, n)} onAdd={(acct) => add(it, acct)} onPassword={(pw) => { if (it.status === 'password') { set(it.id, { id: it.id, name: it.name, file: it.file, status: 'reading' }); void readPdf(it.id, it.file, pw); } }} onDismiss={() => setItems((xs) => xs.filter((x) => x.id !== it.id))} />)}
+          {items.map((it) => <ItemCard key={it.id} item={it} memberName={member?.name ?? ''} onChange={(n) => set(it.id, n)} onAdd={(acct, checkOnly) => add(it, acct, checkOnly)}
+            hasTradebook={!!member && state.txns.some((t) => t.memberId === member.id && /Trade history/.test(t.source))} onPassword={(pw) => { if (it.status === 'password') { set(it.id, { id: it.id, name: it.name, file: it.file, status: 'reading' }); void readPdf(it.id, it.file, pw); } }} onDismiss={() => setItems((xs) => xs.filter((x) => x.id !== it.id))} />)}
         </section>
       )}
 
@@ -172,14 +173,18 @@ export function Import() {
   );
 }
 
-function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDismiss }: {
-  item: Item; memberName: string; onChange: (i: Item) => void; onAdd: (account: string) => void; onPassword: (pw: string) => void; onDismiss: () => void;
+function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDismiss, hasTradebook }: {
+  item: Item; memberName: string; onChange: (i: Item) => void; onAdd: (account: string, checkOnly: boolean) => void; onPassword: (pw: string) => void; onDismiss: () => void;
+  hasTradebook: boolean;
 }) {
   const [pw, setPw] = useState('');
   const r = resultOf(item);
   const [account, setAccount] = useState<string | null>(null);
   const acct = account ?? (r ? guessAccount(item.name, r.format) : '');
   const hasFolios = !!r?.txns.some((t) => t.account);
+  const isPnl = !!r?.brokerSummary;
+  const [importExits, setImportExits] = useState<boolean | null>(null);
+  const exits = importExits ?? !hasTradebook;
   const added = (item.status === 'pdf' || item.status === 'table' || item.status === 'statement') && item.added;
 
   return (
@@ -253,12 +258,18 @@ function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDismiss }: 
               <pre className="lines">{item.lines.slice(0, 200).join('\n')}</pre>
             </details>
           )}
+          {isPnl && (
+            <label className="row small" style={{ gap: 8 }}>
+              <input type="checkbox" checked={exits} onChange={(e) => setImportExits(e.target.checked)} disabled={added} />
+              <span>Also import its exits as trades. Leave off when you import tradebooks for the same dates, or sales are counted twice; the report is then used only to check the numbers and for F&amp;O.</span>
+            </label>
+          )}
           <div className="row wrap" style={{ alignItems: 'flex-end' }}>
             <label className="field" style={{ width: 220 }}>
               {hasFolios ? 'Account (folios are read from the CAS)' : 'Demat account or platform'}
               <input value={acct} placeholder="e.g. Zerodha" onChange={(e) => setAccount(e.target.value)} disabled={added} />
             </label>
-            <button className="btn primary" type="button" disabled={added || (r.txns.length === 0 && r.prices.length === 0)} onClick={() => onAdd(acct)}>
+            <button className="btn primary" type="button" disabled={added || (r.txns.length === 0 && r.prices.length === 0)} onClick={() => onAdd(acct, isPnl && !exits)}>
               {added ? `Added to ${memberName}` : `Add to ${memberName}`}
             </button>
           </div>

@@ -1,4 +1,4 @@
-import { extractLines, isZerodhaTaxPnl, parseZerodhaTaxPnl, previewRows, previewTable, type ParseResult, type PdfJsLike, type TablePreview } from '../parsers';
+import { extractLines, isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseZerodhaTaxPnl, previewRows, previewTable, type ParseResult, type PdfJsLike, type TablePreview } from '../parsers';
 
 let pdfjsPromise: Promise<PdfJsLike> | null = null;
 
@@ -27,6 +27,7 @@ export async function readSpreadsheet(file: File): Promise<SheetRead> {
     const { default: readXlsxFile } = await import('read-excel-file/browser');
     const sheets = (await readXlsxFile(file)).map((s) => ({ sheet: s.sheet, data: s.data as unknown[][] }));
     if (isZerodhaTaxPnl(sheets)) return { kind: 'statement', result: parseZerodhaTaxPnl(sheets) };
+    if (isZerodhaHoldings(sheets)) return { kind: 'statement', result: parseZerodhaHoldings(sheets) };
     const previews = sheets.map((s) => previewRows(s.data));
     return { kind: 'table', preview: previews.find((p) => p.kind !== 'unknown') ?? previews[0] ?? previewRows([]) };
   }

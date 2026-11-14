@@ -45,8 +45,12 @@ export function MemberScreen({ id }: { id: string }) {
     .slice(0, 6);
   const positions = state.positions.filter((p) => p.memberId === id);
   const mismatches = positions
-    .map((p) => ({ p, held: holdings.find((h) => h.isin === p.isin)?.qty ?? 0, name: fam.securities.get(p.isin)?.name ?? p.isin }))
-    .filter((x) => Math.abs(x.held - x.p.qty) > 10);
+    .map((p) => {
+      const h = holdings.find((x) => x.isin === p.isin);
+      const ltHeld = h ? h.lots.filter((l) => l.term === 'lt').reduce((a, l) => a + l.qty, 0) : 0;
+      return { p, held: h?.qty ?? 0, ltHeld, name: fam.securities.get(p.isin)?.name ?? p.isin };
+    })
+    .filter((x) => Math.abs(x.held - x.p.qty) > 10 || (x.p.ltQty != null && Math.abs(x.ltHeld - x.p.ltQty) > 10));
   const imports = state.imports.filter((i) => i.memberId === id);
 
   const setSecurity = (isin: string, patch: { price?: Paise; fmv2018?: Paise }) =>
@@ -148,6 +152,9 @@ export function MemberScreen({ id }: { id: string }) {
               </table>
             </div>
             {!allOk && <p className="tiny muted">Differences usually mean older purchases are missing (import earlier tradebooks), a corporate action, or the same trades imported twice from different files.</p>}
+            {fam.brokerAdjustments.some((a) => a.memberId === id && a.account === b.account) && (
+              <p className="small" style={{ color: 'var(--time)' }}>Until the history is complete, booked gains, room and tax use {b.summary.broker}&rsquo;s figures for these lines, so they stay correct. Moves still need the purchase dates.</p>
+            )}
           </Section>
         );
       })}
@@ -158,7 +165,13 @@ export function MemberScreen({ id }: { id: string }) {
       {mismatches.length > 0 && (
         <div className="banner warn">
           <ul className="warnlist grow">
-            {mismatches.map((x) => <li key={x.p.isin}>{x.name}: statement shows {units(x.p.qty)} units, trade history gives {units(x.held)}. Older purchases may be missing.</li>)}
+            {mismatches.map((x) => (
+              <li key={x.p.isin}>
+                {Math.abs(x.held - x.p.qty) > 10
+                  ? <>{x.name}: holdings show {units(x.p.qty)} units, trade history gives {units(x.held)}. Older purchases may be missing.</>
+                  : <>{x.name}: broker counts {units(x.p.ltQty ?? 0)} units as long-term, trade history gives {units(x.ltHeld)}.</>}
+              </li>
+            ))}
           </ul>
         </div>
       )}

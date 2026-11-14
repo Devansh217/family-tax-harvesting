@@ -10,7 +10,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import readXlsxFile from 'read-excel-file/node';
-import { extractLines, isZerodhaTaxPnl, parseStatementLines, parseTablePreview, parseZerodhaTaxPnl, PdfPasswordError, previewRows, previewTable, type PdfJsLike } from '../src/parsers';
+import { extractLines, isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseStatementLines, parseTablePreview, parseZerodhaTaxPnl, PdfPasswordError, previewRows, previewTable, type PdfJsLike } from '../src/parsers';
 import { computeFamily } from '../src/engine/family';
 import { FY_2026_27 } from '../src/engine/rules';
 import { reconcile } from '../src/reconcile';
@@ -39,7 +39,10 @@ for (const f of files) {
     } else if (lower.endsWith('.xlsx')) {
       const sheets = await readXlsxFile(path);
       const asSheets = sheets.map((s) => ({ sheet: s.sheet, data: s.data as unknown[][] }));
-      if (isZerodhaTaxPnl(asSheets)) {
+      if (isZerodhaHoldings(asSheets)) {
+        r = parseZerodhaHoldings(asSheets);
+        console.log(`\n${f}: Zerodha holdings, ${r.prices.filter((p) => p.ltQty != null).length} with long-term quantity`);
+      } else if (isZerodhaTaxPnl(asSheets)) {
         r = parseZerodhaTaxPnl(asSheets);
         // Reconcile: rebuild gains from the exits and compare with Zerodha's own totals. Prints match / % only.
         let st: AppState = { ...emptyState(), members: [{ id: 'm', name: 'Member', relation: 'self', age: 40, regime: 'new', otherIncome: 20_00_000_00 }] };

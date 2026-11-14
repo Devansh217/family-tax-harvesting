@@ -59,3 +59,35 @@ describe('Zerodha tax P&L', () => {
     expect(fam.members[0]!.year.business.setOffAgainstGains).toBe(9800_00);
   });
 });
+
+describe('Zerodha holdings and check-only tax P&L', () => {
+  const HH = [null, 'Symbol', 'ISIN', 'Sector', 'Quantity Available', 'Quantity Discrepant', 'Quantity Long Term', 'Quantity Pledged (Margin)', 'Quantity Pledged (Loan)', 'Average Price', 'Previous Closing Price', 'Unrealized P&L', 'Unrealized P&L Pct.'];
+  const holdings = [
+    { sheet: 'Equity', data: [[null, 'Client ID', 'XX0000'], HH, [null, 'INFY', 'INE009A01021', 'IT', 8, 0, 6, 2, 0, 1500, 1900, 3200, 26.6]] },
+    { sheet: 'Mutual Funds', data: [[null, 'Symbol', 'ISIN', 'Instrument Type', 'Quantity Available', 'Quantity Discrepant', 'Quantity Pledged (Margin)', 'Quantity Pledged (Loan)', 'Average Price', 'Previous Closing Price'], [null, 'PARAG PARIKH FLEXI CAP', 'INF879O01027', 'Equity', 100.5, 0, 0, 0, 50, 94.26]] },
+    { sheet: 'Combined', data: [HH, [null, 'INFY', 'INE009A01021', 'IT', 8, 0, 6, 2, 0, 1500, 1900, 3200, 26.6]] },
+  ];
+
+  it('reads equity and fund sheets, counts pledged units, and skips the combined sheet', async () => {
+    const { isZerodhaHoldings, parseZerodhaHoldings } = await import('./parsers');
+    expect(isZerodhaHoldings(holdings)).toBe(true);
+    const r = parseZerodhaHoldings(holdings);
+    expect(r.prices).toHaveLength(2);
+    expect(r.prices[0]).toMatchObject({ isin: 'INE009A01021', qty: 100_000, ltQty: 60_000, price: 1900_00, cost: 15000_00 });
+    expect(r.prices[1]).toMatchObject({ isin: 'INF879O01027', kind: 'equity_mf', qty: 1_005_000 });
+  });
+
+  it('check-only keeps the broker totals and F&O but adds no trades', () => {
+    let s: AppState = { ...emptyState(), members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new' }] };
+    s = applyImport(s, 'a', 'taxpnl.xlsx', parseZerodhaTaxPnl(sheets), { account: 'Zerodha', checkOnly: true });
+    expect(s.txns).toHaveLength(0);
+    expect(s.brokerSummaries).toHaveLength(1);
+    expect(s.members[0]!.business?.fno).toBe(-10000_00);
+    // With no trades of its own, booked gains come from the broker's totals so room and tax stay right.
+    const fam = computeFamily(s, '2026-11-14', FY_2026_27);
+    expect(fam.brokerAdjustments.map((a) => a.label)).toEqual(['Shares, short-term', 'Shares, long-term', 'Mutual funds, long-term']);
+    expect(fam.members[0]!.year.stGains).toBe(2500_00);
+    expect(fam.members[0]!.year.ltGains).toBe(25000_00);
+    expect(reconcile(fam, s.brokerSummaries[0]!).find((l) => l.label === 'Shares, long-term')!.ok).toBe(false);
+  });
+});

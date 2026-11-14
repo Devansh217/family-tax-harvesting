@@ -100,6 +100,8 @@ export interface ParsedPrice {
   qty?: Qty;
   /** Average or total cost if the statement shows it. */
   cost?: Paise;
+  /** Units the broker counts as long-term, when it says (Zerodha holdings). */
+  ltQty?: Qty;
 }
 
 export interface ParseResult {

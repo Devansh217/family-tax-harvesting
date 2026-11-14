@@ -15,7 +15,7 @@ export interface ImportRecord {
 }
 
 /** Units a statement says a member holds, to check the trade history against. */
-export interface Position { memberId: string; isin: string; qty: Qty; asOf?: ISODate; source: string }
+export interface Position { memberId: string; isin: string; qty: Qty; ltQty?: Qty; asOf?: ISODate; source: string }
 
 export interface AppState {
   version: 1;
@@ -101,6 +101,8 @@ function upsertSecurity(list: Security[], p: { isin: string; name: string; kind:
 export interface ImportOptions {
   /** Demat account or platform for rows the file does not label, e.g. "Zerodha". */
   account?: string;
+  /** Keep only the broker's totals and F&O figures, not the trades (when tradebooks cover the same dates). */
+  checkOnly?: boolean;
   /** For holdings with no trade history: create an opening lot dated this, at the statement's cost if known. */
   openingDate?: ISODate;
 }
@@ -116,8 +118,9 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
   const existing = new Set(s.txns.map((t) => t.id));
   let added = 0;
 
+  const txns = opts.checkOnly ? [] : r.txns;
   for (const t of r.txns) upsertSecurity(s.securities, t);
-  for (const t of r.txns) {
+  for (const t of txns) {
     const isin = resolveIsin(t.isin, t.name, s.securities);
     const base = `${memberId}|${isin}|${t.date}|${t.side}|${t.qty}|${t.amount}`;
     const n = (seen.get(base) ?? 0) + 1;
@@ -134,7 +137,7 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
     upsertSecurity(s.securities, { ...p, isin }, p);
     if (p.qty != null) {
       s.positions = s.positions.filter((x) => !(x.memberId === memberId && x.isin === isin && x.source === r.format));
-      s.positions.push({ memberId, isin, qty: p.qty, asOf: p.priceDate, source: r.format, importId });
+      s.positions.push({ memberId, isin, qty: p.qty, ltQty: p.ltQty, asOf: p.priceDate, source: r.format, importId });
     }
     const hasHistory = s.txns.some((t) => t.memberId === memberId && t.isin === isin && (t.account ?? '') === (opts.account ?? ''));
     if (opts.openingDate && p.qty && p.qty > 0 && !hasHistory) {

@@ -44,6 +44,7 @@ export function Home({ days }: { days: number }) {
   const openLater = open.filter(isLaterBenefit).reduce((a, m) => a + m.saving, 0);
   const openNow = open.filter((m) => !isLaterBenefit(m)).reduce((a, m) => a + m.saving, 0);
   const uncertain = fam.totals.uncertainLots;
+  const adjusted = new Set(fam.brokerAdjustments.map((a) => a.memberId)).size;
   const warnings = fam.ledger.warnings.length;
   const unpriced = fam.members.flatMap((v) => v.holdings).filter((h) => h.price == null).length;
 
@@ -110,11 +111,12 @@ export function Home({ days }: { days: number }) {
 
       <SinceClose />
 
-      {(warnings > 0 || unpriced > 0 || uncertain > 0) && (
+      {(warnings > 0 || unpriced > 0 || uncertain > 0 || adjusted > 0) && (
         <div className="banner warn" role="status">
           <span className="grow">
             {warnings > 0 && <>{warnings} {warnings === 1 ? 'sale has' : 'sales have'} no matching purchase history. </>}
             {unpriced > 0 && <>{unpriced} {unpriced === 1 ? 'holding has' : 'holdings have'} no current price, so their gains are not counted. </>}
+            {adjusted > 0 && <>Booked gains for {adjusted} {adjusted === 1 ? 'member use' : 'members use'} the broker&rsquo;s tax P&amp;L because some purchase history is missing. </>}
             {uncertain > 0 && <>{uncertain} {uncertain === 1 ? 'lot has' : 'lots have'} an estimated purchase date or no 31 Jan 2018 value, so no moves use {uncertain === 1 ? 'it' : 'them'}. </>}
             Import more statements or add prices on the member pages.
           </span>

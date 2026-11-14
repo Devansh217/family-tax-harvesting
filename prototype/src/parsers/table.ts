@@ -18,11 +18,11 @@ const ALIASES: Record<Field, RegExp> = {
   symbol: /^(symbol|trading[\s_]?symbol|tradingsymbol|scrip([\s_]?name)?|instrument|stock([\s_]?name)?|company([\s_]?name)?|security([\s_]?name)?|scheme([\s_]?name)?|fund([\s_]?name)?|name)$/i,
   isin: /^isin([\s_]?(code|no\.?))?$/i,
   side: /^(trade[\s_]?type|type|buy\/?sell|b\/s|side|action|transaction[\s_]?type|order[\s_]?side)$/i,
-  qty: /^(quantity|qty\.?|units|no\.?[\s_]?of[\s_]?(shares|units)|shares)$/i,
-  price: /^(price|rate|trade[\s_]?price|nav|execution[\s_]?price|avg\.?[\s_]?price|average[\s_]?price|purchase[\s_]?price)$/i,
+  qty: /^(quantity|qty\.?|units|no\.?[\s_]?of[\s_]?(shares|units)|shares|quantity[\s_]?available|available[\s_]?qty\.?)$/i,
+  price: /^(price|rate|trade[\s_]?price|nav|execution[\s_]?price|purchase[\s_]?price)$/i,
   amount: /^(amount|value|net[\s_]?amount|trade[\s_]?value|total([\s_]?amount)?|order[\s_]?value|investment)$/i,
-  avgCost: /^(avg\.?[\s_]?cost|average[\s_]?cost|buy[\s_]?avg\.?|average[\s_]?buy[\s_]?price|avg\.?[\s_]?buy[\s_]?price)$/i,
-  ltp: /^(ltp|last[\s_]?price|current[\s_]?price|market[\s_]?price|closing[\s_]?price|cmp|current[\s_]?nav|last[\s_]?traded[\s_]?price)$/i,
+  avgCost: /^(avg\.?[\s_]?cost|average[\s_]?cost|buy[\s_]?avg\.?|average[\s_]?buy[\s_]?price|avg\.?[\s_]?buy[\s_]?price|avg\.?[\s_]?price|average[\s_]?price)$/i,
+  ltp: /^(ltp|last[\s_]?price|current[\s_]?price|market[\s_]?price|closing[\s_]?price|cmp|current[\s_]?nav|last[\s_]?traded[\s_]?price|previous[\s_]?closing[\s_]?price|prev\.?[\s_]?close|close[\s_]?price)$/i,
   segment: /^(segment|exchange[\s_]?segment|product)$/i,
 };
 
@@ -46,7 +46,7 @@ export function guessMapping(header: string[]): Mapping {
 
 /** "Trades" when the file has a date and a buy/sell column, "Holdings" when it has current prices but no dates. */
 export function detectKind(m: Mapping): 'trades' | 'holdings' | 'unknown' {
-  if (m.date >= 0 && m.qty >= 0 && (m.price >= 0 || m.amount >= 0)) return 'trades';
+  if (m.date >= 0 && m.qty >= 0 && (m.price >= 0 || m.amount >= 0 || m.avgCost >= 0)) return 'trades';
   if (m.qty >= 0 && (m.ltp >= 0 || m.avgCost >= 0)) return 'holdings';
   return 'unknown';
 }
@@ -82,7 +82,7 @@ export function parseTable(rows: string[][], headerIdx: number, m: Mapping, form
     if (kind === 'trades') {
       const date = parseDate(cell(r, 'date'));
       const side = sideOf(cell(r, 'side'), qtyN);
-      const price = parseNumber(cell(r, 'price'));
+      const price = parseNumber(cell(r, 'price')) ?? parseNumber(cell(r, 'avgCost'));
       const amount = parseNumber(cell(r, 'amount'));
       const units = Math.abs(qtyN);
       const total = amount != null && amount !== 0 ? Math.abs(amount) : price != null ? price * units : null;
