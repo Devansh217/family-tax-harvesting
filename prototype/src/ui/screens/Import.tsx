@@ -16,12 +16,13 @@ type Item =
   | { id: string; name: string; file: File; status: 'password'; wrong: boolean }
   | { id: string; name: string; status: 'error'; error: string }
   | { id: string; name: string; status: 'pdf'; lines: string[]; result: ParseResult; added?: boolean }
+  | { id: string; name: string; status: 'statement'; result: ParseResult; added?: boolean }
   | { id: string; name: string; status: 'table'; preview: TablePreview; mapping: Mapping; added?: boolean };
 
 let seq = 0;
 
 function resultOf(item: Item): ParseResult | null {
-  if (item.status === 'pdf') return item.result;
+  if (item.status === 'pdf' || item.status === 'statement') return item.result;
   if (item.status === 'table') return parseTablePreview(item.preview, item.mapping, item.name);
   return null;
 }
@@ -54,8 +55,9 @@ export function Import() {
       setItems((xs) => [{ id, name: file.name, file, status: 'reading' }, ...xs]);
       if (isPdf(file)) { void readPdf(id, file); continue; }
       try {
-        const preview = await readSpreadsheet(file);
-        set(id, { id, name: file.name, status: 'table', preview, mapping: preview.mapping });
+        const read = await readSpreadsheet(file);
+        if (read.kind === 'statement') set(id, { id, name: file.name, status: 'statement', result: read.result });
+        else set(id, { id, name: file.name, status: 'table', preview: read.preview, mapping: read.preview.mapping });
       } catch (e) {
         set(id, { id, name: file.name, status: 'error', error: (e as Error).message });
       }
@@ -72,7 +74,7 @@ export function Import() {
     const r = resultOf(item);
     if (!r || !member) return;
     update((s) => applyImport(s, member.id, item.name, r, { openingDate: opening ? openingDate : undefined, account: account.trim() || undefined }));
-    setItems((xs) => xs.map((x) => (x.id === item.id && (x.status === 'pdf' || x.status === 'table') ? { ...x, added: true } : x)));
+    setItems((xs) => xs.map((x) => (x.id === item.id && (x.status === 'pdf' || x.status === 'table' || x.status === 'statement') ? { ...x, added: true } : x)));
     toast(`Added to ${member.name}`);
   };
 
@@ -132,6 +134,7 @@ export function Import() {
           <div className="sheet">
             <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Mutual funds</strong><span className="small muted">Detailed CAS PDF from CAMS or KFintech, from the first purchase till today. Covers ET Money, Groww, Zerodha Coin and every other platform.</span></span></div>
             <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Shares</strong><span className="small muted">Trade history from the broker: Zerodha Console tradebook, Groww order history, Angel One trade history. All years.</span></span></div>
+            <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Zerodha Tax P&amp;L</strong><span className="small muted">Console → Reports → Tax P&amp;L → download the .xlsx. Brings in this year&rsquo;s exits, F&amp;O profit or loss, and Zerodha&rsquo;s totals to check against.</span></span></div>
             <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Current prices</strong><span className="small muted">Holdings file from the broker, or the NSDL / CDSL CAS. Also checks units against the trade history.</span></span></div>
           </div>
           <p className="tiny muted">CAS PDFs are usually locked with your PAN in capitals. Files are read on this device and never uploaded.</p>
@@ -177,7 +180,7 @@ function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDismiss }: 
   const [account, setAccount] = useState<string | null>(null);
   const acct = account ?? (r ? guessAccount(item.name, r.format) : '');
   const hasFolios = !!r?.txns.some((t) => t.account);
-  const added = (item.status === 'pdf' || item.status === 'table') && item.added;
+  const added = (item.status === 'pdf' || item.status === 'table' || item.status === 'statement') && item.added;
 
   return (
     <article className="sheet pad stack" aria-label={item.name}>

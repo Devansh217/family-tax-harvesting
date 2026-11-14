@@ -5,6 +5,7 @@ import { moveKey, useApp } from '../app-context';
 import { dateLabel, inr, possessive, RELATIONS, units } from '../format';
 import { Avatar, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow } from './Plan';
+import { reconcile } from '../../reconcile';
 
 function PriceInput({ value, onCommit, label }: { value: Paise | undefined; onCommit: (p: Paise | undefined) => void; label: string }) {
   const [text, setText] = useState(value != null ? String(value / 100) : '');
@@ -123,6 +124,33 @@ export function MemberScreen({ id }: { id: string }) {
           </ul>
         </Section>
       )}
+
+      {state.brokerSummaries.filter((b) => b.memberId === id).map((b) => {
+        const lines = reconcile(fam, b);
+        const allOk = lines.every((l) => l.ok);
+        return (
+          <Section key={b.importId} title={`Check against ${b.summary.broker}`} id={`rec-${b.importId}`}>
+            <p className={`small ${allOk ? 'good' : ''}`} style={allOk ? undefined : { color: 'var(--time)' }}>
+              {allOk ? `Every total matches ${b.summary.broker}'s tax P&L` : `Some totals differ from ${b.summary.broker}'s tax P&L`}
+              {b.summary.from && b.summary.to ? ` for ${dateLabel(b.summary.from)} to ${dateLabel(b.summary.to)}` : ''}{b.account ? ` (${b.account})` : ''}.
+            </p>
+            <div className="sheet tablebox">
+              <table>
+                <thead><tr><th scope="col">Realised</th><th scope="col">{b.summary.broker}</th><th scope="col">Harvesting</th><th scope="col">Difference</th></tr></thead>
+                <tbody>
+                  {lines.map((l) => (
+                    <tr key={l.label}>
+                      <td>{l.label}</td><td>{inr(l.broker)}</td><td>{inr(l.ours)}</td>
+                      <td className={l.ok ? 'good' : 'bad'}>{l.ok ? 'Matches' : inr(l.diff)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!allOk && <p className="tiny muted">Differences usually mean older purchases are missing (import earlier tradebooks), a corporate action, or the same trades imported twice from different files.</p>}
+          </Section>
+        );
+      })}
 
       {myWarnings.length > 0 && (
         <div className="banner warn"><ul className="warnlist grow">{myWarnings.map((w, i) => <li key={i}>{fam.securities.get(w.isin)?.name ?? w.isin}, {dateLabel(w.date)}: {w.message}</li>)}</ul></div>

@@ -1,7 +1,7 @@
 import type { PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
 import type { ISODate, Member, Qty, Security, Txn } from './engine/types';
-import type { ParsedPrice, ParseResult } from './parsers';
+import type { BrokerSummary, ParsedPrice, ParseResult } from './parsers';
 
 export interface ImportRecord {
   id: string;
@@ -27,6 +27,8 @@ export interface AppState {
   imports: ImportRecord[];
   done: Record<string, boolean>;
   plannedSales: PlannedSale[];
+  /** Broker tax P&L totals from imported reports, to reconcile the engine against. */
+  brokerSummaries: Array<{ importId: string; memberId: string; account: string; summary: BrokerSummary }>;
   /** One row per closing date: family value, gains and room, for the daily "since last close" view. */
   history: Snapshot[];
   /** The person confirmed they read that suggestions are tax arithmetic, not buy or sell advice. */
@@ -39,7 +41,7 @@ export interface AppState {
 const KEY = 'fasal-prototype-v1';
 
 export const emptyState = (): AppState => ({
-  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [],
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [],
 });
 
 export function loadState(): AppState | null {
@@ -56,7 +58,7 @@ export function loadState(): AppState | null {
 /** Fills fields added after a copy was saved (older browser data or an account copy). Null if unusable. */
 export function normalizeState(s: AppState | null | undefined): AppState | null {
   if (!s || s.version !== 1 || !Array.isArray(s.members)) return null;
-  return { ...s, plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done: s.done ?? {}, positions: s.positions ?? [] };
+  return { ...s, plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done: s.done ?? {}, positions: s.positions ?? [], brokerSummaries: s.brokerSummaries ?? [] };
 }
 
 /** True when the state holds a real family worth keeping, not the sample or an untouched start. */
@@ -145,6 +147,18 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
     }
   }
 
+  for (const [rawIsin, v] of Object.entries(r.fmv2018 ?? {})) {
+    const sec = s.securities.find((x) => x.isin === resolveIsin(rawIsin, '', s.securities));
+    if (sec && !sec.fmv2018) sec.fmv2018 = v;
+  }
+  if (r.brokerSummary) {
+    const b = r.brokerSummary;
+    s.brokerSummaries.push({ importId, memberId, account: opts.account ?? '', summary: b });
+    if (b.fno != null) {
+      s.members = s.members.map((m) => (m.id === memberId ? { ...m, business: { ...m.business, fno: b.fno ?? undefined, fnoTurnover: b.fnoTurnover ?? m.business?.fnoTurnover } } : m));
+    }
+  }
+
   s.imports.push({
     id: importId, memberId, fileName, format: r.format, at: new Date().toISOString(), txns: added, prices: r.prices.length, warnings: r.warnings,
   });
@@ -157,6 +171,7 @@ export function removeImport(state: AppState, importId: string): AppState {
     txns: state.txns.filter((t) => t.importId !== importId),
     positions: state.positions.filter((p) => p.importId !== importId),
     imports: state.imports.filter((i) => i.id !== importId),
+    brokerSummaries: state.brokerSummaries.filter((b) => b.importId !== importId),
   };
 }
 
@@ -168,6 +183,7 @@ export function removeMember(state: AppState, memberId: string): AppState {
     txns: state.txns.filter((t) => t.memberId !== memberId),
     positions: state.positions.filter((p) => p.memberId !== memberId),
     imports: state.imports.filter((i) => i.memberId !== memberId),
+    brokerSummaries: state.brokerSummaries.filter((b) => b.memberId !== memberId),
   };
 }
 

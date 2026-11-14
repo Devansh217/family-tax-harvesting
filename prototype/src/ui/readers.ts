@@ -1,4 +1,4 @@
-import { extractLines, previewRows, previewTable, type PdfJsLike, type TablePreview } from '../parsers';
+import { extractLines, isZerodhaTaxPnl, parseZerodhaTaxPnl, previewRows, previewTable, type ParseResult, type PdfJsLike, type TablePreview } from '../parsers';
 
 let pdfjsPromise: Promise<PdfJsLike> | null = null;
 
@@ -17,16 +17,20 @@ export async function readPdfLines(file: File, password?: string): Promise<strin
   return extractLines(pdfjs, data, password);
 }
 
-export async function readSpreadsheet(file: File): Promise<TablePreview> {
+/** A spreadsheet is either a table to map column by column, or a known broker report read in full. */
+export type SheetRead = { kind: 'table'; preview: TablePreview } | { kind: 'statement'; result: ParseResult };
+
+export async function readSpreadsheet(file: File): Promise<SheetRead> {
   const name = file.name.toLowerCase();
   if (name.endsWith('.xls')) throw new Error('Old .xls files are not supported. Open it and save as .xlsx or CSV.');
   if (name.endsWith('.xlsx')) {
     const { default: readXlsxFile } = await import('read-excel-file/browser');
-    const sheets = await readXlsxFile(file);
-    const previews = sheets.map((s) => previewRows(s.data as unknown[][]));
-    return previews.find((p) => p.kind !== 'unknown') ?? previews[0] ?? previewRows([]);
+    const sheets = (await readXlsxFile(file)).map((s) => ({ sheet: s.sheet, data: s.data as unknown[][] }));
+    if (isZerodhaTaxPnl(sheets)) return { kind: 'statement', result: parseZerodhaTaxPnl(sheets) };
+    const previews = sheets.map((s) => previewRows(s.data));
+    return { kind: 'table', preview: previews.find((p) => p.kind !== 'unknown') ?? previews[0] ?? previewRows([]) };
   }
-  return previewTable(await file.text());
+  return { kind: 'table', preview: previewTable(await file.text()) };
 }
 
 export const isPdf = (f: File) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');

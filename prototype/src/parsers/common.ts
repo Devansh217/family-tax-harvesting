@@ -1,4 +1,5 @@
 import { QTY_SCALE, type AssetKind, type ISODate, type Paise, type Qty } from '../engine/types';
+import type { BrokerSummary } from './zerodhaTaxPnl';
 
 /** RFC 4180-ish CSV: quoted fields, escaped quotes, CRLF, BOM. Also accepts tab- or semicolon-separated text. */
 export function parseCSV(text: string): string[][] {
@@ -108,4 +109,8 @@ export interface ParseResult {
   warnings: string[];
   /** Rows the parser could not read, for the review screen. */
   skipped: number;
+  /** The broker's own totals, when the file is a tax P&L report. */
+  brokerSummary?: BrokerSummary;
+  /** 31 Jan 2018 value per whole unit, keyed by ISIN, when the file states it. */
+  fmv2018?: Record<string, Paise>;
 }
