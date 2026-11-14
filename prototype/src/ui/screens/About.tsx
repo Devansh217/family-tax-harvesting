@@ -4,10 +4,10 @@ import { Icon, Svg } from '../parts';
 
 /** The plain-language rules for reading every number in the app. Shown in full here and in short on first visit. */
 export const NOT_ADVICE_POINTS: Array<{ title: string; body: string }> = [
-  { title: 'It is a tax calculator, not advice', body: 'Devansh works out the tax effect of selling holdings you already own. It does not recommend buying, selling or holding any security, and it does not judge whether an investment is good.' },
+  { title: 'It is a tax calculator, not advice', body: 'Harvesting works out the tax effect of selling holdings you already own. It does not recommend buying, selling or holding any security, and it does not judge whether an investment is good.' },
   { title: 'Moves are tax arithmetic', body: 'A "move" shows what would happen to your tax if you sold and bought back the same holding, gifted it, or waited. Whether to do it, and when, is your decision.' },
   { title: 'Numbers are estimates', body: 'They come from the statements you import. Missing history, corporate actions and price changes can make them wrong. Check them against your broker’s tax P&L.' },
-  { title: 'Check with a chartered accountant', body: 'For large sales, gifts and filing, confirm with a CA. Devansh is not registered with SEBI as an investment adviser.' },
+  { title: 'Check with a chartered accountant', body: 'For large sales, gifts and filing, confirm with a CA. Harvesting is not registered with SEBI as an investment adviser.' },
 ];
 
 function Block({ title, children }: { title: string; children: ReactNode }) {

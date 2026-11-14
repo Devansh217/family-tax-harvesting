@@ -121,7 +121,7 @@ export function Plan() {
           </section>
         );
       })}
-      <p className="tiny muted">Devansh never places trades. Costs are estimates for a discount broker: securities transaction tax, stamp duty, exchange charges and the depository fee. Gift moves assume shares in a demat account; mutual fund units are not suggested for gifting.</p>
+      <p className="tiny muted">Harvesting never places trades. Costs are estimates for a discount broker: securities transaction tax, stamp duty, exchange charges and the depository fee. Gift moves assume shares in a demat account; mutual fund units are not suggested for gifting.</p>
       <Disclaimer />
     </>
   );

@@ -110,7 +110,7 @@ export function Family() {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `devansh-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `harvesting-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -122,7 +122,7 @@ export function Family() {
       update(() => s);
       toast('Backup restored');
     } catch {
-      toast('That file is not a Devansh backup');
+      toast('That file is not a Harvesting backup');
     }
   };
 
@@ -167,7 +167,7 @@ export function Family() {
             );
           })}
         </div>
-        <p className="tiny muted">Relations are relative to you. Devansh never suggests gifts that would be taxed back to the giver: to a spouse, a minor child or a son's wife.</p>
+        <p className="tiny muted">Relations are relative to you. Harvesting never suggests gifts that would be taxed back to the giver: to a spouse, a minor child or a son's wife.</p>
       </Section>
 
       <Section title="Data on this device" id="data-h">

@@ -4,7 +4,7 @@ Short digest of the project docs, made with the headroom plugin on 14 Nov 2026. 
 
 ## docs/PRODUCT.md (142 lines)
 
-- **Product** (L8–10): every PAN gets ₹1.25 L of tax-free LTCG a year, lapsing 31 March. App ("Devansh") shows each member's room left and the steps to use it.
+- **Product** (L8–10): every PAN gets ₹1.25 L of tax-free LTCG a year, lapsing 31 March. App ("Harvesting") shows each member's room left and the steps to use it.
 - **Personas** (L14–20): Family CFO (owner, 28–45), Members (spouse, parents, kids), Viewer/CA later. Not v1: CA dashboards, NRIs, F&O, US stocks, property.
 - **Jobs** (L24–27): don't let room lapse; know tax before selling; use family room legally (own holdings, then gifts per clubbing); ITR-ready schedule.
 - **Targets** (L31–40): 50K families (sized 100K), 5 members typical / 12 max, home < 1 s p75, number-changing tap < 100 ms (engine on device), CAS import < 30 s p95, match broker P&L within ₹1/lot, 99.95% uptime Feb–Mar.

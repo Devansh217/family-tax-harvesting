@@ -92,7 +92,7 @@ export function App() {
         <header className="topbar">
           <div className="topbar-in">
             <a href="#home" className="brand" style={{ color: 'inherit', textDecoration: 'none' }}>
-              <span className="brand-mark"><Svg size={14} stroke={2.6}>{Icon.check}</Svg></span>Devansh
+              <span className="brand-mark"><Svg size={14} stroke={2.6}>{Icon.check}</Svg></span>Harvesting
             </a>
             <nav className="topnav" aria-label="Main">
               {TABS.map((t) => (
