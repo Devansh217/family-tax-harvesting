@@ -3,3 +3,4 @@
 *.pdf
 data/private/
 .env
+.DS_Store
