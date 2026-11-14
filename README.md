@@ -27,7 +27,11 @@ See how much tax-free capital gains room each PAN in the family has left this ye
 
 All rates are editable in the app.
 
-## Run locally
+## Prototype v0.2 (in progress)
+
+A React app in [prototype/](prototype/) with a tested tax engine and CAS / broker file import. See [prototype/README.md](prototype/README.md) to run it and test with your own statements.
+
+## Run v0.1 locally
 
 It is a single static file:
 
@@ -38,7 +42,12 @@ xdg-open index.html    # Linux
 
 ## Roadmap
 
-See [docs/IDEA.md](docs/IDEA.md). Next up:
+v1 product definition (consumer app, sized for 50,000 families):
+- [docs/PRODUCT.md](docs/PRODUCT.md): personas, jobs, IA, flows, releases, pricing, compliance gates
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): stack, data model, hot paths, 31 March peak, security
+- [docs/DESIGN.md](docs/DESIGN.md): "Quiet ledger" design system; screens on the [design canvas](https://claude.ai/artifact/7FhQUhEnD1UrW5sLcYsVQG)
+
+Original idea: [docs/IDEA.md](docs/IDEA.md). Next up:
 1. Lot-level engine (FIFO from broker tradebook, grandfathering at 31 Jan 2018 FMV)
 2. CAS PDF import (CDSL/NSDL, CAMS/KFin) for mutual funds and buy dates
 3. Reconcile against the broker's tax P&L

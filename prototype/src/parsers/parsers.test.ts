@@ -1,0 +1,113 @@
+import { describe, expect, it } from 'vitest';
+import { parseDematCAS, parseMutualFundCAS } from './cas';
+import { parseCSV, parseDate, parseNumber } from './common';
+import { parseStatementLines, parseTablePreview, previewTable } from './index';
+
+describe('primitives', () => {
+  it('reads Indian number and date formats', () => {
+    expect(parseNumber('1,23,456.78')).toBe(123456.78);
+    expect(parseNumber('(250.00)')).toBe(-250);
+    expect(parseNumber('₹ 1,000')).toBe(1000);
+    expect(parseNumber('abc')).toBeNull();
+    expect(parseDate('2026-04-05 10:15:00')).toBe('2026-04-05');
+    expect(parseDate('05-04-2026')).toBe('2026-04-05');
+    expect(parseDate('05/04/2026')).toBe('2026-04-05');
+    expect(parseDate('05-Apr-2026')).toBe('2026-04-05');
+    expect(parseDate('5 April 2026')).toBe('2026-04-05');
+  });
+  it('parses quoted CSV and tab-separated paste', () => {
+    expect(parseCSV('a,b\n"x, y","z ""q"""\n')).toEqual([['a', 'b'], ['x, y', 'z "q"']]);
+    expect(parseCSV('a\tb\n1\t2')).toEqual([['a', 'b'], ['1', '2']]);
+  });
+});
+
+describe('broker trade files', () => {
+  it('reads a Zerodha-style tradebook and drops F&O rows', () => {
+    const csv = [
+      'symbol,isin,trade_date,exchange,segment,series,trade_type,auction,quantity,price,trade_id,order_id,order_execution_time',
+      'INFY,INE009A01021,2024-03-12,NSE,EQ,EQ,buy,false,10.000000,1500.000000,1,2,2024-03-12T10:00:00',
+      'INFY,INE009A01021,2026-06-02,NSE,EQ,EQ,sell,false,4.000000,1900.500000,3,4,2026-06-02T10:00:00',
+      'NIFTY26JUNFUT,,2026-06-02,NFO,FO,,buy,false,50,22000,5,6,2026-06-02T10:00:00',
+    ].join('\n');
+    const p = previewTable(csv);
+    expect(p.kind).toBe('trades');
+    const r = parseTablePreview(p, p.mapping, 'tradebook.csv');
+    expect(r.txns).toHaveLength(2);
+    expect(r.txns[1]).toMatchObject({ date: '2026-06-02', isin: 'INE009A01021', side: 'sell', qty: 40_000, amount: 7_60_200 });
+    expect(r.warnings.join(' ')).toMatch(/derivatives/);
+  });
+
+  it('finds the header below a title block and reads B/S and DD-MM-YYYY (Angel One / Groww style)', () => {
+    const csv = [
+      'Trade History Report',
+      'Client Code: XXXX',
+      '',
+      'Date,Stock Name,ISIN,Buy/Sell,Qty,Rate,Amount',
+      '12-03-2024,Infosys Ltd,INE009A01021,B,10,"1,500.00","15,000.00"',
+      '02-06-2026,Infosys Ltd,INE009A01021,S,4,"1,900.50","7,602.00"',
+    ].join('\n');
+    const p = previewTable(csv);
+    const r = parseTablePreview(p, p.mapping, 'angel.csv');
+    expect(r.txns.map((t) => [t.date, t.side, t.amount])).toEqual([['2024-03-12', 'buy', 15_000_00], ['2026-06-02', 'sell', 7_602_00]]);
+  });
+
+  it('reads mutual fund order exports that use Purchase / Redemption and units', () => {
+    const csv = 'Scheme Name,ISIN,Transaction Type,Date,Units,NAV,Amount\nParag Flexi Cap Direct Growth,INF879O01027,Purchase,01-Apr-2024,100.123,50.0000,5006.15\nParag Flexi Cap Direct Growth,INF879O01027,Redemption,01-Jun-2026,20.000,80.0000,1600.00';
+    const p = previewTable(csv);
+    const r = parseTablePreview(p, p.mapping, 'etmoney.csv');
+    expect(r.txns[0]).toMatchObject({ kind: 'equity_mf', side: 'buy', qty: 1_001_230 });
+    expect(r.txns[1]).toMatchObject({ side: 'sell', amount: 1600_00 });
+  });
+
+  it('reads a holdings export as prices and units', () => {
+    const csv = 'Instrument,Qty.,Avg. cost,LTP,Cur. val,P&L\nINFY,6,1500,1910.25,11461.5,2461.5';
+    const p = previewTable(csv);
+    expect(p.kind).toBe('holdings');
+    const r = parseTablePreview(p, p.mapping, 'holdings.csv');
+    expect(r.prices[0]).toMatchObject({ isin: 'SYM:INFY', price: 1910_25, qty: 60_000, cost: 9000_00 });
+  });
+});
+
+describe('CAS PDFs (text lines)', () => {
+  const mfLines = [
+    'Consolidated Account Statement',
+    'CAMS',
+    'Folio No: 1234567 / 89   PAN: ABCDE1234F',
+    'PPFAS-Parag Parikh Flexi Cap Fund - Direct Plan Growth - ISIN: INF879O01027(Advisor: DIRECT)  Registrar : CAMS',
+    'Opening Unit Balance: 0.000',
+    '10-Jan-2022  Purchase - via Internet  10,000.00  200.000  50.0000  200.000',
+    '10-Jan-2022  *** Stamp Duty ***  0.50',
+    '15-Feb-2023  Systematic Investment Purchase  5,000.00  100.000  50.0000  300.000',
+    '20-Jun-2026  Redemption  (4,000.00)  (50.000)  80.0000  250.000',
+    'Closing Unit Balance: 250.000  NAV on 13-Nov-2026: INR 85.1234  Total Cost Value: 12,500.00  Market Value on 13-Nov-2026: INR 21,280.85',
+  ];
+
+  it('reads mutual fund transactions and the latest NAV', () => {
+    const r = parseMutualFundCAS(mfLines);
+    expect(r.txns).toHaveLength(3);
+    expect(r.txns[0]).toMatchObject({ date: '2022-01-10', isin: 'INF879O01027', side: 'buy', qty: 2_000_000, amount: 10_000_00 });
+    expect(r.txns[2]).toMatchObject({ side: 'sell', qty: 500_000, amount: 4_000_00 });
+    expect(r.prices[0]).toMatchObject({ isin: 'INF879O01027', price: 85_12, priceDate: '2026-11-13' });
+    expect(r.txns[0]!.name).toBe('Parag Parikh Flexi Cap Fund - Direct Plan Growth');
+    expect(r.warnings).toHaveLength(0);
+  });
+
+  it('warns when the units do not reconcile with the closing balance', () => {
+    const r = parseMutualFundCAS(mfLines.filter((l) => !l.startsWith('15-Feb')));
+    expect(r.warnings.join(' ')).toMatch(/closes at 250\.000/);
+  });
+
+  it('reads demat holdings as prices', () => {
+    const r = parseDematCAS([
+      'NSDL Consolidated Account Statement as on 31-Oct-2026',
+      'INE009A01021  INFOSYS LIMITED EQ  6  1,910.25  11,461.50',
+      'INE040A01034  HDFC BANK LIMITED  100  1,650.00  1,65,000.00',
+    ]);
+    expect(r.prices).toHaveLength(2);
+    expect(r.prices[1]).toMatchObject({ isin: 'INE040A01034', name: 'HDFC BANK LIMITED', price: 1650_00, qty: 1_000_000, priceDate: '2026-10-31' });
+  });
+
+  it('routes an unknown PDF to a helpful message', () => {
+    expect(parseStatementLines(['Contract note', 'Brokerage']).warnings[0]).toMatch(/does not look like a CAS/);
+  });
+});

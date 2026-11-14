@@ -1,0 +1,155 @@
+import type { ISODate, Member, Qty, Security, Txn } from './engine/types';
+import type { ParsedPrice, ParseResult } from './parsers';
+
+export interface ImportRecord {
+  id: string;
+  memberId: string;
+  fileName: string;
+  format: string;
+  at: string;
+  txns: number;
+  prices: number;
+  warnings: string[];
+}
+
+/** Units a statement says a member holds, to check the trade history against. */
+export interface Position { memberId: string; isin: string; qty: Qty; asOf?: ISODate; source: string }
+
+export interface AppState {
+  version: 1;
+  isSample: boolean;
+  members: Member[];
+  securities: Security[];
+  txns: (Txn & { importId: string })[];
+  positions: (Position & { importId: string })[];
+  imports: ImportRecord[];
+  done: Record<string, boolean>;
+}
+
+const KEY = 'fasal-prototype-v1';
+
+export const emptyState = (): AppState => ({
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {},
+});
+
+export function loadState(): AppState | null {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as AppState;
+    return s.version === 1 ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveState(s: AppState): boolean {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(s));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const uid = (p: string) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+
+const norm = (s: string) => s.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+/** Statements without ISINs (holdings exports) name securities by symbol; match them to known securities. */
+function resolveIsin(isin: string, name: string, securities: Security[]): string {
+  if (!isin.startsWith('SYM:')) return isin;
+  const sym = norm(isin.slice(4));
+  const hit = securities.find((s) => !s.isin.startsWith('SYM:') && (norm(s.name) === sym || (s.symbols ?? []).some((x) => norm(x) === sym)));
+  return hit?.isin ?? isin;
+}
+
+function upsertSecurity(list: Security[], p: { isin: string; name: string; kind: Security['kind'] }, price?: ParsedPrice) {
+  let s = list.find((x) => x.isin === p.isin);
+  if (!s) {
+    s = { isin: p.isin, name: p.name, kind: p.kind };
+    list.push(s);
+  } else if ((s.name === s.isin || s.name.length < 3) && p.name) s.name = p.name;
+  if (p.name && !p.isin.startsWith('SYM:') && p.name !== s.name) s.symbols = [...new Set([...(s.symbols ?? []), p.name])];
+  if (price && (!s.priceDate || !price.priceDate || price.priceDate >= s.priceDate)) {
+    s.price = price.price;
+    s.priceDate = price.priceDate ?? s.priceDate;
+  }
+}
+
+export interface ImportOptions {
+  /** For holdings with no trade history: create an opening lot dated this, at the statement's cost if known. */
+  openingDate?: ISODate;
+}
+
+/**
+ * Adds a parsed file to a member. Re-importing the same file is harmless: each transaction's id is derived from its
+ * content plus its occurrence count within the file, so identical fills stay separate but repeats merge.
+ */
+export function applyImport(state: AppState, memberId: string, fileName: string, r: ParseResult, opts: ImportOptions = {}): AppState {
+  const s: AppState = structuredClone(state);
+  const importId = uid('imp');
+  const seen = new Map<string, number>();
+  const existing = new Set(s.txns.map((t) => t.id));
+  let added = 0;
+
+  for (const t of r.txns) upsertSecurity(s.securities, t);
+  for (const t of r.txns) {
+    const isin = resolveIsin(t.isin, t.name, s.securities);
+    const base = `${memberId}|${isin}|${t.date}|${t.side}|${t.qty}|${t.amount}`;
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    const id = `${base}|${n}`;
+    if (existing.has(id)) continue;
+    s.txns.push({ id, memberId, isin, date: t.date, side: t.side, qty: t.qty, amount: t.amount, source: r.format, importId });
+    added++;
+  }
+
+  for (const p of r.prices) {
+    const isin = resolveIsin(p.isin, p.name, s.securities);
+    upsertSecurity(s.securities, { ...p, isin }, p);
+    if (p.qty != null) {
+      s.positions = s.positions.filter((x) => !(x.memberId === memberId && x.isin === isin && x.source === r.format));
+      s.positions.push({ memberId, isin, qty: p.qty, asOf: p.priceDate, source: r.format, importId });
+    }
+    const hasHistory = s.txns.some((t) => t.memberId === memberId && t.isin === isin);
+    if (opts.openingDate && p.qty && p.qty > 0 && !hasHistory) {
+      const cost = p.cost ?? Math.round((p.price * p.qty) / 10_000);
+      s.txns.push({
+        id: `${memberId}|${isin}|opening|${importId}`, memberId, isin, date: opts.openingDate, side: 'buy', qty: p.qty, amount: cost,
+        source: 'Opening balance (estimated date)', importId,
+      });
+      added++;
+    }
+  }
+
+  s.imports.push({
+    id: importId, memberId, fileName, format: r.format, at: new Date().toISOString(), txns: added, prices: r.prices.length, warnings: r.warnings,
+  });
+  return s;
+}
+
+export function removeImport(state: AppState, importId: string): AppState {
+  return {
+    ...state,
+    txns: state.txns.filter((t) => t.importId !== importId),
+    positions: state.positions.filter((p) => p.importId !== importId),
+    imports: state.imports.filter((i) => i.id !== importId),
+  };
+}
+
+export function removeMember(state: AppState, memberId: string): AppState {
+  return {
+    ...state,
+    members: state.members.filter((m) => m.id !== memberId),
+    txns: state.txns.filter((t) => t.memberId !== memberId),
+    positions: state.positions.filter((p) => p.memberId !== memberId),
+    imports: state.imports.filter((i) => i.memberId !== memberId),
+  };
+}
+
+/** Clears the sample and starts a real family with just the owner. */
+export const startOwnFamily = (): AppState => ({
+  ...emptyState(),
+  members: [{ id: 'me', name: 'You', relation: 'self', age: 35, regime: 'new' }],
+});
