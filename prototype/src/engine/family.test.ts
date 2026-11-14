@@ -83,6 +83,37 @@ describe('harvest gain moves', () => {
   });
 });
 
+describe('planned sales and money needed soon', () => {
+  const state = {
+    members: [person('a', 'self')],
+    securities: [{ isin: 'X', name: 'X', kind: 'equity' as const, price: rs(2000) }, { isin: 'Y', name: 'Y', kind: 'equity' as const, price: rs(2000) }],
+    txns: [buy('a', 'X', '2022-01-01', 100, 1000), buy('a', 'Y', '2022-01-01', 100, 1000)],
+  };
+
+  it('a planned sale uses room and its lots before moves are suggested', () => {
+    const fam = computeFamily({ ...state, plannedSales: [{ id: 'p', memberId: 'a', isin: 'X', qty: q(100) }] }, ASOF, R);
+    const v = fam.members[0]!;
+    expect(v.planned.gain).toBe(rs(1_00_000));
+    expect(v.planned.roomUsed).toBe(rs(1_00_000));
+    expect(v.plan.room.free).toBe(rs(25_000));
+    expect(fam.totals.freeRoom).toBe(rs(25_000));
+    const h = fam.moves.filter((m) => m.kind === 'harvest_gain');
+    expect(h.map((m) => [m.isin, m.gain])).toEqual([['Y', rs(25_000)]]);
+  });
+
+  it('tax on a big planned sale prompts loss moves and shows in the simulator baseline', () => {
+    const fam = computeFamily({ ...state, plannedSales: [{ id: 'p', memberId: 'a', isin: 'X', qty: q(100) }, { id: 'p2', memberId: 'a', isin: 'Y', qty: q(100) }] }, ASOF, R);
+    expect(fam.members[0]!.planned.tax).toBe(rs(9_750)); // 2,00,000 − 1,25,000 at 13%
+    expect(fam.moves.filter((m) => m.kind === 'harvest_gain')).toHaveLength(0);
+  });
+
+  it('skips sell-and-buy-back on money needed within 12 months', () => {
+    const fam = computeFamily({ ...state, needSoon: { 'a|X': true } }, ASOF, R);
+    const h = fam.moves.filter((m) => m.kind === 'harvest_gain');
+    expect(h.every((m) => m.isin === 'Y')).toBe(true);
+  });
+});
+
 describe('gift moves', () => {
   const base = {
     securities: [{ isin: 'X', name: 'X', kind: 'equity' as const, price: rs(2000) }],

@@ -80,3 +80,43 @@ export function basicExemption(member: Member, rules: TaxRules): Paise {
 /** Rate including cess, e.g. 0.13 for 12.5% LTCG. */
 export const ltRate = (r: TaxRules) => r.ltcgRate * (1 + r.cess);
 export const stRate = (r: TaxRules) => r.stcgRate * (1 + r.cess);
+
+export interface IncomeBand {
+  label: string;
+  /** Slab rate on the top rupee of income in this band. */
+  rate: number;
+  /** Income assumed for the band: its upper end, so bonus room is never overstated (top band: its lower end). */
+  assumed: Paise;
+}
+
+const L = 1_00_000_00;
+
+/** Income bands a member can pick instead of an exact figure. New regime per Budget 2025; old regime by age. */
+export function incomeBands(member: Pick<Member, 'regime' | 'age'>, r: TaxRules): IncomeBand[] {
+  const none: IncomeBand = { label: 'No other income', rate: 0, assumed: 0 };
+  if (member.regime === 'new') {
+    return [
+      none,
+      { label: 'Up to ₹4 L (nil)', rate: 0, assumed: 4 * L },
+      { label: '₹4–8 L (5%)', rate: 0.05, assumed: 8 * L },
+      { label: '₹8–12 L (10%)', rate: 0.1, assumed: 12 * L },
+      { label: '₹12–16 L (15%)', rate: 0.15, assumed: 16 * L },
+      { label: '₹16–20 L (20%)', rate: 0.2, assumed: 20 * L },
+      { label: '₹20–24 L (25%)', rate: 0.25, assumed: 24 * L },
+      { label: 'Above ₹24 L (30%)', rate: 0.3, assumed: 24 * L },
+    ];
+  }
+  const basic = basicExemption(member as Member, r);
+  const bands: IncomeBand[] = [none, { label: `Up to ${basic / L} L (nil)`, rate: 0, assumed: basic }];
+  if (basic < 5 * L) bands.push({ label: `₹${basic / L}–5 L (5%)`, rate: 0.05, assumed: 5 * L });
+  bands.push({ label: '₹5–10 L (20%)', rate: 0.2, assumed: 10 * L }, { label: 'Above ₹10 L (30%)', rate: 0.3, assumed: 10 * L });
+  return bands;
+}
+
+/** Slab rate for a known income, or null when income is unknown. */
+export function slabRate(member: Member, r: TaxRules): number | null {
+  if (member.otherIncome == null) return null;
+  const bands = incomeBands(member, r).slice(1);
+  for (const b of bands.slice(0, -1)) if (member.otherIncome <= b.assumed) return b.rate;
+  return bands.at(-1)!.rate;
+}

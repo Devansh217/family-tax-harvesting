@@ -161,3 +161,17 @@ describe('tax year summary', () => {
     expect(s.ltTaxable).toBe(rs(25_000));
   });
 });
+
+describe('income bands', () => {
+  it('reads a slab at its top end so bonus room is never overstated', async () => {
+    const { incomeBands, slabRate } = await import('./rules');
+    const bands = incomeBands({ regime: 'new', age: 40 }, R);
+    expect(bands.find((b) => b.label.startsWith('Up to ₹4 L'))!.assumed).toBe(rs(4_00_000));
+    const student = member({ otherIncome: 0, incomeBand: 'No other income' });
+    expect(summariseYear(student, [], R).bonus.total).toBe(rs(4_00_000));
+    const upTo4 = member({ otherIncome: rs(4_00_000), incomeBand: 'Up to ₹4 L (nil)' });
+    expect(summariseYear(upTo4, [], R).bonus.total).toBe(0);
+    expect(slabRate(member({ otherIncome: rs(10_00_000) }), R)).toBe(0.1);
+    expect(slabRate(member({ otherIncome: undefined }), R)).toBeNull();
+  });
+});

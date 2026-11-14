@@ -4,6 +4,7 @@ import { useApp } from '../app-context';
 import { inr, inrShort } from '../format';
 import { Avatar, Disclaimer, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow, movesNotDone } from './Plan';
+import { FirstRunNotice } from './About';
 import { isLaterBenefit } from '../../engine/family';
 
 export function SampleBanner() {
@@ -48,6 +49,7 @@ export function Home({ days }: { days: number }) {
   return (
     <>
       <SampleBanner />
+      <FirstRunNotice />
       <div className="row-between" style={{ alignItems: 'center' }}>
         <h1>{state.isSample ? 'Mehta family' : 'Your family'}</h1>
         <span className={`chip time ${days <= 30 ? 'urgent' : ''}`}>
@@ -63,9 +65,9 @@ export function Home({ days }: { days: number }) {
             of tax-free room is still unused across {state.members.length} {state.members.length === 1 ? 'member' : 'members'}
           </h2>
           <div className="stackbar" role="img" aria-label={`Free room by member, and ${inr(used)} already used`}>
-            {fam.members.map((v, i) => v.year.room.free > 0 && (
-              <span key={v.member.id} style={{ flexBasis: `${(v.year.room.free / totals.limit) * 100}%`, opacity: 1 - (i % 2) * 0.12 }} title={`${v.member.name}: ${inr(v.year.room.free)}`}>
-                {v.year.room.free / totals.limit > 0.07 ? v.member.name.charAt(0) : ''}
+            {fam.members.map((v, i) => v.plan.room.free > 0 && (
+              <span key={v.member.id} style={{ flexBasis: `${(v.plan.room.free / totals.limit) * 100}%`, opacity: 1 - (i % 2) * 0.12 }} title={`${v.member.name}: ${inr(v.plan.room.free)}`}>
+                {v.plan.room.free / totals.limit > 0.07 ? v.member.name.charAt(0) : ''}
               </span>
             ))}
             {used > 0 && <span className="used" style={{ flexBasis: `${(used / totals.limit) * 100}%` }}>{used / totals.limit > 0.12 ? 'Used' : ''}</span>}
@@ -90,12 +92,13 @@ export function Home({ days }: { days: number }) {
               <a key={v.member.id} className="li" href={`#member-${v.member.id}`}>
                 <Avatar member={v.member} index={i} />
                 <span className="grow stack" style={{ gap: 6 }}>
-                  <span className="row-between"><span style={{ fontWeight: 600 }}>{v.member.name}</span><span className="fig good">{inr(v.year.room.free)}</span></span>
-                  <RoomMeter used={v.year.room.used} free={v.year.room.free} bonus={v.year.bonus.free} />
+                  <span className="row-between"><span style={{ fontWeight: 600 }}>{v.member.name}</span><span className="fig good">{inr(v.plan.room.free)}</span></span>
+                  <RoomMeter used={v.year.room.used} planned={v.planned.roomUsed} free={v.plan.room.free} bonus={v.plan.bonus.free} />
                   <span className="tiny muted">
                     {v.year.room.used > 0 ? `${inr(v.year.room.used)} used` : 'Nothing used yet'}
+                    {v.planned.roomUsed > 0 ? ` · ${inr(v.planned.roomUsed)} for planned sales` : ''}
                     {v.holdings.length === 0 ? ' · no holdings' : ` · ${inrShort(v.holdings.reduce((a, h) => a + h.ltGain, 0))} long-term gains`}
-                    {v.year.bonus.free > 0 ? ` · +${inrShort(v.year.bonus.free)} bonus room` : ''}
+                    {v.plan.bonus.free > 0 ? ` · +${inrShort(v.plan.bonus.free)} bonus room` : ''}
                   </span>
                 </span>
               </a>

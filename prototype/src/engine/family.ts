@@ -6,10 +6,16 @@ import {
   QTY_SCALE, type ISODate, type Ledger, type Lot, type Member, type Paise, type Qty, type Realised, type Security, type Term, type Txn,
 } from './types';
 
+export interface PlannedSale { id: string; memberId: string; isin: string; qty: Qty }
+
 export interface FamilyState {
   members: Member[];
   securities: Security[];
   txns: Txn[];
+  /** Sales the family intends to make this tax year. They use room and lots before any move is suggested. */
+  plannedSales?: PlannedSale[];
+  /** `${memberId}|${isin}` → the money is needed within 12 months, so no sell-and-buy-back or gift is suggested. */
+  needSoon?: Record<string, boolean>;
 }
 
 export interface HoldingLot {
@@ -56,7 +62,11 @@ export const isLaterBenefit = (m: Move) => m.kind === 'harvest_gain' || m.kind =
 
 export interface MemberView {
   member: Member;
+  /** Booked so far. */
   year: YearSummary;
+  /** Booked plus planned sales: what moves and room are worked out from. */
+  plan: YearSummary;
+  planned: { gain: Paise; tax: Paise; roomUsed: Paise };
   holdings: Holding[];
   /** Free room left after this member's own suggested harvests. */
   roomAfterPlan: Paise;
@@ -68,9 +78,12 @@ export interface FamilyView {
   members: MemberView[];
   moves: Move[];
   ledger: Ledger;
+  /** Gains the planned sales would realise. Their lots are already removed from `ledger.lots`. */
+  plannedRealised: Realised[];
   securities: Map<string, Security>;
   totals: {
-    freeRoom: Paise; bonusFree: Paise; limit: Paise; taxBooked: Paise;
+    /** Free room after booked and planned sales. */
+    freeRoom: Paise; bonusFree: Paise; limit: Paise; taxBooked: Paise; plannedGain: Paise;
     /** Gains the moves make tax-free (harvest + gift). */
     taxFreeGains: Paise;
     /** Future tax those gains avoid, net of costs. */
@@ -106,6 +119,34 @@ function queues(ledger: Ledger, memberId: string, isin: string): Array<{ account
   const prefix = `${memberId}|${isin}|`;
   const out: Array<{ account: string; lots: Lot[] }> = [];
   for (const [key, lots] of ledger.lots) if (key.startsWith(prefix) && lots.length) out.push({ account: key.slice(prefix.length), lots });
+  return out;
+}
+
+/** Removes `qty` units from the front of a lot queue (mutates it). */
+function consumeFront(lots: Lot[], qty: Qty) {
+  let left = qty;
+  while (left > 0 && lots.length) {
+    const lot = lots[0]!;
+    const take = Math.min(lot.qty, left);
+    lot.cost -= take === lot.qty ? lot.cost : prorate(lot.cost, take, lot.qty);
+    lot.qty -= take;
+    left -= take;
+    if (lot.qty === 0) lots.shift();
+  }
+}
+
+/** Sells `qty` from a member's accounts, the account holding the oldest lot first. */
+function sellAcrossAccounts(ledger: Ledger, memberId: string, sec: Security, qty: Qty, date: ISODate, rules: TaxRules, mutate: boolean): Realised[] {
+  const qs = queues(ledger, memberId, sec.isin).sort((a, b) => a.lots[0]!.date.localeCompare(b.lots[0]!.date));
+  const out: Realised[] = [];
+  let left = qty;
+  for (const q of qs) {
+    if (left <= 0) break;
+    const take = Math.min(q.lots.reduce((a, l) => a + l.qty, 0), left);
+    out.push(...previewSale(q.lots, take, sec, date, rules));
+    if (mutate) consumeFront(q.lots, take);
+    left -= take;
+  }
   return out;
 }
 
@@ -184,6 +225,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
 
   const views: MemberView[] = state.members.map((member) => {
     const year = summariseYear(member, ledger.realised, rules);
+    const plan = year;
     const isins = new Set<string>();
     for (const [key, lots] of ledger.lots) if (key.startsWith(`${member.id}|`) && lots.length) isins.add(lots[0]!.isin);
     const holdings: Holding[] = [];
@@ -211,8 +253,27 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
       });
     }
     holdings.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
-    return { member, year, holdings, roomAfterPlan: year.room.free + year.bonus.free };
+    return { member, year, plan, planned: { gain: 0, tax: 0, roomUsed: 0 }, holdings, roomAfterPlan: 0 };
   });
+
+  // Planned sales come first: they take their lots out of the queues and use room before any move is suggested.
+  const plannedRealised: Realised[] = [];
+  for (const p of state.plannedSales ?? []) {
+    const sec = secs.get(p.isin);
+    if (!sec || sec.price == null) continue;
+    plannedRealised.push(...sellAcrossAccounts(ledger, p.memberId, sec, p.qty, asOf, rules, true));
+  }
+  for (const v of views) {
+    const mine = plannedRealised.filter((r) => r.memberId === v.member.id);
+    v.plan = mine.length ? summariseYear(v.member, [...ledger.realised, ...mine], rules) : v.year;
+    v.planned = {
+      gain: mine.reduce((a, r) => a + r.gain, 0),
+      tax: v.plan.tax - v.year.tax,
+      roomUsed: v.plan.exemptionUsed + v.plan.bonus.used - (v.year.exemptionUsed + v.year.bonus.used),
+    };
+    v.roomAfterPlan = v.plan.room.free + v.plan.bonus.free;
+  }
+  const needSoon = (memberId: string, isin: string) => !!state.needSoon?.[`${memberId}|${isin}`];
 
   const usedQty = new Map<string, Qty>();
 
@@ -220,7 +281,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   for (const v of views) {
     let room = v.roomAfterPlan;
     const cands = v.holdings
-      .filter((h) => h.price != null)
+      .filter((h) => h.price != null && !needSoon(v.member.id, h.isin))
       .flatMap((h) => queues(ledger, v.member.id, h.isin).map((q) => ({ h, q, ...harvestableQty(q.lots, secs.get(h.isin)!, asOf, rules, room, 0) })))
       .sort((a, b) => b.gain - a.gain);
     for (const c of cands) {
@@ -242,7 +303,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   // 2. Gifts of listed shares from members with gains left over to members with room left over.
   for (const giver of views) {
     for (const h of giver.holdings) {
-      if (h.kind !== 'equity' || h.price == null) continue;
+      if (h.kind !== 'equity' || h.price == null || needSoon(giver.member.id, h.isin)) continue;
       const sec = secs.get(h.isin)!;
       for (const q of queues(ledger, giver.member.id, h.isin)) {
         const key = lotKey(giver.member.id, h.isin, q.account);
@@ -264,7 +325,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
 
   // 3. Loss harvesting against tax already due this year, and 4. wait alerts. Known-data lots only.
   for (const v of views) {
-    let stDue = v.year.stTaxable, ltDue = v.year.ltTaxable;
+    let stDue = v.plan.stTaxable, ltDue = v.plan.ltTaxable;
     for (const h of v.holdings) {
       if (h.price == null) continue;
       const sec = secs.get(h.isin)!;
@@ -316,12 +377,13 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   const later = moves.filter(isLaterBenefit);
   const now = moves.filter((m) => !isLaterBenefit(m));
   return {
-    asOf, rules, members: views, moves, ledger, securities: secs,
+    asOf, rules, members: views, moves, ledger, plannedRealised, securities: secs,
     totals: {
-      freeRoom: sum((v) => v.year.room.free),
-      bonusFree: sum((v) => v.year.bonus.free),
-      limit: sum((v) => v.year.room.limit),
+      freeRoom: sum((v) => v.plan.room.free),
+      bonusFree: sum((v) => v.plan.bonus.free),
+      limit: sum((v) => v.plan.room.limit),
       taxBooked: sum((v) => v.year.tax),
+      plannedGain: sum((v) => v.planned.gain),
       taxFreeGains: later.reduce((a, m) => a + (m.kind === 'harvest_gain' || m.kind === 'gift' ? m.gain : 0), 0),
       laterSaving: later.reduce((a, m) => a + m.saving, 0),
       nowSaving: now.reduce((a, m) => a + m.saving, 0),
@@ -343,31 +405,23 @@ export interface SaleResult {
 }
 
 /**
- * Tax a member would add by selling `qty` units now, on top of what they have already booked this year. With several
+ * Tax a member would add by selling `qty` units now, on top of what they have booked and planned this year. With several
  * accounts, units come from the account holding the oldest lot first, oldest-first within each account.
  */
 export function simulateSale(fam: FamilyView, memberId: string, isin: string, qty: Qty, asOf: ISODate, rules: TaxRules): SaleResult {
   const v = fam.members.find((m) => m.member.id === memberId)!;
   const sec = fam.securities.get(isin)!;
-  const qs = queues(fam.ledger, memberId, isin).sort((a, b) => a.lots[0]!.date.localeCompare(b.lots[0]!.date));
-  const available = qs.reduce((a, q) => a + q.lots.reduce((b, l) => b + l.qty, 0), 0);
-  let left = Math.min(qty, available);
-  const sold: Realised[] = [];
-  for (const q of qs) {
-    if (left <= 0) break;
-    const inAcct = q.lots.reduce((a, l) => a + l.qty, 0);
-    const take = Math.min(inAcct, left);
-    sold.push(...previewSale(q.lots, take, sec, asOf, rules));
-    left -= take;
-  }
-  const after = summariseYear(v.member, [...fam.ledger.realised, ...sold], rules);
+  const available = queues(fam.ledger, memberId, isin).reduce((a, q) => a + q.lots.reduce((b, l) => b + l.qty, 0), 0);
+  const sold = sellAcrossAccounts(fam.ledger, memberId, sec, Math.min(qty, available), asOf, rules, false);
+  const plannedMine = fam.plannedRealised.filter((r) => r.memberId === memberId);
+  const after = summariseYear(v.member, [...fam.ledger.realised, ...plannedMine, ...sold], rules);
   const s = (t: Term) => sold.filter((r) => r.term === t).reduce((a, r) => a + r.gain, 0);
   return {
     qty: Math.min(qty, available), available,
     proceeds: sold.reduce((a, r) => a + r.proceeds, 0),
     gain: sold.reduce((a, r) => a + r.gain, 0),
     stGain: s('st'), ltGain: s('lt'),
-    extraTax: after.tax - v.year.tax,
-    roomUsed: after.exemptionUsed + after.bonus.used - (v.year.exemptionUsed + v.year.bonus.used),
+    extraTax: after.tax - v.plan.tax,
+    roomUsed: after.exemptionUsed + after.bonus.used - (v.plan.exemptionUsed + v.plan.bonus.used),
   };
 }

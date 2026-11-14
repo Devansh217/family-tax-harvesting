@@ -1,4 +1,4 @@
-# Fasal prototype v0.2
+# Devansh prototype v0.2
 
 A working prototype of the family tax harvesting app. It reads your statements in the browser, works out each member's tax-free room lot by lot, and suggests moves. Nothing is uploaded: files are read on your device and data is kept in the browser's local storage.
 

@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react';
 import { simulateSale } from '../../engine/family';
 import { QTY_SCALE } from '../../engine/types';
 import { useApp } from '../app-context';
-import { inr, inrShort } from '../format';
+import { inr, inrShort, units } from '../format';
+import { uid } from '../../store';
 import { Avatar, Disclaimer } from '../parts';
 
 export function Simulate() {
-  const { fam, asOf, indexOf } = useApp();
+  const { fam, asOf, indexOf, state, update, toast, nameOf } = useApp();
   const options = useMemo(() => {
     const by = new Map<string, { isin: string; name: string; holders: number; value: number }>();
     for (const v of fam.members) for (const h of v.holdings) {
@@ -76,13 +77,35 @@ export function Simulate() {
                     {ok ? `${inr(r.gain)} gain (${inr(r.ltGain)} long, ${inr(r.stGain)} short) · uses ${inr(r.roomUsed)} of room` : `Holds only ${inr(Math.round(((sec.price ?? 0) * r.available) / QTY_SCALE))}`}
                   </span>
                 </span>
-                <span className={`fig ${!ok ? 'muted' : r.extraTax === 0 ? 'good' : 'bad'}`} style={{ fontSize: 18 }}>{ok ? inr(r.extraTax) : '—'}</span>
+                <span className="stack" style={{ gap: 2, alignItems: 'flex-end' }}>
+                  <span className={`fig ${!ok ? 'muted' : r.extraTax === 0 ? 'good' : 'bad'}`} style={{ fontSize: 18 }}>{ok ? inr(r.extraTax) : '—'}</span>
+                  {ok && (
+                    <button className="btn sm ghost" type="button" style={{ minHeight: 28, padding: 0 }} onClick={() => {
+                      update((s) => ({ ...s, plannedSales: [...s.plannedSales, { id: uid('ps'), memberId: v.member.id, isin: opt.isin, qty: qtyWanted }] }));
+                      toast(`Planned: ${v.member.name} sells ${inrShort(amount)} of ${opt.name}`);
+                    }}>Plan this sale</button>
+                  )}
+                </span>
               </div>
             );
           })}
         </section>
       </div>
-      <p className="tiny muted">Includes 4% cess; surcharge not modelled. Tax is what this sale adds to gains already booked this year.</p>
+      {state.plannedSales.length > 0 && (
+        <section className="stack">
+          <h2>Planned sales this year</h2>
+          <div className="sheet">
+            {state.plannedSales.map((p) => (
+              <div className="li" key={p.id}>
+                <span className="grow">{nameOf(p.memberId)}: {units(p.qty)} units of {fam.securities.get(p.isin)?.name ?? p.isin}</span>
+                <button className="btn sm ghost" type="button" style={{ color: 'var(--tax)' }} onClick={() => update((s) => ({ ...s, plannedSales: s.plannedSales.filter((x) => x.id !== p.id) }))}>Remove</button>
+              </div>
+            ))}
+          </div>
+          <p className="tiny muted">Planned sales use room first, so the plan and every member&rsquo;s free room already account for them.</p>
+        </section>
+      )}
+      <p className="tiny muted">Includes 4% cess; surcharge not modelled. Tax is what this sale adds to gains already booked and planned this year.</p>
       <Disclaimer />
     </>
   );

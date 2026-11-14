@@ -1,13 +1,13 @@
 # Product spec v1 — Family Tax Harvesting (India)
 
-**Status:** Draft for review · **Date:** 14 Nov 2026 · **Working name:** Fasal (Hindi for "harvest"; trademark check pending)
+**Status:** Draft for review · **Date:** 14 Nov 2026 · **Name:** Devansh
 **Companion docs:** [ARCHITECTURE.md](ARCHITECTURE.md) (system design for 50K families) · [DESIGN.md](DESIGN.md) (design system and screens) · [IDEA.md](IDEA.md) (original idea)
 
 ---
 
 ## 1. Product in one line
 
-Every PAN in your family gets ₹1.25 lakh of tax-free long-term equity gains each year, and it lapses on 31 March. Fasal shows how much room each person has left, and the exact steps to use it before it lapses.
+Every PAN in your family gets ₹1.25 lakh of tax-free long-term equity gains each year, and it lapses on 31 March. Devansh shows how much room each person has left, and the exact steps to use it before it lapses.
 
 ## 2. Who it is for
 
@@ -97,7 +97,7 @@ Mutual fund units bought through any platform, ET Money included, sit with CAMS 
 
 ### 7.3 The harvest season loop (Jan–Mar)
 1. Weekly digest from January: "₹4.95 L of family room left · 137 days".
-2. Owner opens Plan, adds moves, executes them in their broker app (Fasal never places trades).
+2. Owner opens Plan, adds moves, executes them in their broker app (Devansh never places trades).
 3. New tradebook/CAS import (or AA refresh) marks moves **Done** automatically by matching the sells.
 4. 15 Mar, 25 Mar, 29 Mar: deadline nudges for unused room. Last trading day called out explicitly.
 
@@ -117,7 +117,7 @@ Pick a holding and an amount → for every member who holds it: gain split ST/LT
 ## 9. Business model
 
 - **Free:** room meters for up to 5 members, days left, total saving available.
-- **Fasal Plus — ₹1,499 per family per year** (placeholder, test ₹999–₹2,999): moves with exact lots, simulator, gift planner, nudges, ITR export, up to 12 members. Positioned against the saving shown ("Unlocks ₹64,350 of savings").
+- **Devansh Plus — ₹1,499 per family per year** (placeholder, test ₹999–₹2,999): moves with exact lots, simulator, gift planner, nudges, ITR export, up to 12 members. Positioned against the saving shown ("Unlocks ₹64,350 of savings").
 - Season pass pricing for first-time users in March.
 
 **North-star metric:** rupees of tax saved per family per year, from moves marked Done and verified by import.
@@ -129,7 +129,7 @@ Pick a holding and an amount → for every member who holds it: gain split ST/LT
 | Item | Position for v1 | Decision needed |
 |---|---|---|
 | **SEBI Investment Adviser rules** | Show tax arithmetic on the user's own holdings. Moves are "sell and buy back the same security" (no new security is ever suggested). Still close to personalised advice. | Legal opinion before R1. Strong option: register as a SEBI RIA (also unlocks the AA route below). |
-| **Account Aggregator** | FIUs must be regulated by a financial regulator, so Fasal cannot pull AA data on its own today. v1 uses user-supplied CAS and broker files. | Become RIA, or partner with a regulated FIU. |
+| **Account Aggregator** | FIUs must be regulated by a financial regulator, so Devansh cannot pull AA data on its own today. v1 uses user-supplied CAS and broker files. | Become RIA, or partner with a regulated FIU. |
 | **DPDP Act 2023** | Per-member consent with purposes, revocation, deletion, breach notice process, data in India. | Appoint a grievance officer; consent notice copy reviewed. |
 | **Identity data** | PAN only, encrypted. **No Aadhaar, no broker passwords, ever.** | — |
 | **Not tax advice** | Every screen with a move carries "Planning estimate. Check large moves with a CA." | — |
@@ -139,4 +139,4 @@ Pick a holding and an amount → for every member who holds it: gain split ST/LT
 1. Families first or CAs first? (Spec assumes families; the data model keeps a Viewer role so CAs can be added.)
 2. RIA registration: pursue now (cost, 3–6 months) or launch as a calculator and accept the risk?
 3. Price point and whether the free tier shows the rupee saving (it is the strongest upgrade hook).
-4. Brand name: "Fasal" is a working name and is used by an unrelated agritech company; needs a trademark search.
+4. Brand name: the app is named Devansh (changed from the working name Devansh on 14 Nov 2026).

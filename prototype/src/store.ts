@@ -1,3 +1,4 @@
+import type { PlannedSale } from './engine/family';
 import type { ISODate, Member, Qty, Security, Txn } from './engine/types';
 import type { ParsedPrice, ParseResult } from './parsers';
 
@@ -24,12 +25,18 @@ export interface AppState {
   positions: (Position & { importId: string })[];
   imports: ImportRecord[];
   done: Record<string, boolean>;
+  plannedSales: PlannedSale[];
+  /** The person confirmed they read that suggestions are tax arithmetic, not buy or sell advice. */
+  ackGuidance?: boolean;
+  /** `${memberId}|${isin}` → money needed within 12 months. */
+  needSoon: Record<string, boolean>;
 }
 
+// Kept from the working name so data already in people's browsers still loads.
 const KEY = 'fasal-prototype-v1';
 
 export const emptyState = (): AppState => ({
-  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {},
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {},
 });
 
 export function loadState(): AppState | null {
@@ -37,7 +44,7 @@ export function loadState(): AppState | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as AppState;
-    return s.version === 1 ? s : null;
+    return s.version === 1 ? { ...s, plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {} } : null;
   } catch {
     return null;
   }
@@ -145,6 +152,7 @@ export function removeMember(state: AppState, memberId: string): AppState {
   return {
     ...state,
     members: state.members.filter((m) => m.id !== memberId),
+    plannedSales: state.plannedSales.filter((p) => p.memberId !== memberId),
     txns: state.txns.filter((t) => t.memberId !== memberId),
     positions: state.positions.filter((p) => p.memberId !== memberId),
     imports: state.imports.filter((i) => i.memberId !== memberId),

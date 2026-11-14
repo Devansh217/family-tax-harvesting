@@ -26,14 +26,16 @@ export function MemberScreen({ id }: { id: string }) {
   const v = fam.members.find((m) => m.member.id === id);
   if (!v) return <div className="sheet empty"><p>This member no longer exists.</p><a className="btn" href="#home">Back to family</a></div>;
 
-  const { member, year, holdings } = v;
+  const { member, year, holdings, plan, planned: plannedSale } = v;
   const planned = fam.moves
     .filter((m) => !state.done[moveKey(m)])
     .reduce((a, m) => a + ((m.kind === 'harvest_gain' && m.memberId === id) || (m.kind === 'gift' && m.toId === id) ? m.gain : 0), 0);
-  const roomTotal = year.room.free + year.bonus.free;
+  const roomTotal = plan.room.free + plan.bonus.free;
   const plannedShown = view === 'plan' ? Math.min(planned, roomTotal) : 0;
-  const freeShown = Math.max(0, year.room.free - plannedShown);
-  const bonusShown = Math.max(0, year.bonus.free - Math.max(0, plannedShown - year.room.free));
+  const freeShown = Math.max(0, plan.room.free - plannedShown);
+  const bonusShown = Math.max(0, plan.bonus.free - Math.max(0, plannedShown - plan.room.free));
+  const mySales = state.plannedSales.filter((p) => p.memberId === id);
+  const toggleNeed = (isin: string) => update((s) => ({ ...s, needSoon: { ...s.needSoon, [`${id}|${isin}`]: !s.needSoon[`${id}|${isin}`] } }));
   const myMoves = fam.moves.filter((m) => (m.kind === 'gift' ? m.toId === id || m.fromId === id : m.memberId === id));
   const myWarnings = fam.ledger.warnings.filter((w) => w.memberId === id);
   const soon = holdings
@@ -58,7 +60,7 @@ export function MemberScreen({ id }: { id: string }) {
         <Avatar member={member} index={indexOf(id)} size="lg" />
         <div className="grow">
           <h1>{member.name}</h1>
-          <p className="small muted">{RELATIONS[member.relation]} · {member.age} · {member.regime} regime · other income {member.otherIncome == null ? 'not entered' : inr(member.otherIncome)} · <a href={`#family`}>Edit</a></p>
+          <p className="small muted">{RELATIONS[member.relation]} · {member.age} · {member.regime} regime · income {member.incomeBand ?? (member.otherIncome == null ? 'not entered' : inr(member.otherIncome))} · <a href={`#family`}>Edit</a></p>
         </div>
       </header>
 
@@ -72,10 +74,10 @@ export function MemberScreen({ id }: { id: string }) {
             <span className="fig">{inr(freeShown)}</span>{' '}
             <span style={{ fontFamily: 'var(--f-body)', fontSize: 16, fontWeight: 500, letterSpacing: 0, color: 'var(--ink-2)' }}>free of {inr(year.room.limit)}</span>
           </h2>
-          <RoomMeter used={year.room.used} planned={plannedShown} free={freeShown} bonus={bonusShown} large />
+          <RoomMeter used={year.room.used} planned={plannedSale.roomUsed + plannedShown} free={freeShown} bonus={bonusShown} large />
           <div className="legend">
             <span><i style={{ background: 'var(--used)' }} />Used {inr(year.room.used)}</span>
-            <span><i style={{ background: 'var(--plan)' }} />Planned {inr(plannedShown)}</span>
+            <span><i style={{ background: 'var(--plan)' }} />Planned {inr(plannedSale.roomUsed + plannedShown)}</span>
             <span><i style={{ background: 'var(--room)' }} />Free {inr(freeShown)}</span>
             {year.bonus.total > 0 && <span><i style={{ background: 'color-mix(in srgb, var(--room) 45%, var(--track))' }} />Bonus {inr(bonusShown)}</span>}
           </div>
@@ -114,6 +116,20 @@ export function MemberScreen({ id }: { id: string }) {
         </div>
       )}
 
+      {mySales.length > 0 && (
+        <Section title="Planned sales" id="ps-h" action={<a className="small" href="#simulate" style={{ fontWeight: 600, textDecoration: 'none' }}>Plan another</a>}>
+          <div className="sheet">
+            {mySales.map((p) => (
+              <div className="li" key={p.id}>
+                <span className="grow">{fam.securities.get(p.isin)?.name ?? p.isin}, {units(p.qty)} units</span>
+                <button className="btn sm ghost" type="button" style={{ color: 'var(--tax)' }} onClick={() => update((s) => ({ ...s, plannedSales: s.plannedSales.filter((x) => x.id !== p.id) }))}>Remove</button>
+              </div>
+            ))}
+            <div className="li"><span className="grow muted small">Gain {inr(plannedSale.gain)} · uses {inr(plannedSale.roomUsed)} of room · adds {inr(plannedSale.tax)} tax</span></div>
+          </div>
+        </Section>
+      )}
+
       {myMoves.length > 0 && (
         <Section title="Moves for this member" id="mv-h">
           <div className="sheet">{myMoves.map((m) => <MoveRow key={m.id} move={m} />)}</div>
@@ -126,7 +142,7 @@ export function MemberScreen({ id }: { id: string }) {
         ) : (
           <div className="sheet tablebox">
             <table>
-              <thead><tr><th scope="col">Holding</th><th scope="col">Units</th><th scope="col">Price</th><th scope="col">Value</th><th scope="col">Long-term gain</th><th scope="col">Short-term gain</th><th scope="col">31 Jan 2018 FMV</th></tr></thead>
+              <thead><tr><th scope="col">Holding</th><th scope="col">Units</th><th scope="col">Price</th><th scope="col">Value</th><th scope="col">Long-term gain</th><th scope="col">Short-term gain</th><th scope="col">31 Jan 2018 FMV</th><th scope="col">Needed within 12 months</th></tr></thead>
               <tbody>
                 {holdings.map((h) => {
                   const sec = fam.securities.get(h.isin);
@@ -141,6 +157,7 @@ export function MemberScreen({ id }: { id: string }) {
                       <td className={h.ltGain >= 0 ? '' : 'bad'}>{h.price == null ? '—' : inr(h.ltGain)}</td>
                       <td className="muted">{h.price == null ? '—' : inr(h.stGain)}</td>
                       <td>{pre2018 ? <PriceInput key={`${h.isin}-fmv-${sec?.fmv2018}`} value={sec?.fmv2018} label={`31 Jan 2018 value of ${h.name}`} onCommit={(p) => setSecurity(h.isin, { fmv2018: p })} /> : <span className="tiny muted">n/a</span>}</td>
+                      <td><input type="checkbox" aria-label={`Money from ${h.name} needed within 12 months`} checked={!!state.needSoon[`${id}|${h.isin}`]} onChange={() => toggleNeed(h.isin)} /></td>
                     </tr>
                   );
                 })}
@@ -149,12 +166,12 @@ export function MemberScreen({ id }: { id: string }) {
                 <td>Total</td><td /><td />
                 <td>{inr(holdings.reduce((a, h) => a + (h.value ?? 0), 0))}</td>
                 <td>{inr(holdings.reduce((a, h) => a + h.ltGain, 0))}</td>
-                <td>{inr(holdings.reduce((a, h) => a + h.stGain, 0))}</td><td />
+                <td>{inr(holdings.reduce((a, h) => a + h.stGain, 0))}</td><td /><td />
               </tr></tfoot>
             </table>
           </div>
         )}
-        <p className="tiny muted">Prices come from the latest statement imported. Edit a price to see gains at today's market. Shares bought before 1 Feb 2018 need their 31 Jan 2018 value for grandfathering.</p>
+        <p className="tiny muted">Prices come from the latest statement imported. Edit a price to see gains at today's market. Shares bought before 1 Feb 2018 need their 31 Jan 2018 value for grandfathering. Tick "Needed within 12 months" for money you will spend soon: bought-back units would be short-term, so no sell-and-buy-back is suggested for them.</p>
       </Section>
 
       {soon.length > 0 && (

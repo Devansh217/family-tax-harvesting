@@ -12,6 +12,7 @@ import { Plan } from './screens/Plan';
 import { Simulate } from './screens/Simulate';
 import { Family } from './screens/Family';
 import { Import } from './screens/Import';
+import { About, Footer } from './screens/About';
 
 const TABS = [
   { route: 'home', label: 'Home', icon: Icon.home },
@@ -61,6 +62,7 @@ export function App() {
   else if (route === 'simulate') screen = <Simulate />;
   else if (route === 'family') screen = <Family />;
   else if (route === 'import') screen = <Import />;
+  else if (route === 'about') screen = <About />;
   else screen = <Home days={days} />;
 
   return (
@@ -69,7 +71,7 @@ export function App() {
         <header className="topbar">
           <div className="topbar-in">
             <a href="#home" className="brand" style={{ color: 'inherit', textDecoration: 'none' }}>
-              <span className="brand-mark"><Svg size={14} stroke={2.6}>{Icon.check}</Svg></span>Fasal
+              <span className="brand-mark"><Svg size={14} stroke={2.6}>{Icon.check}</Svg></span>Devansh
             </a>
             <nav className="topnav" aria-label="Main">
               {TABS.map((t) => (
@@ -77,7 +79,7 @@ export function App() {
               ))}
             </nav>
             <span className="spacer" />
-            <span className="privacy-note"><Svg size={14}>{Icon.lock}</Svg>Your files stay in this browser</span>
+            <a className="privacy-note" href="#about" style={{ textDecoration: 'none' }}><Svg size={14}>{Icon.lock}</Svg>Your files stay in this browser</a>
           </div>
         </header>
         <main>
@@ -85,6 +87,7 @@ export function App() {
             <div className="banner warn" role="status">This browser is not saving data (private window or storage blocked). Changes will be lost when you close the tab.</div>
           )}
           {screen}
+          <Footer />
         </main>
         <nav className="tabbar" aria-label="Main">
           {TABS.map((t) => (

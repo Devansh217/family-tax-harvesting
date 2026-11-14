@@ -3,6 +3,7 @@ import { canGift } from '../../engine/family';
 import type { Member } from '../../engine/types';
 import { sampleState } from '../../sample';
 import { emptyState, removeMember, uid, type AppState } from '../../store';
+import { incomeBands, FY_2026_27 } from '../../engine/rules';
 import { useApp } from '../app-context';
 import { inr, RELATIONS } from '../format';
 import { Avatar, Section } from '../parts';
@@ -14,7 +15,10 @@ const toOptionalPaise = (t: string) => (t.trim() === '' ? undefined : toPaise(t)
 
 function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m: Member) => void; onCancel: () => void }) {
   const [m, setM] = useState(initial);
-  const [income, setIncome] = useState(initial.otherIncome == null ? '' : rupees(initial.otherIncome));
+  const [income, setIncome] = useState(initial.otherIncome == null || initial.incomeBand ? '' : rupees(initial.otherIncome));
+  const [mode, setMode] = useState<'exact' | 'slab' | 'unknown'>(initial.incomeBand ? 'slab' : initial.otherIncome == null ? 'unknown' : 'exact');
+  const [band, setBand] = useState(initial.incomeBand ?? '');
+  const bands = incomeBands(m, FY_2026_27);
   const [cfSt, setCfSt] = useState(rupees(initial.carriedLoss?.st ?? 0));
   const [cfLt, setCfLt] = useState(rupees(initial.carriedLoss?.lt ?? 0));
   const f = `mf-${initial.id}`;
@@ -23,7 +27,11 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
       className="stack pad"
       onSubmit={(e) => {
         e.preventDefault();
-        onSave({ ...m, name: m.name.trim() || 'Member', otherIncome: toOptionalPaise(income), carriedLoss: { st: toPaise(cfSt), lt: toPaise(cfLt) } });
+        const picked = bands.find((b) => b.label === band);
+        const incomeFields = mode === 'exact' ? { otherIncome: toOptionalPaise(income), incomeBand: undefined }
+          : mode === 'slab' && picked ? { otherIncome: picked.assumed, incomeBand: picked.label }
+          : { otherIncome: undefined, incomeBand: undefined };
+        onSave({ ...m, name: m.name.trim() || 'Member', ...incomeFields, carriedLoss: { st: toPaise(cfSt), lt: toPaise(cfLt) } });
       }}
     >
       <div className="form-grid">
@@ -39,11 +47,25 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
             <option value="new">New regime</option><option value="old">Old regime</option>
           </select>
         </label>
-        <label className="field" htmlFor={`${f}-inc`}>Other income this year (₹)<input id={`${f}-inc`} inputMode="numeric" placeholder="Leave blank if not sure" value={income} onChange={(e) => setIncome(e.target.value)} /></label>
+        <fieldset className="field" style={{ border: 0, padding: 0, margin: 0, gridColumn: 'span 2', minWidth: 0 }}>
+          <legend style={{ padding: 0, marginBottom: 4 }}>Taxable income besides capital gains</legend>
+          <div className="seg-ctl" role="group" aria-label="How to give income">
+            <button type="button" aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>Amount</button>
+            <button type="button" aria-pressed={mode === 'slab'} onClick={() => setMode('slab')}>Tax slab</button>
+            <button type="button" aria-pressed={mode === 'unknown'} onClick={() => setMode('unknown')}>Not sure</button>
+          </div>
+          {mode === 'exact' && <input id={`${f}-inc`} aria-label="Income in rupees" inputMode="numeric" placeholder="e.g. 1200000" value={income} onChange={(e) => setIncome(e.target.value)} style={{ marginTop: 8 }} />}
+          {mode === 'slab' && (
+            <select id={`${f}-band`} aria-label="Tax slab" value={band} onChange={(e) => setBand(e.target.value)} style={{ marginTop: 8 }}>
+              <option value="">Choose a slab</option>
+              {bands.map((b) => <option key={b.label} value={b.label}>{b.label}</option>)}
+            </select>
+          )}
+        </fieldset>
         <label className="field" htmlFor={`${f}-cfst`}>Short-term loss brought forward (₹)<input id={`${f}-cfst`} inputMode="numeric" value={cfSt} onChange={(e) => setCfSt(e.target.value)} /></label>
         <label className="field" htmlFor={`${f}-cflt`}>Long-term loss brought forward (₹)<input id={`${f}-cflt`} inputMode="numeric" value={cfLt} onChange={(e) => setCfLt(e.target.value)} /></label>
       </div>
-      <p className="tiny muted">Other income is salary, pension, interest and rent before capital gains. It decides whether the member gets bonus room from the unused basic exemption. Left blank, no bonus room is assumed.</p>
+      <p className="tiny muted">Other income is salary, pension, interest and rent before capital gains. Below the basic exemption, the gap becomes bonus room for gains. A slab is read at its top end, so bonus room is never overstated; "Not sure" assumes none. Long-term and short-term gains on delivery shares are taxed at fixed rates whatever the slab.</p>
       <div className="row"><button className="btn primary" type="submit">Save</button><button className="btn" type="button" onClick={onCancel}>Cancel</button></div>
     </form>
   );
@@ -66,7 +88,7 @@ export function Family() {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `fasal-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `devansh-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -78,7 +100,7 @@ export function Family() {
       update(() => s);
       toast('Backup restored');
     } catch {
-      toast('That file is not a Fasal backup');
+      toast('That file is not a Devansh backup');
     }
   };
 
@@ -104,7 +126,7 @@ export function Family() {
                 <Avatar member={m} index={indexOf(m.id)} />
                 <a className="grow stack" href={`#member-${m.id}`} style={{ gap: 2, color: 'inherit', textDecoration: 'none' }}>
                   <span style={{ fontWeight: 600 }}>{m.name}</span>
-                  <span className="tiny muted">{RELATIONS[m.relation]} · {m.age} · {m.regime} regime · {v ? `${inr(v.year.room.free)} free` : ''} · {state.imports.filter((i) => i.memberId === m.id).length} files</span>
+                  <span className="tiny muted">{RELATIONS[m.relation]} · {m.age} · {m.regime} regime · {v ? `${inr(v.plan.room.free)} free` : ''} · {state.imports.filter((i) => i.memberId === m.id).length} files</span>
                   {clubbedWith && <span><span className="chip club">{clubbedWith}</span></span>}
                 </a>
                 {confirm === m.id ? (
@@ -123,7 +145,7 @@ export function Family() {
             );
           })}
         </div>
-        <p className="tiny muted">Relations are relative to you. Fasal never suggests gifts that would be taxed back to the giver: to a spouse, a minor child or a son's wife.</p>
+        <p className="tiny muted">Relations are relative to you. Devansh never suggests gifts that would be taxed back to the giver: to a spouse, a minor child or a son's wife.</p>
       </Section>
 
       <Section title="Data on this device" id="data-h">

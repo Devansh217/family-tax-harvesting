@@ -25,6 +25,8 @@ export interface Member {
   regime: 'new' | 'old';
   /** Income other than capital gains this tax year (salary, pension, interest). Unknown means no bonus room is assumed. */
   otherIncome?: Paise;
+  /** Set when income was given as a slab, not an exact figure: the band's label. `otherIncome` then holds its assumed income. */
+  incomeBand?: string;
   /** Losses brought forward from earlier years. */
   carriedLoss?: { st: Paise; lt: Paise };
 }

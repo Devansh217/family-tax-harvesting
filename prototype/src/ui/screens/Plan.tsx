@@ -94,6 +94,9 @@ export function Plan() {
         <p className="small muted" style={{ maxWidth: '72ch' }}>
           Gains made tax-free stop being taxed later, when you sell. That is worth up to {inr(fam.totals.laterSaving)} after costs, but only in a year your gains would go past the {inr(fam.rules.ltcgExemption)} exemption. {doneCount} of {fam.moves.length} moves done.
         </p>
+        <p className="note" style={{ maxWidth: '72ch' }}>
+          <strong style={{ color: 'var(--ink)' }}>Not a recommendation to buy or sell.</strong> Each move shows the tax effect of an action on holdings you already own. Whether to act is your decision; check large moves with a CA. <a href="#about">How to read this</a>
+        </p>
         {fam.totals.uncertainLots > 0 && (
           <p className="small" style={{ color: 'var(--time)' }}>{fam.totals.uncertainLots} {fam.totals.uncertainLots === 1 ? 'lot is' : 'lots are'} left out because the purchase date was estimated or the 31 Jan 2018 value is missing. Fix them on the member pages.</p>
         )}
@@ -118,7 +121,7 @@ export function Plan() {
           </section>
         );
       })}
-      <p className="tiny muted">Fasal never places trades. Costs are estimates for a discount broker: securities transaction tax, stamp duty, exchange charges and the depository fee. Gift moves assume shares in a demat account; mutual fund units are not suggested for gifting.</p>
+      <p className="tiny muted">Devansh never places trades. Costs are estimates for a discount broker: securities transaction tax, stamp duty, exchange charges and the depository fee. Gift moves assume shares in a demat account; mutual fund units are not suggested for gifting.</p>
       <Disclaimer />
     </>
   );
