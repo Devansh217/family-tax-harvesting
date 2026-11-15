@@ -1,5 +1,5 @@
 import { inRange } from './dates';
-import { basicExemption, slabTax, type TaxRules } from './rules';
+import { basicExemption, incomeTotal, slabTax, type TaxRules } from './rules';
 import type { Member, Paise, Realised } from './types';
 
 export interface YearSummary {
@@ -79,8 +79,9 @@ export function summariseYear(member: Member, realised: Realised[], rules: TaxRu
   let stTaxable = st;
   let ltTaxable = lt - exemptionUsed;
 
-  const known = member.otherIncome != null;
-  const normal = (member.otherIncome ?? 0) + businessProfit;
+  const income = incomeTotal(member);
+  const known = income != null;
+  const normal = (income ?? 0) + businessProfit;
   const shortfall = !known ? 0 : Math.max(0, basicExemption(member, rules) - Math.max(0, normal));
   let bonusLeft = shortfall;
   u = Math.min(stTaxable, bonusLeft); stTaxable -= u; bonusLeft -= u;
@@ -90,7 +91,7 @@ export function summariseYear(member: Member, realised: Realised[], rules: TaxRu
   if (businessProfit > 0) {
     const total = normal + st + lt;
     bizTax = known
-      ? (slabTax(normal, total, member, rules) - slabTax(member.otherIncome ?? 0, total - businessProfit, member, rules)) * (1 + rules.cess)
+      ? (slabTax(normal, total, member, rules) - slabTax(income ?? 0, total - businessProfit, member, rules)) * (1 + rules.cess)
       : businessProfit * 0.3 * (1 + rules.cess);
   }
   const tax = roundRupee((stTaxable * rules.stcgRate + ltTaxable * rules.ltcgRate) * (1 + rules.cess) + bizTax);

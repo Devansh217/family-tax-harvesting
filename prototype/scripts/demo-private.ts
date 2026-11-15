@@ -13,7 +13,7 @@ import { reconcile } from '../src/reconcile';
 import { applyImport, emptyState, type AppState } from '../src/store';
 
 const dir = join(import.meta.dirname, '../../data/private');
-let s: AppState = { ...emptyState(), members: [{ id: 'm', name: 'Member', relation: 'self', age: 40, regime: 'new', otherIncome: 20_00_000_00 }] };
+let s: AppState = { ...emptyState(), members: [{ id: 'm', name: 'Member', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: 20_00_000_00 , from: 'manual' as const }]}] };
 const order = (f: string) => (/holdings/i.test(f) ? 2 : /taxpnl/i.test(f) ? 3 : 1);
 for (const f of readdirSync(dir).filter((x) => x.endsWith('.xlsx')).sort((a, b) => order(a) - order(b))) {
   const sheets = (await readXlsxFile(join(dir, f))).map((x) => ({ sheet: x.sheet, data: x.data as unknown[][] }));

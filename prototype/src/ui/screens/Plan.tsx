@@ -4,7 +4,7 @@ import { dateLabel, inr, inrShort, units } from '../format';
 import { Avatar, Disclaimer, Svg, Icon } from '../parts';
 import { SampleBanner } from './Home';
 
-export const movesNotDone = (moves: Move[], done: Record<string, boolean>) => moves.filter((m) => !done[moveKey(m)]);
+export const movesNotDone = (moves: Move[], done: Record<string, boolean>, yearLabel: string) => moves.filter((m) => !done[moveKey(m, yearLabel)]);
 
 const KIND_ORDER: Array<{ kind: Move['kind']; title: string; blurb: string }> = [
   { kind: 'harvest_gain', title: 'Sell and buy back', blurb: 'Books long-term gain inside the member’s tax-free room and resets the cost higher, so that gain is never taxed. Buy back on the next trading day; mutual funds take 1–2 days to pay out. Bought-back units count as short-term for a year, so skip money you need within 12 months.' },
@@ -35,7 +35,7 @@ function describe(m: Move, nameOf: (id: string) => string, bonusOf: (id: string)
 
 export function MoveRow({ move }: { move: Move }) {
   const { state, update, nameOf, indexOf, fam } = useApp();
-  const key = moveKey(move);
+  const key = moveKey(move, fam.rules.label);
   const done = !!state.done[key];
   const d = describe(move, nameOf, (id) => fam.members.find((v) => v.member.id === id)?.year.bonus.free ?? 0);
   const who = state.members.find((m) => m.id === d.who);
@@ -71,7 +71,7 @@ export function MoveRow({ move }: { move: Move }) {
 
 export function Plan() {
   const { fam, state } = useApp();
-  const isDone = (m: Move) => !!state.done[moveKey(m)];
+  const isDone = (m: Move) => !!state.done[moveKey(m, fam.rules.label)];
   const gainOf = (m: Move) => (m.kind === 'harvest_gain' || m.kind === 'gift' ? m.gain : 0);
   const later = fam.moves.filter(isLaterBenefit);
   const now = fam.moves.filter((m) => !isLaterBenefit(m));

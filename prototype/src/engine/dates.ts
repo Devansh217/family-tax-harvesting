@@ -1,4 +1,4 @@
-import type { ISODate } from './types';
+import type { ISODate, Member } from './types';
 
 const parse = (d: ISODate) => {
   const [y, m, day] = d.split('-').map(Number) as [number, number, number];
@@ -39,6 +39,14 @@ export function isLongTerm(buy: ISODate, sell: ISODate, months: number): boolean
 }
 
 export const inRange = (d: ISODate, start: ISODate, end: ISODate) => d >= start && d <= end;
+
+/** Age in whole years on `date`: from date of birth when known, else the stored age. */
+export function ageOn(m: Pick<Member, 'age' | 'dob'>, date: ISODate): number {
+  if (!m.dob) return m.age;
+  const [by, bm, bd] = m.dob.split('-').map(Number) as [number, number, number];
+  const [y, mo, d] = date.split('-').map(Number) as [number, number, number];
+  return y - by - (mo < bm || (mo === bm && d < bd) ? 1 : 0);
+}
 
 /** India's offset from UTC. India has no daylight saving, so this never changes. */
 const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;

@@ -23,16 +23,36 @@ export type Relation =
   | 'daughter_in_law'
   | 'other';
 
+export type IncomeKind = 'salary' | 'pension' | 'interest' | 'rent' | 'business' | 'other';
+
+/** One yearly income stream before deductions. `band` is set when the person gave a slab, not a figure. */
+export interface IncomeSource { kind: IncomeKind; amount: Paise; from: 'ais' | 'manual' | 'band'; band?: string; asOf?: ISODate }
+
 export interface Member {
   id: string;
   name: string;
+  /** Absent means a person. */
+  type?: 'person' | 'huf';
+  /** Relation to the manager, for display. Tax rules use the links below, which work for any pair of members. */
   relation: Relation;
+  /** Used when `dob` is missing. */
   age: number;
+  dob?: ISODate;
+  /** Resident in India (default). Non-residents get no basic-exemption room against special-rate gains. */
+  resident?: boolean;
   regime: 'new' | 'old';
-  /** Income other than capital gains this tax year (salary, pension, interest). Unknown means no bonus room is assumed. */
-  otherIncome?: Paise;
-  /** Set when income was given as a slab, not an exact figure: the band's label. `otherIncome` then holds its assumed income. */
-  incomeBand?: string;
+  spouseId?: string;
+  parentIds?: string[];
+  /** For an HUF: the members (coparceners) whose gifts to it are clubbed back (s.99(3)). */
+  hufMemberIds?: string[];
+  /** Income other than capital gains this tax year. Undefined = not entered (no basic-exemption room assumed); [] = none. */
+  income?: IncomeSource[];
+  /** Old regime only: total of deductions such as 80C and 80D, as one figure. */
+  deductions?: Paise;
+  /** The manager's record that this adult agreed to being managed in the app. */
+  consent?: { agreedAt: ISODate; recordedBy: string };
+  /** Never the full PAN. */
+  panLast4?: string;
   /** Losses brought forward from earlier years. */
   carriedLoss?: { st: Paise; lt: Paise };
   /**

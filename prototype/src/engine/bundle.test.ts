@@ -16,7 +16,7 @@ beforeAll(async () => {
 }, 60_000);
 
 const rs = (n: number) => Math.round(n * 100);
-const member: Member = { id: 'm1', name: 'Test', relation: 'self', age: 40, regime: 'new', otherIncome: rs(20_00_000) } as Member;
+const member: Member = { id: 'm1', name: 'Test', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: rs(20_00_000) , from: 'manual' as const }]} as Member;
 const sec = { isin: 'A', name: 'A', taxType: 'equity', listed: true } as Security;
 const txns: Txn[] = [
   { id: 't1', memberId: 'm1', isin: 'A', date: '2024-01-01', side: 'buy', qty: source.QTY_SCALE, amount: rs(1_00_000), source: 'test' },

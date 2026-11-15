@@ -128,11 +128,17 @@ export function incomeBands(member: Pick<Member, 'regime' | 'age'>, r: TaxRules)
   return bands;
 }
 
+/** Total yearly income from all sources, or null when income was not entered. Replaced by normalIncomeOf in Task 5. */
+export function incomeTotal(member: Pick<Member, 'income'>): Paise | null {
+  return member.income == null ? null : member.income.reduce((a, s) => a + s.amount, 0);
+}
+
 /** Slab rate for a known income, or null when income is unknown. */
 export function slabRate(member: Member, r: TaxRules): number | null {
-  if (member.otherIncome == null) return null;
+  const income = incomeTotal(member);
+  if (income == null) return null;
   const bands = incomeBands(member, r).slice(1);
-  for (const b of bands.slice(0, -1)) if (member.otherIncome <= b.assumed) return b.rate;
+  for (const b of bands.slice(0, -1)) if (income <= b.assumed) return b.rate;
   return bands.at(-1)!.rate;
 }
 

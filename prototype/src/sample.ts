@@ -6,11 +6,11 @@ const rs = (n: number) => Math.round(n * 100);
 /** A made-up family of five, matching the design canvas. Prices and fund ISINs are invented. */
 export function sampleState(): AppState {
   const members: Member[] = [
-    { id: 'a', name: 'Arjun', relation: 'self', age: 38, regime: 'new', otherIncome: rs(30_00_000) },
-    { id: 'm', name: 'Meera', relation: 'spouse', age: 36, regime: 'new', otherIncome: rs(18_00_000) },
-    { id: 'r', name: 'Ramesh', relation: 'parent', age: 64, regime: 'new', otherIncome: rs(4_60_000) },
-    { id: 's', name: 'Sunita', relation: 'parent', age: 61, regime: 'new', otherIncome: rs(4_20_000) },
-    { id: 'k', name: 'Kabir', relation: 'child_adult', age: 19, regime: 'new', otherIncome: 0 },
+    { id: 'a', name: 'Arjun', relation: 'self', age: 38, regime: 'new', type: 'person', income: [{ kind: 'other', amount: rs(30_00_000), from: 'manual' }] },
+    { id: 'm', name: 'Meera', relation: 'spouse', age: 36, regime: 'new', type: 'person', income: [{ kind: 'other', amount: rs(18_00_000), from: 'manual' }] },
+    { id: 'r', name: 'Ramesh', relation: 'parent', age: 64, regime: 'new', type: 'person', income: [{ kind: 'other', amount: rs(4_60_000), from: 'manual' }] },
+    { id: 's', name: 'Sunita', relation: 'parent', age: 61, regime: 'new', type: 'person', income: [{ kind: 'other', amount: rs(4_20_000), from: 'manual' }] },
+    { id: 'k', name: 'Kabir', relation: 'child_adult', age: 19, regime: 'new', type: 'person', income: [{ kind: 'other', amount: 0, from: 'manual' }] },
   ];
   const d = '2026-11-13';
   const securities: Security[] = [

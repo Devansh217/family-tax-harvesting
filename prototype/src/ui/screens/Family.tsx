@@ -3,7 +3,7 @@ import { canGift } from '../../engine/family';
 import type { Member } from '../../engine/types';
 import { sampleState } from '../../sample';
 import { emptyState, removeMember, uid, type AppState } from '../../store';
-import { incomeBands, FY_2026_27 } from '../../engine/rules';
+import { incomeBands, incomeTotal, FY_2026_27 } from '../../engine/rules';
 import { useApp } from '../app-context';
 import { inr, RELATIONS } from '../format';
 import { Avatar, Section } from '../parts';
@@ -24,9 +24,11 @@ const signed = (p?: number) => (p == null ? '' : String(p / 100));
 
 function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m: Member) => void; onCancel: () => void }) {
   const [m, setM] = useState(initial);
-  const [income, setIncome] = useState(initial.otherIncome == null || initial.incomeBand ? '' : rupees(initial.otherIncome));
-  const [mode, setMode] = useState<'exact' | 'slab' | 'unknown'>(initial.incomeBand ? 'slab' : initial.otherIncome == null ? 'unknown' : 'exact');
-  const [band, setBand] = useState(initial.incomeBand ?? '');
+  const known = incomeTotal(initial);
+  const initialBand = initial.income?.find((s) => s.band)?.band;
+  const [income, setIncome] = useState(known == null || initialBand ? '' : rupees(known));
+  const [mode, setMode] = useState<'exact' | 'slab' | 'unknown'>(initialBand ? 'slab' : known == null ? 'unknown' : 'exact');
+  const [band, setBand] = useState(initialBand ?? '');
   const bands = incomeBands(m, FY_2026_27);
   const [cfSt, setCfSt] = useState(rupees(initial.carriedLoss?.st ?? 0));
   const [cfLt, setCfLt] = useState(rupees(initial.carriedLoss?.lt ?? 0));
@@ -40,9 +42,11 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
       onSubmit={(e) => {
         e.preventDefault();
         const picked = bands.find((b) => b.label === band);
-        const incomeFields = mode === 'exact' ? { otherIncome: toOptionalPaise(income), incomeBand: undefined }
-          : mode === 'slab' && picked ? { otherIncome: picked.assumed, incomeBand: picked.label }
-          : { otherIncome: undefined, incomeBand: undefined };
+        const exact = toOptionalPaise(income);
+        // Until the setup screen (Task 12) asks per source, one figure is stored as 'other' income.
+        const incomeFields: Pick<Member, 'income'> = mode === 'exact' && exact != null ? { income: [{ kind: 'other', amount: exact, from: 'manual' }] }
+          : mode === 'slab' && picked ? { income: [{ kind: 'other', amount: picked.assumed, from: 'band', band: picked.label }] }
+          : { income: undefined };
         const business = { intraday: toSignedPaise(intraday), fno: toSignedPaise(fno), fnoTurnover: toOptionalPaise(turnover) };
         onSave({ ...m, name: m.name.trim() || 'Member', ...incomeFields, carriedLoss: { st: toPaise(cfSt), lt: toPaise(cfLt) }, business });
       }}

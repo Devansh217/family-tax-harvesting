@@ -10,7 +10,7 @@ const buy = (memberId: string, isin: string, date: string, units: number, priceR
   id: `b${++seq}`, memberId, isin, date, side: 'buy', qty: q(units), amount: rs(units * priceRs), source: 'test',
 });
 const person = (id: string, relation: Member['relation'], over: Partial<Member> = {}): Member => ({
-  id, name: id, relation, age: 40, regime: 'new', otherIncome: rs(20_00_000), ...over,
+  id, name: id, relation, age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: rs(20_00_000), from: 'manual' as const }], ...over,
 });
 const ASOF = '2026-11-14';
 

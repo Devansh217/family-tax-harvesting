@@ -39,7 +39,7 @@ export function Home({ days }: { days: number }) {
 
   const { totals } = fam;
   const used = totals.limit - totals.freeRoom;
-  const open = movesNotDone(fam.moves, state.done);
+  const open = movesNotDone(fam.moves, state.done, fam.rules.label);
   const openGain = open.reduce((a, m) => a + (m.kind === 'harvest_gain' || m.kind === 'gift' ? m.gain : 0), 0);
   const openLater = open.filter(isLaterBenefit).reduce((a, m) => a + m.saving, 0);
   const openNow = open.filter((m) => !isLaterBenefit(m)).reduce((a, m) => a + m.saving, 0);
