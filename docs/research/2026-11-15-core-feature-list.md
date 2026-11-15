@@ -28,9 +28,9 @@
 9. **The US 4% withdrawal rule is too high for India:** plan on 3–3.25% to age 95 for the younger spouse. (RETIRE §1)
 10. **Prepaying a loan competes with safe debt, not equity:** compare the loan's after-tax rate with the best after-tax debt return of any family member. The home loan deduction rarely changes the answer. (DEBT §1)
 11. **The app's users are the top fifth of households:** only 9.5% of Indian households invest in securities, and household wealth is 77% property and 11% gold. Property and gold must appear in net worth even though the engine doesn't trade them. (ARCH §2)
-13. **People act on one step with a date, not on explanations.** One move = one person, one action, a date they pick, one rupee figure; "why this" builds trust but didn't change uptake in a 2026 experiment. Only real deadlines create urgency: 31 March, advance-tax dates, lots turning long-term. (NUDGE §2–3)
-14. **Show tax savings in rupees against doing nothing, and chances as "about 8 in 10 market paths"** with the bad-case shortfall and what closes it; never a decimal or a single projected line. (NUDGE §3)
-12. **Insurance can be checked, not sold or compared:** an unregistered app may show gaps in rupees only, with no insurer or product names, rankings, links or leads (IRDAI). A registered adviser may not distribute insurance to advisory clients. (DEBT §6)
+12. **People act on one step with a date, not on explanations.** One move = one person, one action, a date they pick, one rupee figure; "why this" builds trust but didn't change uptake in a 2026 experiment. Only real deadlines create urgency: 31 March, advance-tax dates, lots turning long-term. (NUDGE §2–3)
+13. **Show tax savings in rupees against doing nothing, and chances as "about 8 in 10 market paths"** with the bad-case shortfall and what closes it; never a decimal or a single projected line. (NUDGE §3)
+14. **Insurance can be checked, not sold or compared:** an unregistered app may show gaps in rupees only, with no insurer or product names, rankings, links or leads (IRDAI). A registered adviser may not distribute insurance to advisory clients. (DEBT §6)
 
 ## 2. Features
 
