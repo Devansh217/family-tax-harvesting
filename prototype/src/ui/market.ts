@@ -64,6 +64,17 @@ export function withFunds(securities: Security[], file: FundsFile | null, userOv
   });
 }
 
+/**
+ * Securities for the Compare screen: the family's holdings as already classified, plus the picked fund from AMFI's
+ * list when the family doesn't hold it, classified from its category.
+ */
+export function securitiesForCompare(held: Security[], file: FundsFile | null, isin: string): Security[] {
+  const f = file?.funds[isin];
+  if (!isin || held.some((s) => s.isin === isin) || !f) return held;
+  const cl = classifyFund(f.c, f.n);
+  return [...held, { isin, name: f.n, taxType: cl.taxType, listed: cl.listed, category: f.c, taxTypeSource: 'amfi' }];
+}
+
 /** One row of the daily history kept in the browser. */
 export interface Snapshot {
   date: ISODate;

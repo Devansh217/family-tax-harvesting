@@ -3,7 +3,7 @@ import { canGift } from '../../engine/relations';
 import { todayISO } from '../../engine/dates';
 import type { Member } from '../../engine/types';
 import { sampleState } from '../../sample';
-import { emptyState, removeMember, uid, type AppState } from '../../store';
+import { emptyState, parseBackup, removeMember, uid } from '../../store';
 import { FY_2026_27 } from '../../engine/rules';
 import { IncomeFields, LossFields, PersonFields } from './memberFields';
 import { useApp } from '../app-context';
@@ -87,8 +87,8 @@ export function Family() {
 
   const restore = async (file: File) => {
     try {
-      const s = JSON.parse(await file.text()) as AppState;
-      if (s.version !== 1 || !Array.isArray(s.members)) throw new Error('bad');
+      const s = parseBackup(await file.text());
+      if (!s) throw new Error('bad');
       update(() => s);
       toast('Backup restored');
     } catch {

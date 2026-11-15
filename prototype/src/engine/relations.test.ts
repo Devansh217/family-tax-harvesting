@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canGift, clubbing, pairRelation } from './relations';
+import { canGift, clubbing, isRelative, pairRelation } from './relations';
 import type { Member } from './types';
 
 const rs = (n: number) => Math.round(n * 100);
@@ -68,5 +68,21 @@ describe('relations between any two members', () => {
   it('never gifts to oneself or to a non-resident', () => {
     expect(canGift(me, me, fam, D)).toBe(false);
     expect(canGift(me, { ...mum, resident: false }, [me, wife, dad, { ...mum, resident: false }], D)).toBe(false);
+  });
+
+  it('review: no tax-free gift to someone who is not a relative, or to an HUF from a non-member', () => {
+    const friend = m('fr', { relation: 'other' });
+    expect(canGift(me, friend, [...fam, friend], D)).toBe(false);
+    expect(canGift(wife, huf, fam, D)).toBe(false);
+    expect(isRelative(me, mum, fam)).toBe(true);
+    expect(isRelative(me, friend, [...fam, friend])).toBe(false);
+  });
+
+  it('review: a spouse by relation only is still a spouse when other members have links', () => {
+    const s = m('s', { relation: 'self', parentIds: ['p'] }), p = m('p', { relation: 'parent' }), sp = m('sp', { relation: 'spouse' });
+    expect(pairRelation(s, sp, [s, p, sp])).toBe('spouse');
+    expect(canGift(s, sp, [s, p, sp], D)).toBe(false);
+    const stale = m('s2', { relation: 'self', spouseId: 'deleted' }), sp2 = m('sp2', { relation: 'spouse' });
+    expect(pairRelation(stale, sp2, [stale, sp2])).toBe('spouse');
   });
 });

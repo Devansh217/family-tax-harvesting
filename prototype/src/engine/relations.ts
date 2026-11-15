@@ -5,8 +5,6 @@ import type { ISODate, Member } from './types';
 /** How `b` is related to `a`, worked out from spouse and parent links so any pair works, not only pairs with the manager. */
 export type PairRelation = 'self' | 'spouse' | 'parent' | 'child' | 'sibling' | 'grandparent' | 'grandchild' | 'parent_in_law' | 'child_in_law' | 'other';
 
-const hasLinks = (ms: Member[]) => ms.some((x) => x.spouseId || x.parentIds?.length);
-
 /** Parent ids that point at members in this family (stale ids are ignored). */
 const parentsOf = (x: Member, members: Member[]) => (x.parentIds ?? []).filter((id) => members.some((y) => y.id === id));
 
@@ -33,9 +31,17 @@ function fromManager(a: Member, b: Member): PairRelation {
   return table[pair] ?? 'other';
 }
 
+/**
+ * Links first; when they don't connect the pair (no links, half-entered links, or a stale id), fall back to both
+ * members' relation to the manager, so a spouse added without the spouse link is still a spouse.
+ */
 export function pairRelation(a: Member, b: Member, members: Member[]): PairRelation {
   if (a.id === b.id) return 'self';
-  if (!hasLinks([a, b])) return fromManager(a, b);
+  const linked = fromLinks(a, b, members);
+  return linked === 'other' ? fromManager(a, b) : linked;
+}
+
+function fromLinks(a: Member, b: Member, members: Member[]): PairRelation {
   if (spouseOf(a, members) === b.id || spouseOf(b, members) === a.id) return 'spouse';
   const pa = parentsOf(a, members), pb = parentsOf(b, members);
   if (pa.includes(b.id)) return 'parent';
@@ -74,7 +80,19 @@ export function clubbing(from: Member, to: Member, members: Member[], asOf: ISOD
   return null;
 }
 
-/** A gift that really moves the tax: not to oneself, not clubbed back, and to a resident. */
+const RELATIVES: PairRelation[] = ['spouse', 'parent', 'child', 'sibling', 'grandparent', 'grandchild', 'parent_in_law', 'child_in_law'];
+
+/**
+ * A "relative" for the gift exemption (s.92, old s.56(2)(x)): gifts from relatives are not taxed in the receiver's
+ * hands; from anyone else, over ₹50,000 a year they are. For an HUF, its relatives are its own members.
+ */
+export function isRelative(from: Member, to: Member, members: Member[]): boolean {
+  if (to.type === 'huf') return !!to.hufMemberIds?.includes(from.id);
+  if (from.type === 'huf') return !!from.hufMemberIds?.includes(to.id);
+  return RELATIVES.includes(pairRelation(from, to, members));
+}
+
+/** A gift that really moves the tax: not to oneself, to a relative, not clubbed back, and to a resident. */
 export function canGift(from: Member, to: Member, members: Member[], asOf: ISODate): boolean {
-  return from.id !== to.id && clubbing(from, to, members, asOf) === null && to.resident !== false;
+  return from.id !== to.id && isRelative(from, to, members) && clubbing(from, to, members, asOf) === null && to.resident !== false;
 }

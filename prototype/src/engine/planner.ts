@@ -2,7 +2,7 @@ import { classifyFund, type ReturnClass } from './categories';
 import { addMonths, daysBetween, isLongTerm } from './dates';
 import type { FamilyView } from './family';
 import { CPI, REAL_RETURN, type AssetClass, type Scenario } from './marketAssumptions';
-import { clubbing, pairRelation } from './relations';
+import { clubbing, isRelative, pairRelation } from './relations';
 import { normalIncomeOf, rulesFor, type TaxRules } from './rules';
 import { longTermMonthsFor, taxForYear, type GainBuckets } from './tax';
 import type { ISODate, Member, Paise, Security, TaxType } from './types';
@@ -64,6 +64,8 @@ const UNKNOWN_INCOME: Paise = 50 * L;
 /** Old regime: ₹1,500 of a minor's clubbed income is exempt in the parent's hands. */
 const MINOR_EXEMPTION: Paise = 1_500_00;
 const STALE_RATE_DAYS = 100;
+/** Gifts from non-relatives up to this much a year are not taxed. */
+const GIFT_LIMIT: Paise = 50_000_00;
 
 function describeProduct(p: Product, securities: Security[]): { taxType: TaxType; listed: boolean; returnClass: ReturnClass | null; unlisted: boolean } | { check: string } {
   if (p.kind === 'fd') return { taxType: 'interest', listed: false, returnClass: 'fd', unlisted: false };
@@ -148,11 +150,15 @@ export function bringsHome(input: BringsHomeInput, view: FamilyView, members: Me
       nearCliff = taxed.regime === 'new' && Math.abs(t.total - 12 * L) <= 2 * L;
     }
     const gain = value - invested;
+    // A gift from someone who is not a relative, over ₹50,000 in a year, is the receiver's income (s.92).
+    const nonRelative = gift && !isRelative(giver, holder, members);
+    if (nonRelative && amount > GIFT_LIMIT) tax += extraTax(holder, amount, 'slab', rules.end).tax;
 
     if (gift) {
       warnings.push(`Gift from ${giver.name}: it becomes ${holder.name}'s money for good.`);
       if (pairRelation(giver, holder, members) === 'parent') warnings.push(`It passes by ${holder.name}'s will: tell your siblings and check the will.`);
     }
+    if (nonRelative) warnings.push(`${holder.name} is not a relative under the tax rules: a gift over ₹50,000 a year is taxed as their income.`);
     if (nearCliff) warnings.push('Near the ₹12 L line: more income here can cost far more.');
     if (taxed.regime === 'old' && p.taxType === 'equity') warnings.push("Old regime: deductions don't reduce these gains.");
     if (input.product.kind === 'ppf') {

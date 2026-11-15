@@ -38,4 +38,11 @@ describe('fund tax type from the AMFI category', () => {
     expect(classifyFund('Something New', 'x').taxType).toBe('check');
     expect(classifyFund('Close Ended Schemes', 'x').taxType).toBe('check');
   });
+
+  it('review: overseas funds filed under sectoral or thematic equity are check, not equity', () => {
+    expect(classifyFund('Equity Scheme - Sectoral/ Thematic', 'ICICI Prudential US Bluechip Equity Fund').taxType).toBe('check');
+    expect(classifyFund('Equity Schemes - Thematic Fund', 'Mirae Asset NYSE FANG+ ETF Fund of Fund').taxType).toBe('check');
+    expect(classifyFund('Equity Schemes - Thematic Fund', 'X Global Innovation Fund').taxType).toBe('check');
+    expect(classifyFund('Equity Scheme - Sectoral/ Thematic', 'X Banking & Financial Services Fund').taxType).toBe('equity');
+  });
 });

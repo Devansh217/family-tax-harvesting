@@ -92,4 +92,16 @@ describe('what it brings home, per member', () => {
     expect(run({ annualReturn: 0.9 })).toMatchObject({ status: 'invalid', field: 'annualReturn' });
     expect(run({ annualReturn: Number.NaN })).toMatchObject({ status: 'invalid', field: 'annualReturn' });
   });
+
+  it('review: money given to someone who is not a relative carries gift tax and says so', () => {
+    const friend: Member = { id: 'fr', name: 'Kiran', relation: 'other', age: 40, regime: 'new', type: 'person', income: sal(20_00_000) };
+    const all = [...members, friend];
+    const v = computeFamily({ members: all, securities, txns: [] }, D, R);
+    const r = bringsHome({ product: { kind: 'fd' }, amount: rs(5_00_000), years: 1, annualReturn: 0.07, fromMemberId: 'me' }, v, all, securities, D);
+    if (r.status !== 'ok') throw new Error(r.status);
+    const row = r.rows.find((x) => x.memberId === 'fr')!;
+    expect(row.warnings.join(' ')).toMatch(/not a relative/i);
+    expect(row.tax).toBeGreaterThan(0);
+  });
 });
+

@@ -3,7 +3,7 @@ import { computeFamily } from './engine/family';
 import { FY_2026_27 } from './engine/rules';
 import { parseTablePreview, previewTable } from './parsers';
 import { sampleState } from './sample';
-import { applyImport, emptyState, normalizeState, removeImport, type AppState } from './store';
+import { applyImport, emptyState, normalizeState, parseBackup, removeImport, type AppState } from './store';
 import { ageOn } from './engine/dates';
 
 const withMember = (): AppState => ({ ...emptyState(), members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: 0 , from: 'manual' as const }]}] });
@@ -151,3 +151,19 @@ describe('migrating saved families', () => {
     expect(ageOn(m, '2026-11-15')).toBe(50);
   });
 });
+
+describe('review: restoring a backup', () => {
+  it('migrates an old-shape backup instead of loading it raw', () => {
+    const { taxTypeOverrides: _t, recommendations: _r, ...old } = emptyState();
+    const text = JSON.stringify({ ...old, members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new', otherIncome: 100 }], securities: [{ isin: 'INF1', name: 'F', kind: 'equity_mf' }] });
+    const s = parseBackup(text)!;
+    expect(s.taxTypeOverrides).toEqual({});
+    expect(s.recommendations).toEqual([]);
+    expect(s.securities[0]).toMatchObject({ taxType: 'equity', listed: false });
+  });
+  it('rejects a file that is not a backup', () => {
+    expect(parseBackup('{"hello":1}')).toBeNull();
+    expect(parseBackup('not json')).toBeNull();
+  });
+});
+

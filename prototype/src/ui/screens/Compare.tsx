@@ -5,6 +5,7 @@ import { bringsHome, nominalReturn, type BringsHomeResult, type Product } from '
 import { slabRate } from '../../engine/rules';
 import { useApp } from '../app-context';
 import { dateLabel, inr, inrShort } from '../format';
+import { securitiesForCompare } from '../market';
 import { Avatar, Disclaimer } from '../parts';
 
 type Kind = Product['kind'];
@@ -67,7 +68,7 @@ function ProductPicker({ value, onChange, id }: { value: Pick; onChange: (p: Pic
 const GIFT_TEXT = 'A gift becomes theirs for good: it counts as their income, can be spent by them, and passes by their will or nominee, not yours. Move it by bank transfer from the giver to the receiver, invest it in their own name, and keep a signed gift letter.';
 
 export function Compare() {
-  const { fam, state, asOf, indexOf, nameOf } = useApp();
+  const { fam, state, asOf, indexOf, nameOf, market } = useApp();
   const members = state.members;
   const self = members.find((m) => m.relation === 'self') ?? members[0];
   const [a, setA] = useState<Pick>({ kind: 'category', isin: '', category: 'Hybrid Scheme - Conservative Hybrid Fund', label: 'Fund category' });
@@ -86,8 +87,10 @@ export function Compare() {
   const run = (p: Pick, ownReturn: boolean): BringsHomeResult | null => {
     const product = toProduct(p);
     if (!product) return null;
+    // Holdings as classified (AMFI category, your own choices), plus the picked fund if the family doesn't hold it.
+    const secs = securitiesForCompare([...fam.securities.values()], market.funds, p.kind === 'fund' ? p.isin : '');
     const userReturn = ownReturn && returnText != null && returnText.trim() !== '' ? Number(returnText) / 100 : undefined;
-    return bringsHome({ product, amount, years, scenario, fromMemberId: from || self.id, payout, annualReturn: userReturn }, fam, members, state.securities, asOf);
+    return bringsHome({ product, amount, years, scenario, fromMemberId: from || self.id, payout, annualReturn: userReturn }, fam, members, secs, asOf);
   };
   const ra = run(a, true);
   const rb = b ? run(b, false) : null;

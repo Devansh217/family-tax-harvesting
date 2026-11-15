@@ -121,6 +121,15 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
   };
 }
 
+/** A backup file's text as a family, migrated like any saved copy; null when it is not a backup. */
+export function parseBackup(text: string): AppState | null {
+  try {
+    return normalizeState(JSON.parse(text) as AppState);
+  } catch {
+    return null;
+  }
+}
+
 /** True when the state holds a real family worth keeping, not the sample or an untouched start. */
 export const hasRealData = (s: AppState) => !s.isSample && s.members.length > 0 && (s.txns.length > 0 || s.members.length > 1);
 

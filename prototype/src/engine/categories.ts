@@ -18,6 +18,7 @@ const c = (taxType: TaxType, listed: boolean, returnClass: ReturnClass | null): 
 /** Index funds and ETFs that track Indian equity indices, by name; anything foreign, debt or commodity is excluded. */
 const DOMESTIC_EQUITY = /nifty|sensex|bse/i;
 const NOT_DOMESTIC_EQUITY = /gold|silver|gilt|g-sec|gsec|sdl|bond|psu|crisil|nasdaq|s&p|hang seng|us |global|international|liquid|money market|bharat bond/i;
+const OVERSEAS = /\bus\b|u\.s\.|global|international|overseas|world|nasdaq|nyse|s&p 500|fang|japan|china|asia|europe|emerging|hang seng|taiwan/i;
 const domesticEquity = (name: string) => DOMESTIC_EQUITY.test(name) && !NOT_DOMESTIC_EQUITY.test(name);
 
 /** Rules in order; the first whose pattern matches the heading wins. */
@@ -43,7 +44,8 @@ const RULES: Array<[RegExp, (name: string) => Classification]> = [
   [/FoF Domestic|Fund of Funds Scheme \(Domestic\)/i, () => c('check', false, null)],
   // Plain categories.
   [/Debt Scheme|Income\/Debt Oriented/i, () => c('slab', false, 'debt')],
-  [/Equity Schemes? -|^ELSS$/i, () => c('equity', false, 'equity')],
+  // Some overseas funds are filed as sectoral or thematic equity; they hold under 65% Indian shares, so check them.
+  [/Equity Schemes? -|^ELSS$/i, (n) => (OVERSEAS.test(n) ? c('check', false, 'international') : c('equity', false, 'equity'))],
 ];
 
 export function classifyFund(category: string, schemeName: string): Classification {

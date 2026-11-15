@@ -57,6 +57,18 @@ describe('one tax function', () => {
   });
 });
 
+describe('review: who gets the rebate', () => {
+  it('only resident individuals get the ₹12 L rebate', () => {
+    const ten = [interest(10_00_000)];
+    expect(tax(person({ income: ten }), {})).toBe(0);
+    expect(tax(person({ income: ten, resident: false }), {})).toBe(rs(41_600)); // ₹40,000 slab tax + cess, no rebate
+    expect(tax(person({ income: ten, type: 'huf' }), {})).toBe(rs(41_600));
+  });
+  it('an HUF gets no age-based old-regime exemption', () => {
+    expect(tax(person({ regime: 'old', age: 70, type: 'huf', income: [interest(3_00_000)] }), {})).toBe(rs(2_600)); // 5% of ₹50,000 + cess
+  });
+});
+
 describe('income before tax', () => {
   it('applies the standard deduction once to salary and pension, rent at 70%, senior interest deduction old regime only', () => {
     expect(normalIncomeOf(person({ income: [salary(10_00_000), pension(1_00_000)] }), R, D)).toBe(rs(10_25_000));

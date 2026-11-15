@@ -1,5 +1,5 @@
 import { ageOn, inRange } from './dates';
-import { basicExemption, normalIncomeOf, slabTax, type TaxRules } from './rules';
+import { basicExemption, normalIncomeOf, rebateEligible, slabTax, type TaxRules } from './rules';
 import type { ISODate, Member, Paise, Realised, Security, TaxType } from './types';
 
 export { normalIncomeOf };
@@ -151,7 +151,7 @@ export function taxForYear(m: Member, normal: Paise, g: GainBuckets, r: TaxRules
   const slabPart = slabTax(slabIncome, total, who, r);
   const rebate = slabTax(slabIncome, Infinity, who, r) - slabPart;
   const special = st * r.stcgRate + lt * r.ltcgRate + other * r.ltcgRate;
-  const marginalRelief = m.regime === 'new' && total > 12 * L ? Math.max(0, slabPart + special - (total - 12 * L)) : 0;
+  const marginalRelief = m.regime === 'new' && rebateEligible(m) && total > 12 * L ? Math.max(0, slabPart + special - (total - 12 * L)) : 0;
   const tax = roundRupee((slabPart + special - marginalRelief) * (1 + r.cess));
   return { total, exemptionUsed, basicGapUsed: gapStart - gap, rebate, marginalRelief, tax };
 }
