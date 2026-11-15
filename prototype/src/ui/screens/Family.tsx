@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { canGift } from '../../engine/family';
+import { canGift } from '../../engine/relations';
+import { todayISO } from '../../engine/dates';
 import type { Member } from '../../engine/types';
 import { sampleState } from '../../sample';
 import { emptyState, removeMember, uid, type AppState } from '../../store';
@@ -145,7 +146,7 @@ export function Family() {
           {editing === 'new' && <MemberForm initial={newMember} onSave={save} onCancel={() => setEditing(null)} />}
           {state.members.map((m) => {
             const v = fam.members.find((x) => x.member.id === m.id);
-            const clubbedWith = owner && owner.id !== m.id && !canGift(owner, m) ? `Gifts from ${owner.name} are clubbed` : null;
+            const clubbedWith = owner && owner.id !== m.id && !canGift(owner, m, state.members, todayISO()) ? `Gifts from ${owner.name} are clubbed` : null;
             if (editing === m.id) return <div key={m.id} style={{ borderTop: '1px solid var(--line)' }}><MemberForm initial={m} onSave={save} onCancel={() => setEditing(null)} /></div>;
             return (
               <div className="li" key={m.id}>

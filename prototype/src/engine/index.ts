@@ -9,3 +9,5 @@ export * from './dates';
 export * from './ledger';
 export * from './tax';
 export * from './family';
+export * from './relations';
+export * from './categories';

@@ -1,6 +1,7 @@
 import { daysBetween, isLongTerm, longTermFrom } from './dates';
 import { buildLedger, effectiveCost, lotKey, lotTerms, prorate } from './ledger';
 import { giftTransferCost, ltRate, roundTripCost, stRate, type TaxRules } from './rules';
+import { canGift } from './relations';
 import { summariseYear, type BusinessIncome, type YearSummary } from './tax';
 import { inRange } from './dates';
 import {
@@ -227,17 +228,6 @@ function harvestableQty(lots: Lot[], sec: Security, asOf: ISODate, rules: TaxRul
   return { qty, gain };
 }
 
-export function canGift(from: Member, to: Member): boolean {
-  if (from.id === to.id || to.relation === 'child_minor') return false;
-  // Relations are relative to the owner. Spouse gifts are clubbed both ways (old s.64(1)(iv)); a gift to a son's
-  // wife is clubbed with the giver (s.64(1)(vi)). The owner's parents giving to the owner's spouse is treated as
-  // that case, which is conservative when the owner is the daughter.
-  const clubbedPairs: Array<[Member['relation'], Member['relation']]> = [
-    ['self', 'spouse'], ['spouse', 'self'], ['self', 'daughter_in_law'], ['spouse', 'daughter_in_law'], ['parent', 'spouse'],
-  ];
-  return !clubbedPairs.some(([a, b]) => from.relation === a && to.relation === b);
-}
-
 export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules): FamilyView {
   const ledger = buildLedger(state.txns, state.securities, rules);
   const secs = new Map(state.securities.map((s) => [s.isin, s]));
@@ -363,7 +353,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
       for (const q of queues(ledger, giver.member.id, h.isin)) {
         const key = lotKey(giver.member.id, h.isin, q.account);
         for (const rec of [...views].sort((a, b) => b.roomAfterPlan - a.roomAfterPlan)) {
-          if (rec.roomAfterPlan < MIN_GAIN || !canGift(giver.member, rec.member)) continue;
+          if (rec.roomAfterPlan < MIN_GAIN || !canGift(giver.member, rec.member, state.members, asOf)) continue;
           const r = harvestableQty(q.lots, sec, asOf, rules, rec.roomAfterPlan, usedQty.get(key) ?? 0);
           if (r.gain < MIN_GAIN) continue;
           const value = valueOf(sec, r.qty);
