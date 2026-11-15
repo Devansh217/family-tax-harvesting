@@ -12,4 +12,6 @@ export * from './family';
 export * from './relations';
 export * from './records';
 export * from './events';
+export * from './planner';
+export * from './marketAssumptions';
 export * from './categories';

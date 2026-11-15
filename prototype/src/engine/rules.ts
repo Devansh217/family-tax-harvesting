@@ -24,6 +24,10 @@ export interface TaxRules {
   seniorInterestDeduction: Paise;
   /** Share of rent deducted for repairs before tax. */
   rentDeduction: number;
+  /** Government small-savings and EPF rates (contractual, not forecasts). Refreshed quarterly; `asOf` dates the notice. */
+  smallSavings: { asOf: ISODate; ppf: number; scss: number; ssy: number; nsc: number; kvp: number; mis: number; epf: number };
+  /** PPF deposits allowed per member per year. */
+  ppfYearlyLimit: Paise;
   /** Approximate trading costs, used to net them off each suggested move. */
   costs: {
     /** Securities transaction tax on delivery equity, each side. */
@@ -61,6 +65,9 @@ export const FY_2026_27: TaxRules = {
   standardDeduction: { new: 75_000_00, old: 50_000_00 },
   seniorInterestDeduction: 50_000_00,
   rentDeduction: 0.3,
+  // Oct–Dec 2026 (DEA notice of 30 Sep 2026); EPF at the notified 8.25% for every year (founder decision, 15 Nov 2026).
+  smallSavings: { asOf: '2026-10-01', ppf: 0.071, scss: 0.082, ssy: 0.082, nsc: 0.077, kvp: 0.075, mis: 0.074, epf: 0.0825 },
+  ppfYearlyLimit: 1_50_000_00,
   costs: {
     equityStt: 0.001,
     equityStampBuy: 0.00015,
