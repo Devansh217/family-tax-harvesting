@@ -44,6 +44,8 @@ export function Home({ days }: { days: number }) {
   const openLater = open.filter(isLaterBenefit).reduce((a, m) => a + m.saving, 0);
   const openNow = open.filter((m) => !isLaterBenefit(m)).reduce((a, m) => a + m.saving, 0);
   const uncertain = fam.totals.uncertainLots;
+  const toCheck = new Set(fam.members.flatMap((v) => v.holdings.filter((h) => h.taxType === 'check').map((h) => h.isin))).size;
+  const unchecked = fam.members.reduce((a, v) => a + v.year.unchecked, 0);
   const adjusted = new Set(fam.brokerAdjustments.map((a) => a.memberId)).size;
   const warnings = fam.ledger.warnings.length;
   const unpriced = fam.members.flatMap((v) => v.holdings).filter((h) => h.price == null).length;
@@ -110,6 +112,16 @@ export function Home({ days }: { days: number }) {
       </div>
 
       <SinceClose />
+
+      {(toCheck > 0 || unchecked > 0) && (
+        <div className="banner warn" role="status">
+          <span className="grow">
+            {toCheck > 0 && <>{toCheck} {toCheck === 1 ? 'fund needs' : 'funds need'} a tax type checked before they get moves. </>}
+            {unchecked > 0 && <>Includes gains from funds still to check, taxed at slab rate for now. </>}
+            Open the member pages to check them.
+          </span>
+        </div>
+      )}
 
       {(warnings > 0 || unpriced > 0 || uncertain > 0 || adjusted > 0) && (
         <div className="banner warn" role="status">

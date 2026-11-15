@@ -194,3 +194,16 @@ describe('family totals and simulator', () => {
     expect(p.roomUsed).toBe(rs(1_00_000));
   });
 });
+
+describe('funds to check', () => {
+  it('a fund whose tax type is unknown gets no moves until it is set', () => {
+    const st = (taxType: 'check' | 'equity') => ({
+      members: [person('a', 'self')],
+      securities: [{ isin: 'INFBAF', name: 'Balanced advantage', taxType, listed: false, price: rs(200) }],
+      txns: [buy('a', 'INFBAF', '2023-01-01', 1000, 100)],
+    });
+    expect(computeFamily(st('check'), ASOF, R).moves).toHaveLength(0);
+    expect(computeFamily(st('equity'), ASOF, R).moves.some((x) => x.kind === 'harvest_gain')).toBe(true);
+  });
+});
+

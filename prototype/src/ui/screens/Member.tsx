@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { longTermFrom } from '../../engine/dates';
 import type { Paise } from '../../engine/types';
 import { useApp } from '../app-context';
+import { FundsToCheck, TaxTypeChip } from './FundsToCheck';
 import { dateLabel, inr, possessive, RELATIONS, units } from '../format';
 import { Avatar, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow } from './Plan';
@@ -69,6 +70,8 @@ export function MemberScreen({ id }: { id: string }) {
           <p className="small muted">{RELATIONS[member.relation]} · {member.age} · {member.regime} regime · income {member.income?.find((s) => s.band)?.band ?? (incomeTotal(member) == null ? 'not entered' : inr(incomeTotal(member)!))} · <a href={`#family`}>Edit</a></p>
         </div>
       </header>
+
+      <FundsToCheck memberId={id} />
 
       <div className="grid-2">
         <section className="stack" aria-labelledby="room-h">
@@ -210,7 +213,7 @@ export function MemberScreen({ id }: { id: string }) {
                   const pre2018 = h.lots.some((l) => l.date <= fam.rules.grandfatherDate);
                   return (
                     <tr key={h.isin}>
-                      <td><span style={{ fontWeight: 600 }}>{h.name}</span><br /><span className="tiny muted">{h.isin.startsWith('SYM:') ? 'No ISIN' : h.isin} · {h.lots.length} {h.lots.length === 1 ? 'lot' : 'lots'}{h.accounts.filter(Boolean).length > 0 ? ` · ${h.accounts.filter(Boolean).join(', ')}` : ''}</span>
+                      <td><span style={{ fontWeight: 600 }}>{h.name}</span> <TaxTypeChip taxType={h.taxType} /><br /><span className="tiny muted">{h.isin.startsWith('SYM:') ? 'No ISIN' : h.isin} · {h.lots.length} {h.lots.length === 1 ? 'lot' : 'lots'}{h.accounts.filter(Boolean).length > 0 ? ` · ${h.accounts.filter(Boolean).join(', ')}` : ''}</span>
                         {h.uncertainLots > 0 && <><br /><span className="tiny" style={{ color: 'var(--time)' }}>{h.uncertainLots} {h.uncertainLots === 1 ? 'lot' : 'lots'} {pre2018 && !sec?.fmv2018 ? 'need the 31 Jan 2018 value' : 'have an estimated date'}; no moves use {h.uncertainLots === 1 ? 'it' : 'them'}</span></>}</td>
                       <td>{units(h.qty)}</td>
                       <td><PriceInput key={`${h.isin}-${sec?.price}`} value={sec?.price} label={`Price of ${h.name}`} onCommit={(p) => setSecurity(h.isin, { price: p })} /></td>
