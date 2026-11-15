@@ -1,6 +1,9 @@
+import { classifyByIsin } from './parsers/common';
 import type { PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
-import type { ISODate, Member, Qty, Security, Txn } from './engine/types';
+import type { RecommendationRecord } from './engine/records';
+import { FY_2026_27 } from './engine/rules';
+import type { ISODate, Member, Paise, Qty, Security, TaxType, Txn } from './engine/types';
 import type { BrokerSummary, ParsedPrice, ParseResult } from './parsers';
 
 export interface ImportRecord {
@@ -35,13 +38,17 @@ export interface AppState {
   ackGuidance?: boolean;
   /** `${memberId}|${isin}` → money needed within 12 months. */
   needSoon: Record<string, boolean>;
+  /** ISIN → tax type the person chose for a fund, overriding AMFI's category. */
+  taxTypeOverrides: Record<string, TaxType>;
+  /** Every move shown and every status change, append-only (kept 5 years once registered as an adviser). */
+  recommendations: RecommendationRecord[];
 }
 
 // Kept from the working name so data already in people's browsers still loads.
 const KEY = 'fasal-prototype-v1';
 
 export const emptyState = (): AppState => ({
-  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [],
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [],
 });
 
 export function loadState(): AppState | null {
@@ -55,10 +62,72 @@ export function loadState(): AppState | null {
   }
 }
 
+/** Shapes saved before the member profile and tax-type changes (Nov 2026). */
+type LegacyMember = Member & { otherIncome?: Paise; incomeBand?: string };
+type LegacySecurity = Security & { kind?: 'equity' | 'equity_mf' | 'other' };
+
+/** Moves ticked before ticks carried their tax year belong to the year they were made in. */
+const TICK_YEAR = FY_2026_27.label;
+
+function migrateMember(m: LegacyMember): Member {
+  const { otherIncome, incomeBand, ...rest } = m;
+  const out: Member = { ...rest, type: rest.type ?? 'person' };
+  if (out.income === undefined && otherIncome != null) {
+    out.income = [incomeBand ? { kind: 'other', amount: otherIncome, from: 'band', band: incomeBand } : { kind: 'other', amount: otherIncome, from: 'manual' }];
+  }
+  return out;
+}
+
+/** Spouse, parent and child links from relations to the manager, for families saved before links existed. */
+function linkFamily(members: Member[]): Member[] {
+  if (members.some((m) => m.spouseId || m.parentIds)) return members;
+  const self = members.find((m) => m.relation === 'self');
+  if (!self) return members;
+  const spouse = members.filter((m) => m.relation === 'spouse');
+  const parents = members.filter((m) => m.relation === 'parent');
+  const children = members.filter((m) => m.relation === 'child_adult' || m.relation === 'child_minor');
+  const wife = spouse.length === 1 ? spouse[0]! : null;
+  return members.map((m) => {
+    const out = { ...m };
+    if (m === self) {
+      if (wife) out.spouseId = wife.id;
+      if (parents.length) out.parentIds = parents.map((p) => p.id);
+    }
+    if (m === wife) out.spouseId = self.id;
+    if (parents.length === 2 && parents.includes(m)) out.spouseId = parents.find((p) => p !== m)!.id;
+    if (children.includes(m)) out.parentIds = wife ? [self.id, wife.id] : [self.id];
+    return out;
+  });
+}
+
+function migrateSecurity(x: LegacySecurity): Security {
+  if (x.taxType) return x;
+  const { kind, ...rest } = x;
+  if (kind === 'equity_mf') return { ...rest, taxType: 'equity', listed: false };
+  if (kind === 'other') return { ...rest, taxType: 'check', listed: false };
+  return { ...rest, ...classifyByIsin(rest.isin) };
+}
+
 /** Fills fields added after a copy was saved (older browser data or an account copy). Null if unusable. */
 export function normalizeState(s: AppState | null | undefined): AppState | null {
   if (!s || s.version !== 1 || !Array.isArray(s.members)) return null;
-  return { ...s, plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done: s.done ?? {}, positions: s.positions ?? [], brokerSummaries: s.brokerSummaries ?? [] };
+  const done = Object.fromEntries(Object.entries(s.done ?? {}).map(([k, v]) => [k.startsWith('FY ') ? k : `${TICK_YEAR}|${k}`, v]));
+  return {
+    ...s,
+    members: linkFamily((s.members as LegacyMember[]).map(migrateMember)),
+    securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
+    plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
+    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [],
+  };
+}
+
+/** A backup file's text as a family, migrated like any saved copy; null when it is not a backup. */
+export function parseBackup(text: string): AppState | null {
+  try {
+    return normalizeState(JSON.parse(text) as AppState);
+  } catch {
+    return null;
+  }
 }
 
 /** True when the state holds a real family worth keeping, not the sample or an untouched start. */
@@ -85,10 +154,10 @@ function resolveIsin(isin: string, name: string, securities: Security[]): string
   return hit?.isin ?? isin;
 }
 
-function upsertSecurity(list: Security[], p: { isin: string; name: string; kind: Security['kind'] }, price?: ParsedPrice) {
+function upsertSecurity(list: Security[], p: { isin: string; name: string }, price?: ParsedPrice) {
   let s = list.find((x) => x.isin === p.isin);
   if (!s) {
-    s = { isin: p.isin, name: p.name, kind: p.kind };
+    s = { isin: p.isin, name: p.name, ...classifyByIsin(p.isin) };
     list.push(s);
   } else if ((s.name === s.isin || s.name.length < 3) && p.name) s.name = p.name;
   if (p.name && !p.isin.startsWith('SYM:') && p.name !== s.name) s.symbols = [...new Set([...(s.symbols ?? []), p.name])];
@@ -96,6 +165,11 @@ function upsertSecurity(list: Security[], p: { isin: string; name: string; kind:
     s.price = price.price;
     s.priceDate = price.priceDate ?? s.priceDate;
   }
+  // Plan, option and distributor from a fund statement: kept for the regular-to-direct switch.
+  if (price?.plan) s.plan = price.plan;
+  if (price?.option) s.option = price.option;
+  if (price?.plan === 'direct') delete s.distributor;
+  else if (price?.distributor) s.distributor = price.distributor;
 }
 
 export interface ImportOptions {

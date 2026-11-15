@@ -31,6 +31,14 @@ All rates are editable in the app.
 
 A React app in [prototype/](prototype/) with a tested tax engine and CAS / broker file import. See [prototype/README.md](prototype/README.md) to run it and test with your own statements.
 
+The planner foundation (Nov 2026, branch `planner-foundation`) adds:
+
+- **Every holding taxed by its real type:** equity, slab rate (debt and conservative hybrid funds), other long-term (gold, overseas, balanced hybrid), interest and tax-free, read from AMFI's fund categories. Funds the app can't classify are listed under "Funds to check" until you pick.
+- **One tax function** for every feature: set-off in the lowest-tax order, the ₹12 L rebate and marginal relief, standard and senior deductions, and the April 2023 debt-fund rule. Harvest room never crosses the ₹12 L line.
+- **Compare ("what it brings home"):** the same money in each member's name, after tax, with gift and clubbing notes and three return scenarios.
+- **Family setup:** dates of birth, spouse and parent links, HUFs, income sources, regime, deductions, consent and carried losses.
+- **Clubbing between any two members** (e.g. Dad to Mum), stable move ids with a plain-English reason each, and an append-only record of every suggestion.
+
 ## Run v0.1 locally
 
 It is a single static file:

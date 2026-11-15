@@ -4,6 +4,7 @@ import { useApp } from '../app-context';
 import { inr, inrShort } from '../format';
 import { Avatar, Disclaimer, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow, movesNotDone } from './Plan';
+import { needsSetup } from './memberFields';
 import { FirstRunNotice } from './About';
 import { SinceClose } from './SinceClose';
 import { isLaterBenefit } from '../../engine/family';
@@ -22,7 +23,7 @@ export function SampleBanner() {
 }
 
 export function Home({ days }: { days: number }) {
-  const { state, fam, update, go } = useApp();
+  const { state, fam, update, go, asOf } = useApp();
 
   if (state.members.length === 0) {
     return (
@@ -44,6 +45,8 @@ export function Home({ days }: { days: number }) {
   const openLater = open.filter(isLaterBenefit).reduce((a, m) => a + m.saving, 0);
   const openNow = open.filter((m) => !isLaterBenefit(m)).reduce((a, m) => a + m.saving, 0);
   const uncertain = fam.totals.uncertainLots;
+  const toCheck = new Set(fam.members.flatMap((v) => v.holdings.filter((h) => h.taxType === 'check').map((h) => h.isin))).size;
+  const unchecked = fam.members.reduce((a, v) => a + v.year.unchecked, 0);
   const adjusted = new Set(fam.brokerAdjustments.map((a) => a.memberId)).size;
   const warnings = fam.ledger.warnings.length;
   const unpriced = fam.members.flatMap((v) => v.holdings).filter((h) => h.price == null).length;
@@ -110,6 +113,23 @@ export function Home({ days }: { days: number }) {
       </div>
 
       <SinceClose />
+
+      {needsSetup(state.members, asOf) && (
+        <div className="banner" role="status">
+          <span className="grow">Add each adult&rsquo;s date of birth and income so the tax figures are right.</span>
+          <a className="btn sm primary" href="#setup">Finish family setup</a>
+        </div>
+      )}
+
+      {(toCheck > 0 || unchecked > 0) && (
+        <div className="banner warn" role="status">
+          <span className="grow">
+            {toCheck > 0 && <>{toCheck} {toCheck === 1 ? 'fund needs' : 'funds need'} a tax type checked before they get moves. </>}
+            {unchecked > 0 && <>Includes gains from funds still to check, taxed at slab rate for now. </>}
+            Open the member pages to check them.
+          </span>
+        </div>
+      )}
 
       {(warnings > 0 || unpriced > 0 || uncertain > 0 || adjusted > 0) && (
         <div className="banner warn" role="status">

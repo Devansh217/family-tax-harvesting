@@ -1,5 +1,5 @@
 import {
-  findIsin, kindFromIsin, parseDate, parseNumber, symbolKey, toPaise, toQty,
+  findIsin, parseDate, parseNumber, symbolKey, toPaise, toQty,
   type ParsedPrice, type ParsedTxn, type ParseResult,
 } from './common';
 
@@ -77,7 +77,6 @@ export function parseTable(rows: string[][], headerIdx: number, m: Mapping, form
     const qtyN = parseNumber(cell(r, 'qty'));
     if (!isin || qtyN == null || qtyN === 0) { skipped++; continue; }
     if (m.segment >= 0 && !ALLOWED_SEGMENTS.test(cell(r, 'segment'))) { segSkipped++; continue; }
-    const k = isin.startsWith('SYM:') ? 'equity' : kindFromIsin(isin, name);
 
     if (kind === 'trades') {
       const date = parseDate(cell(r, 'date'));
@@ -87,12 +86,12 @@ export function parseTable(rows: string[][], headerIdx: number, m: Mapping, form
       const units = Math.abs(qtyN);
       const total = amount != null && amount !== 0 ? Math.abs(amount) : price != null ? price * units : null;
       if (!date || !side || total == null) { skipped++; continue; }
-      txns.push({ date, isin, name: name || isin, kind: k, side, qty: toQty(units), amount: toPaise(total) });
+      txns.push({ date, isin, name: name || isin, side, qty: toQty(units), amount: toPaise(total) });
     } else if (kind === 'holdings') {
       const ltp = parseNumber(cell(r, 'ltp'));
       const avg = parseNumber(cell(r, 'avgCost'));
       if (ltp == null) { skipped++; continue; }
-      prices.push({ isin, name: name || isin, kind: k, price: toPaise(ltp), qty: toQty(qtyN), cost: avg != null ? toPaise(avg * qtyN) : undefined });
+      prices.push({ isin, name: name || isin, price: toPaise(ltp), qty: toQty(qtyN), cost: avg != null ? toPaise(avg * qtyN) : undefined });
     }
   }
   if (kind === 'unknown') warnings.push('Could not tell whether this is a trade history or a holdings file. Pick the columns below.');

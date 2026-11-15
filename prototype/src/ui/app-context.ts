@@ -26,7 +26,3 @@ export const useApp = () => {
   if (!c) throw new Error('AppCtx missing');
   return c;
 };
-
-/** Stable across recomputes so a ticked move stays ticked. */
-export const moveKey = (m: Move) =>
-  m.kind === 'gift' ? `gift|${m.fromId}>${m.toId}|${m.isin}|${m.account}` : `${m.kind}|${m.memberId}|${m.isin}|${m.account}`;

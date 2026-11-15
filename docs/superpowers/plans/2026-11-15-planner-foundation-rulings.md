@@ -1,0 +1,61 @@
+# Planner foundation: decisions taken while building
+
+16 Nov 2026. Copied from the git-ignored build log so they stay with the branch. Each line: what was decided, why, and what it costs if wrong.
+
+## Rulings
+
+- Task 0: Ruling: parsers import QTY_SCALE (a value) from engine/types — rule relaxed to "parsers/prices import only engine, each other and packages"; the engine is pure so value imports are harmless — cost if wrong: none.
+- Task 0: Ruling: `new Date(` ban narrowed to reading the clock (`new Date()` no-arg, `Date.now(`); dates.ts uses `new Date(Date.UTC(...))` for pure arithmetic — cost if wrong: none.
+- Task 0: Ruling: plan step 4's live sign-in check skipped — signing in means entering a password on the hosted Supabase project, which I may not do; instead verified build passes and the app loads with no console errors on port 5199. The storage functions' bodies are moved unchanged — cost if wrong: a sign-in/save regression found by the founder on first use.
+- Task 1: Ruling: parsed rows (ParsedTxn/ParsedPrice) no longer carry a type; store.upsertSecurity classifies with classifyByIsin. Non-INF ISINs (incl. SYM: rows) → listed equity share, matching the old default. Parser tests' kind expectations dropped — cost if wrong: none; classification has one home.
+- Task 1: Ruling: the old debt-name heuristic is gone, so every fund is `check` until Task 2 applies AMFI categories; saved browser data (old `kind`) gets no harvest moves until Task 4's migration — intermediate state on the branch only — cost if wrong: none after Task 4.
+- Task 1: Ruling: broker-reconcile and broker-adjust "shares vs mutual funds" split now uses `listed`; Plan's share/unit noun uses the INF prefix; ADJ broker-adjustment rows get taxType 'equity' — cost if wrong: ETFs counted with shares in reconcile (they are listed, as Zerodha reports them).
+- Task 2: Ruling: AMFI's live NAVAll.txt (13 Nov 2026) uses a second, post-Feb-2026 naming style alongside the old one ("Equity Schemes - …", "Hybrid Schemes - …", "Income/Debt Oriented Schemes - …", "Index Funds - Equity/Debt/Hybrid", "Exchange Traded Funds (ETFs) - Equity/Gold/Silver/Debt/Hybrid/Overseas/Other ETF", "Overseas Fund of Funds", "Fund of Funds Scheme (Domestic)", "Life Cycle Funds", "Children's Fund"). Mapping extended: debt-oriented, debt index funds and debt ETFs → slab; silver ETF → other_lt listed; overseas ETFs → other_lt listed international; hybrid ETF/index, life-cycle, children's, retirement, FoF domestic → check. KNOWN_AMFI_HEADINGS holds all 104 bracketed headings from the real file — cost if wrong: a fund mis-typed until an override; unknown headings stay `check`.
+- Task 2: Ruling: withFunds' third argument is the user's overrides (AppState.taxTypeOverrides); the repo override list is imported inside market.ts — matches the plan's precedence — cost if wrong: none.
+- Task 2: Ruling: plan said parse fund ISINs from "growth and reinvestment columns"; done for both ISIN columns as parseAmfiNav does — cost if wrong: none.
+- Task 3: Ruling: added a store test (plan/option/distributor merged onto Security; a later direct-plan statement clears the distributor) beyond the brief's parser test, since the brief's Files list modifies store.ts; proved it fails with the merge removed — cost if wrong: none.
+- Task 4: Ruling: Member.type is optional (absent = person) rather than required — avoids rewriting every fixture and form; migration still sets 'person' — cost if wrong: code must treat undefined as person (only HUF checks care).
+- Task 4: Ruling: interim `incomeTotal(m)` (sum of income amounts) feeds the existing slabRate/summariseYear until Task 5's normalIncomeOf; migrated income is kind 'other' so figures don't change (Review Focus #1 test pins the sample family's tax, room and bonus) — cost if wrong: none after Task 5.
+- Task 4: Ruling: moveKey now takes the tax-year label so UI ticks match the migrated 'FY 2026-27|…' keys (Task 7 replaces moveKey with moveId of the same format) — cost if wrong: none.
+- Task 4: Ruling: Family form stores one figure as income kind 'other' (manual or band) until Task 12's setup asks per source; sample family uses 'other' too to keep its figures — cost if wrong: salary/pension members get no standard deduction until they re-enter income in Task 12's form.
+- Task 4: Ruling: children (adult or minor) get parentIds [self, spouse]; only a single spouse is linked; two parents → each other's spouses, three → none — cost if wrong: an unusual family's links need fixing by hand in Task 12's form.
+- Task 5: Ruling: unknown income is modelled as normal income of ₹50 L (above the top slab) inside taxForYear, which reproduces today's meaning exactly (no rebate, no basic room, trading profit at 30%) without a second code path — cost if wrong: surcharge is not modelled, so nothing changes.
+- Task 5: Ruling: F&O loss set-off against capital gains runs after capital set-off (incl. carried losses), against equitySt, slab, otherLt, equityLt in that order; old code ran it between this year's and carried capital losses. Only differs when a member has both carried capital losses and an F&O loss — cost if wrong: small mis-ordering in that rare case.
+- Task 5: Ruling: `check` gets the equity holding period for its term (reconcile with broker totals needed it) while its gains are still taxed as slab — cost if wrong: none for tax; a `check` long-term loss is treated like a short-term loss (offsets any gain).
+- Task 5: Ruling: free room cap (freeEquityLtRoom) takes the excess from bonus first, then exemption room — cost if wrong: only the split shown between "free" and "bonus" changes, not the total.
+- Task 5: Ruling: summariseYear judges age at the end of the tax year (rules.end) — the Act's "at any time during the year" test — cost if wrong: none.
+- Task 6: Ruling: pairRelation falls back to the old manager-relative table when neither member has links (states built without normalizeState, e.g. existing tests) — cost if wrong: none; linked families use links.
+- Task 6: Ruling: clubbing compares minor's parents with FY_2026_27 rules (clubbing has no rules argument) — cost if wrong: a later year's income rules not used for picking the higher-income parent; revisit when rulesFor exists (Task 8).
+- Task 7: Ruling: no 'in_plan' record for planned sales — a planned sale is the family's own sale, not a suggested move, and RecommendationRecord needs a Move — cost if wrong: the record lacks "added to plan" events until moves can be put in a plan (beta).
+- Task 7: Ruling: 'shown' records are written only for real families (not the sample) — cost if wrong: none.
+- Task 8: Ruling: room_left events are not limited by the 90-day horizon (the brief scopes the horizon to lots; 31 March is the deadline that matters) — cost if wrong: a 31 March event shows from April; the beta's notification policy decides when to send it.
+- Task 8: Ruling: holding lots now get term and long-term date per lot and tax type (slab funds never long-term; unlisted other_lt after 24 months); turns_long_term events skip slab and check funds — cost if wrong: none; fixes a display that showed debt funds as long-term.
+- Task 9: Ruling: scenarios use the research data's names (conservative/base/optimistic); the screen labels 'conservative' as "cautious" — cost if wrong: none.
+- Task 9: Ruling: a member whose income is unknown is treated as top-slab (₹50 L) in "brings home", as in summariseYear — cost if wrong: unknown-income members look worse than they may be; the UI should prompt to enter income.
+- Task 9: Ruling: interest/IDCW yearly tax uses the sale year's clean rules from the first year-end on (this year's interest is taxed as a clean current year, not on top of booked gains) — cost if wrong: small, slab income vs booked gains interplay ignored in year one.
+- Task 9: Ruling: the near-₹12 L warning fires when the taxed member's total income with the gain is within ₹2 L of ₹12 L — cost if wrong: none.
+- Task 9: Ruling: test case "3-year equity fund uses a clean year" uses ₹5 L (₹2 L at 12% gains under ₹1.25 L, so it could not show the exemption) — cost if wrong: none.
+- Task 10: Ruling: app check done with the founder's signed-in family (one member) instead of loading the sample family, which would replace and sync over their account copy; the multi-member cases (parent first with nil tax, spouse row taxed in the giver) are pinned by planner.test.ts — cost if wrong: a rendering issue in multi-row tables unseen until Task 13 / founder use.
+- Task 10: Ruling: mobile tab bar changed to auto columns (six tabs wrapped to two rows) — cost if wrong: none.
+- Task 10: Ruling: category list shows both AMFI naming styles as they appear (some near-duplicates) — cost if wrong: a cluttered dropdown; tidy in the beta.
+- Task 11: Ruling: the in-app check with a balanced-advantage fund was not run — the founder's signed-in family has no holdings and importing test data would sync to their account. Covered instead by a family.test pin (a `check` fund gets no moves; set to equity it does) plus withFunds' user-override test (Task 2); member page renders with no errors — cost if wrong: a layout issue in the Funds to check card unseen until the founder imports a fund.
+- Task 12: Ruling: the in-app run (set up self, spouse, two parents; enter a pension; check Dad→Mum on Compare) was not done — it would rewrite the founder's synced account family. Checked instead: setup steps 1 and 2 render at mobile width with no errors, the Home prompt appears; Dad→Mum clubbing and the pension standard deduction are pinned by relations.test and tax.test — cost if wrong: a form bug found by the founder on first use.
+- Task 12: Ruling: setup and the Family page share one set of field components (memberFields.tsx); the "Not sure" regime choice is UI state only and stores 'new' as the plan says — cost if wrong: reopening the form shows "New" instead of "Not sure", hiding the deductions box until re-chosen.
+- Task 13: Ruling: Plan-total comparison with main done in code (sample family computed on a temporary main worktree vs this branch: identical moves, free room and tax-free totals) rather than loading the sample family in the browser, which would overwrite the founder's synced account — cost if wrong: none.
+
+## Final review
+
+- Final review: opus reviewer, verdict "with fixes"; no Critical.
+- Final: fixed I1 non-relative / HUF non-member gifts suggested as tax-free — relations.test "no tax-free gift to someone who is not a relative…" + planner.test "not a relative carries gift tax" RED→GREEN, suite 136/136
+- Final: fixed I2 spouse by relation only treated as 'other' when links are partial or stale — relations.test "a spouse by relation only…" RED→GREEN, suite 136/136
+- Final: fixed I3 overseas funds under sectoral/thematic equity typed as equity — categories.test "overseas funds filed under sectoral…" RED→GREEN, suite 136/136
+- Final: fixed I4 Compare read raw securities (AMFI and user choices ignored; unheld funds always check) — prices.test "Compare sees classified holdings…" RED→GREEN, suite 136/136
+- Final: fixed I5 restoring an old backup crashed the app — store.test "migrates an old-shape backup…" RED→GREEN, suite 136/136
+- Final: fixed I6 rebate and marginal relief given to HUFs and non-residents; HUF also got age-based exemption and senior interest deduction — tax.test "who gets the rebate" RED→GREEN, suite 136/136
+- Final: minor (deferred): choosing "Amounts" before typing stores known zero income (full bonus room shows); removing the last row flips to "No income".
+- Final: minor (deferred): Member page's basic-exemption sentence and Compare's Slab column mix gross and net income.
+- Final: minor (deferred): a fund's tax-type choice can't be changed or cleared after picking; sample family ignores the choice.
+- Final: minor (deferred): brings-home this-year sale ignores this year's trading profit; ruling comment on interest year-one differs from code.
+- Final: minor (deferred): unknown fromMemberId throws in bringsHome instead of returning invalid.
+- Final: minor (deferred): no-op managerId expression in Family.tsx; Family page uses todayISO() not asOf for canGift.
+- Final: minor (deferred): boundary test misses `export … from` and dynamic import().

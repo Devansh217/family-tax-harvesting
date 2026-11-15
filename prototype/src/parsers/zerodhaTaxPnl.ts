@@ -1,5 +1,5 @@
 import type { ISODate, Paise } from '../engine/types';
-import { findIsin, kindFromIsin, parseDate, parseNumber, toPaise, toQty, type ParsedTxn, type ParseResult } from './common';
+import { findIsin, parseDate, parseNumber, toPaise, toQty, type ParsedTxn, type ParseResult } from './common';
 
 /** Zerodha Console's own totals for the period, to check the engine against. Rupee figures in paise. */
 export interface BrokerSummary {
@@ -78,10 +78,9 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
     const entry = date(r[cols['Entry Date']!]), exit = date(r[cols['Exit Date']!]);
     const buy = num(r[cols['Buy Value']!]), sell = num(r[cols['Sell Value']!]);
     if (!entry || !exit || buy == null || sell == null) { skipped++; continue; }
-    const kind = /Mutual Funds/i.test(section) ? kindFromIsin(isin, symbol) : 'equity';
     const units = Math.abs(qty);
-    txns.push({ date: entry, isin, name: symbol, kind, side: 'buy', qty: toQty(units), amount: toPaise(Math.abs(buy)) });
-    txns.push({ date: exit, isin, name: symbol, kind, side: 'sell', qty: toQty(units), amount: toPaise(Math.abs(sell)) });
+    txns.push({ date: entry, isin, name: symbol, side: 'buy', qty: toQty(units), amount: toPaise(Math.abs(buy)) });
+    txns.push({ date: exit, isin, name: symbol, side: 'sell', qty: toQty(units), amount: toPaise(Math.abs(sell)) });
     counts[section] = (counts[section] ?? 0) + 1;
 
     const fmvCol = cols['Fair Market Value'];
@@ -140,7 +139,7 @@ export function parseZerodhaHoldings(sheets: Sheet[]): ParseResult {
       if (!isin || !symbol || units <= 0 || close == null) { if (symbol) skipped++; continue; }
       const lt = col('Quantity Long Term') >= 0 ? num(r[col('Quantity Long Term')]) : null;
       prices.push({
-        isin, name: symbol, kind: kindFromIsin(isin, symbol),
+        isin, name: symbol, 
         price: toPaise(close), qty: toQty(units), cost: avg != null ? toPaise(avg * units) : undefined,
         ltQty: lt != null ? toQty(lt) : undefined,
       });

@@ -1,4 +1,5 @@
-import type { ISODate, Member, Paise } from './types';
+import { ageOn } from './dates';
+import type { ISODate, Member, Paise, Security } from './types';
 
 /** Tax rules for one tax year. Kept as data so a Budget change is a data change. */
 export interface TaxRules {
@@ -13,6 +14,20 @@ export interface TaxRules {
   grandfatherDate: ISODate;
   basicExemptionNew: Paise;
   basicExemptionOld: { below60: Paise; from60: Paise; from80: Paise };
+  /** Holding period for unlisted `other_lt` assets (e.g. international and gold fund of funds). */
+  otherLongTermMonths: number;
+  /** Debt-fund units bought before this date are outside the specified-fund rule (s.76) and can be long-term. */
+  specifiedFundCutoff: ISODate;
+  /** Standard deduction on salary and pension (s.19), by regime. */
+  standardDeduction: { new: Paise; old: Paise };
+  /** Deduction on deposit interest for members aged 60+, old regime only (s.153). */
+  seniorInterestDeduction: Paise;
+  /** Share of rent deducted for repairs before tax. */
+  rentDeduction: number;
+  /** Government small-savings and EPF rates (contractual, not forecasts). Refreshed quarterly; `asOf` dates the notice. */
+  smallSavings: { asOf: ISODate; ppf: number; scss: number; ssy: number; nsc: number; kvp: number; mis: number; epf: number };
+  /** PPF deposits allowed per member per year. */
+  ppfYearlyLimit: Paise;
   /** Approximate trading costs, used to net them off each suggested move. */
   costs: {
     /** Securities transaction tax on delivery equity, each side. */
@@ -45,6 +60,14 @@ export const FY_2026_27: TaxRules = {
   grandfatherDate: '2018-01-31',
   basicExemptionNew: 4_00_000_00,
   basicExemptionOld: { below60: 2_50_000_00, from60: 3_00_000_00, from80: 5_00_000_00 },
+  otherLongTermMonths: 24,
+  specifiedFundCutoff: '2023-04-01',
+  standardDeduction: { new: 75_000_00, old: 50_000_00 },
+  seniorInterestDeduction: 50_000_00,
+  rentDeduction: 0.3,
+  // Oct–Dec 2026 (DEA notice of 30 Sep 2026); EPF at the notified 8.25% for every year (founder decision, 15 Nov 2026).
+  smallSavings: { asOf: '2026-10-01', ppf: 0.071, scss: 0.082, ssy: 0.082, nsc: 0.077, kvp: 0.075, mis: 0.074, epf: 0.0825 },
+  ppfYearlyLimit: 1_50_000_00,
   costs: {
     equityStt: 0.001,
     equityStampBuy: 0.00015,
@@ -57,10 +80,27 @@ export const FY_2026_27: TaxRules = {
   },
 };
 
+/** Every tax year's rules the app knows, oldest first. Add a year here when a Budget changes the numbers. */
+export const RULES: TaxRules[] = [FY_2026_27];
+
+/**
+ * The rules for the tax year a date falls in. For a year after the last known one, the latest rules are assumed to
+ * carry on, with the label and dates moved to that year.
+ */
+export function rulesFor(date: ISODate): TaxRules {
+  const hit = RULES.find((r) => date >= r.start && date <= r.end);
+  if (hit) return hit;
+  const last = RULES[RULES.length - 1]!;
+  const [y, m] = date.split('-').map(Number) as [number, number];
+  const startYear = m >= 4 ? y : y - 1;
+  if (startYear < Number(last.start.slice(0, 4))) return RULES[0]!;
+  return { ...last, label: `FY ${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`, start: `${startYear}-04-01`, end: `${startYear + 1}-03-31` };
+}
+
 /** Cost of selling `value` and buying it back the next day. Brokerage assumed zero (discount broker, delivery). */
-export function roundTripCost(kind: 'equity' | 'equity_mf' | 'other', value: Paise, r: TaxRules): Paise {
+export function roundTripCost(sec: Pick<Security, 'listed'>, value: Paise, r: TaxRules): Paise {
   const c = r.costs;
-  if (kind === 'equity') {
+  if (sec.listed) {
     const pct = c.equityStt * 2 + c.equityStampBuy + c.exchangePerSide * 2 * (1 + c.gst);
     return Math.round(value * pct + c.dpPerSale);
   }
@@ -70,8 +110,9 @@ export function roundTripCost(kind: 'equity' | 'equity_mf' | 'other', value: Pai
 /** Off-market gift transfer of shares worth `value`. */
 export const giftTransferCost = (value: Paise, r: TaxRules): Paise => Math.round(value * r.costs.giftStamp + r.costs.giftDp);
 
-export function basicExemption(member: Member, rules: TaxRules): Paise {
+export function basicExemption(member: Pick<Member, 'regime' | 'age' | 'type'>, rules: TaxRules): Paise {
   if (member.regime === 'new') return rules.basicExemptionNew;
+  if (member.type === 'huf') return rules.basicExemptionOld.below60;
   if (member.age >= 80) return rules.basicExemptionOld.from80;
   if (member.age >= 60) return rules.basicExemptionOld.from60;
   return rules.basicExemptionOld.below60;
@@ -113,16 +154,43 @@ export function incomeBands(member: Pick<Member, 'regime' | 'age'>, r: TaxRules)
   return bands;
 }
 
+/** Total yearly gross income from all sources, or null when income was not entered (display only; tax uses normalIncomeOf). */
+export function incomeTotal(member: Pick<Member, 'income'>): Paise | null {
+  return member.income == null ? null : member.income.reduce((a, s) => a + s.amount, 0);
+}
+
+/**
+ * Income taxed at slab rates before capital gains, after the deductions the regime allows: the standard deduction
+ * once on salary plus pension (s.19); rent less 30%; old regime only, the senior interest deduction (s.153, capped at
+ * the interest) and the member's other deductions. Never below zero. Null when income was not entered.
+ */
+export function normalIncomeOf(m: Member, r: TaxRules, asOf: ISODate): Paise | null {
+  if (m.income == null) return null;
+  const sum = (kinds: string[]) => m.income!.filter((x) => kinds.includes(x.kind)).reduce((a, x) => a + x.amount, 0);
+  const wages = Math.max(0, sum(['salary', 'pension']) - r.standardDeduction[m.regime]);
+  const rent = Math.round(sum(['rent']) * (1 - r.rentDeduction));
+  const interestIncome = sum(['interest']);
+  let total = wages + rent + interestIncome + sum(['business', 'other']);
+  if (m.regime === 'old') {
+    if (m.type !== 'huf' && ageOn(m, asOf) >= 60) total -= Math.min(interestIncome, r.seniorInterestDeduction);
+    total -= m.deductions ?? 0;
+  }
+  return Math.max(0, total);
+}
+
 /** Slab rate for a known income, or null when income is unknown. */
 export function slabRate(member: Member, r: TaxRules): number | null {
-  if (member.otherIncome == null) return null;
+  const income = incomeTotal(member);
+  if (income == null) return null;
   const bands = incomeBands(member, r).slice(1);
-  for (const b of bands.slice(0, -1)) if (member.otherIncome <= b.assumed) return b.rate;
+  for (const b of bands.slice(0, -1)) if (income <= b.assumed) return b.rate;
   return bands.at(-1)!.rate;
 }
 
+export const rebateEligible = (m: Pick<Member, 'type' | 'resident'>) => m.type !== 'huf' && m.resident !== false;
+
 /** Slabs as [upper limit, rate]; the last has no limit. New regime per Budget 2025; old regime by age. */
-function slabs(member: Pick<Member, 'regime' | 'age'>, r: TaxRules): Array<[Paise | null, number]> {
+function slabs(member: Pick<Member, 'regime' | 'age' | 'type'>, r: TaxRules): Array<[Paise | null, number]> {
   if (member.regime === 'new') {
     return [[4 * L, 0], [8 * L, 0.05], [12 * L, 0.1], [16 * L, 0.15], [20 * L, 0.2], [24 * L, 0.25], [null, 0.3]];
   }
@@ -136,9 +204,9 @@ function slabs(member: Pick<Member, 'regime' | 'age'>, r: TaxRules): Array<[Pais
 /**
  * Tax on income charged at slab rates (salary, pension, business), before cess. Section 87A rebate (new regime:
  * total income up to ₹12 L, up to ₹60,000; old regime: up to ₹5 L, up to ₹12,500) is applied to this slab tax only,
- * never to special-rate capital gains. Marginal relief just above ₹12 L is not modelled.
+ * never to special-rate capital gains. Marginal relief just above ₹12 L is applied in taxForYear (tax.ts).
  */
-export function slabTax(normalIncome: Paise, totalIncome: Paise, member: Pick<Member, 'regime' | 'age'>, r: TaxRules): Paise {
+export function slabTax(normalIncome: Paise, totalIncome: Paise, member: Pick<Member, 'regime' | 'age' | 'type' | 'resident'>, r: TaxRules): Paise {
   let tax = 0, lower = 0;
   for (const [upper, rate] of slabs(member, r)) {
     const top = upper == null ? normalIncome : Math.min(normalIncome, upper);
@@ -147,6 +215,7 @@ export function slabTax(normalIncome: Paise, totalIncome: Paise, member: Pick<Me
     lower = upper;
   }
   const [limit, maxRebate] = member.regime === 'new' ? [12 * L, 60_000_00] : [5 * L, 12_500_00];
-  if (totalIncome <= limit) tax -= Math.min(tax, maxRebate);
+  // The rebate (s.156, old s.87A) is for resident individuals only: not HUFs, not non-residents.
+  if (totalIncome <= limit && rebateEligible(member)) tax -= Math.min(tax, maxRebate);
   return Math.round(tax);
 }

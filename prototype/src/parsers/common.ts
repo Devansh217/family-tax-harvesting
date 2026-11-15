@@ -1,4 +1,4 @@
-import { QTY_SCALE, type AssetKind, type ISODate, type Paise, type Qty } from '../engine/types';
+import { QTY_SCALE, type ISODate, type Paise, type Qty, type Security } from '../engine/types';
 import type { BrokerSummary } from './zerodhaTaxPnl';
 
 /** RFC 4180-ish CSV: quoted fields, escaped quotes, CRLF, BOM. Also accepts tab- or semicolon-separated text. */
@@ -69,10 +69,13 @@ export const toPaise = (rupees: number): Paise => Math.round(rupees * 100);
 const ISIN_RE = /\b(IN[EF][A-Z0-9]{9})\b/;
 export const findIsin = (s: string) => s.match(ISIN_RE)?.[1] ?? null;
 
-/** INF… ISINs are mutual funds; INE… are company securities. Equity-oriented status of a fund is assumed. */
-export function kindFromIsin(isin: string, name = ''): AssetKind {
-  if (isin.startsWith('INF')) return /debt|liquid|gilt|bond|overnight|money market|credit risk|duration|banking & psu|corporate/i.test(name) ? 'other' : 'equity_mf';
-  return 'equity';
+/**
+ * Tax type from the ISIN alone. INF… is a mutual fund or ETF: its tax type needs the AMFI category, so it is `check`
+ * until the funds file classifies it. Anything else (INE… company securities, symbol-only rows) is a listed share.
+ */
+export function classifyByIsin(isin: string): Pick<Security, 'taxType' | 'listed' | 'taxTypeSource'> {
+  if (isin.startsWith('INF')) return { taxType: 'check', listed: false };
+  return { taxType: 'equity', listed: true, taxTypeSource: 'share' };
 }
 
 /** A stable key for securities that arrive without an ISIN, matched by symbol. */
@@ -82,7 +85,6 @@ export interface ParsedTxn {
   date: ISODate;
   isin: string;
   name: string;
-  kind: AssetKind;
   side: 'buy' | 'sell';
   qty: Qty;
   amount: Paise;
@@ -93,9 +95,12 @@ export interface ParsedTxn {
 export interface ParsedPrice {
   isin: string;
   name: string;
-  kind: AssetKind;
   price: Paise;
   priceDate?: ISODate;
+  /** From a mutual fund CAS scheme line: direct or regular plan, growth or IDCW option, distributor (ARN) code. */
+  plan?: 'direct' | 'regular';
+  option?: 'growth' | 'idcw';
+  distributor?: string;
   /** Units held per the statement, for reconciling and for opening lots. */
   qty?: Qty;
   /** Average or total cost if the statement shows it. */

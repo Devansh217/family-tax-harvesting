@@ -1,4 +1,4 @@
-import type { ISODate } from './types';
+import type { ISODate, Member } from './types';
 
 const parse = (d: ISODate) => {
   const [y, m, day] = d.split('-').map(Number) as [number, number, number];
@@ -40,7 +40,22 @@ export function isLongTerm(buy: ISODate, sell: ISODate, months: number): boolean
 
 export const inRange = (d: ISODate, start: ISODate, end: ISODate) => d >= start && d <= end;
 
-export function todayISO(): ISODate {
-  const t = new Date();
-  return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+/** Age in whole years on `date`: from date of birth when known, else the stored age. */
+export function ageOn(m: Pick<Member, 'age' | 'dob'>, date: ISODate): number {
+  if (!m.dob) return m.age;
+  const [by, bm, bd] = m.dob.split('-').map(Number) as [number, number, number];
+  const [y, mo, d] = date.split('-').map(Number) as [number, number, number];
+  return y - by - (mo < bm || (mo === bm && d < bd) ? 1 : 0);
+}
+
+/** India's offset from UTC. India has no daylight saving, so this never changes. */
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+
+/**
+ * Today's date in India, whatever the machine's time zone. A server runs in UTC: a local-time date there would be
+ * yesterday until 5:30 am IST and misdate a 31 March deadline.
+ */
+export function todayISO(now: Date = new Date()): ISODate {
+  const t = new Date(now.getTime() + IST_OFFSET_MS);
+  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
 }

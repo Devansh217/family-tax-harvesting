@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { simulateSale } from '../../engine/family';
+import { simulateSale, unitStep } from '../../engine/family';
 import { QTY_SCALE } from '../../engine/types';
 import { useApp } from '../app-context';
 import { inr, inrShort, units } from '../format';
@@ -28,7 +28,8 @@ export function Simulate() {
   }
   const sec = fam.securities.get(opt.isin)!;
   const amount = Math.max(0, Math.round(Number(amountText.replace(/[,₹\s]/g, '')) * 100) || 0);
-  const qtyWanted = sec.price ? Math.floor((amount / sec.price) * (sec.kind === 'equity_mf' ? 1000 : 1)) * (QTY_SCALE / (sec.kind === 'equity_mf' ? 1000 : 1)) : 0;
+  const step = unitStep(sec);
+  const qtyWanted = sec.price ? Math.floor((amount * QTY_SCALE) / sec.price / step) * step : 0;
 
   const rows = fam.members
     .filter((v) => v.holdings.some((h) => h.isin === opt.isin))

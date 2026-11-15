@@ -1,10 +1,11 @@
 import { isLaterBenefit, type Move } from '../../engine/family';
-import { moveKey, useApp } from '../app-context';
+import { useApp } from '../app-context';
+import { statusRecord } from '../../engine/records';
 import { dateLabel, inr, inrShort, units } from '../format';
 import { Avatar, Disclaimer, Svg, Icon } from '../parts';
 import { SampleBanner } from './Home';
 
-export const movesNotDone = (moves: Move[], done: Record<string, boolean>) => moves.filter((m) => !done[moveKey(m)]);
+export const movesNotDone = (moves: Move[], done: Record<string, boolean>) => moves.filter((m) => !done[m.id]);
 
 const KIND_ORDER: Array<{ kind: Move['kind']; title: string; blurb: string }> = [
   { kind: 'harvest_gain', title: 'Sell and buy back', blurb: 'Books long-term gain inside the member’s tax-free room and resets the cost higher, so that gain is never taxed. Buy back on the next trading day; mutual funds take 1–2 days to pay out. Bought-back units count as short-term for a year, so skip money you need within 12 months.' },
@@ -13,9 +14,9 @@ const KIND_ORDER: Array<{ kind: Move['kind']; title: string; blurb: string }> = 
   { kind: 'wait', title: 'Wait', blurb: 'These turn long-term soon. Selling before then is taxed at 20% instead of 12.5%.' },
 ];
 
-function describe(m: Move, nameOf: (id: string) => string, kindOf: (isin: string) => string | undefined, bonusOf: (id: string) => number) {
+function describe(m: Move, nameOf: (id: string) => string, bonusOf: (id: string) => number) {
   const u = units(m.qty);
-  const noun = kindOf(m.isin) === 'equity' ? 'share' : 'unit';
+  const noun = m.isin.startsWith('INF') ? 'unit' : 'share';
   const unitWord = m.qty === 10_000 ? noun : `${noun}s`;
   const where = m.account ? ` · ${m.account}` : '';
   switch (m.kind) {
@@ -35,9 +36,8 @@ function describe(m: Move, nameOf: (id: string) => string, kindOf: (isin: string
 
 export function MoveRow({ move }: { move: Move }) {
   const { state, update, nameOf, indexOf, fam } = useApp();
-  const key = moveKey(move);
-  const done = !!state.done[key];
-  const d = describe(move, nameOf, (isin) => fam.securities.get(isin)?.kind, (id) => fam.members.find((v) => v.member.id === id)?.year.bonus.free ?? 0);
+  const done = !!state.done[move.id];
+  const d = describe(move, nameOf, (id) => fam.members.find((v) => v.member.id === id)?.year.bonus.free ?? 0);
   const who = state.members.find((m) => m.id === d.who);
   const later = isLaterBenefit(move);
   const gain = move.kind === 'harvest_gain' || move.kind === 'gift' ? move.gain : 0;
@@ -45,7 +45,10 @@ export function MoveRow({ move }: { move: Move }) {
     <div className={`move ${done ? 'done' : ''}`}>
       <button
         className="check" type="button" aria-pressed={done} aria-label={`${done ? 'Mark not done' : 'Mark done'}: ${d.title}`}
-        onClick={() => update((s) => ({ ...s, done: { ...s.done, [key]: !done } }))}
+        onClick={() => update((s) => ({
+          ...s, done: { ...s.done, [move.id]: !done },
+          recommendations: [...s.recommendations, statusRecord(move, done ? 'undone' : 'done', new Date().toISOString())],
+        }))}
       >
         <span className="box"><Svg size={14} stroke={3}>{Icon.check}</Svg></span>
       </button>
@@ -71,7 +74,7 @@ export function MoveRow({ move }: { move: Move }) {
 
 export function Plan() {
   const { fam, state } = useApp();
-  const isDone = (m: Move) => !!state.done[moveKey(m)];
+  const isDone = (m: Move) => !!state.done[m.id];
   const gainOf = (m: Move) => (m.kind === 'harvest_gain' || m.kind === 'gift' ? m.gain : 0);
   const later = fam.moves.filter(isLaterBenefit);
   const now = fam.moves.filter((m) => !isLaterBenefit(m));

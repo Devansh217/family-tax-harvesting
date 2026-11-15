@@ -8,7 +8,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { mergePriceFiles, parseAmfiNav, parseBhavcopy, type PriceFile } from '../src/prices/parse';
+import { mergePriceFiles, parseAmfiFunds, parseAmfiNav, parseBhavcopy, type FundsFile, type PriceFile } from '../src/prices/parse';
 
 const [inDir, siteDir] = process.argv.slice(2);
 if (!inDir || !siteDir) throw new Error('usage: build-prices.ts <download dir> <site dir>');
@@ -44,4 +44,11 @@ const out = join(siteDir, 'prices');
 mkdirSync(out, { recursive: true });
 if (latest) writeFileSync(join(out, 'latest.json'), JSON.stringify(latest));
 if (previous) writeFileSync(join(out, 'previous.json'), JSON.stringify(previous));
+// Fund categories decide each fund's tax type in the app. Only written when today's NAV file parsed.
+const nav = navText ? parseAmfiNav(navText) : null;
+if (navText && nav?.date) {
+  const funds: FundsFile = { date: nav.date, funds: parseAmfiFunds(navText) };
+  writeFileSync(join(out, 'funds.json'), JSON.stringify(funds));
+  console.log(`funds: ${Object.keys(funds.funds).length} with categories`);
+}
 console.log(latest ? `prices: ${latest.date} from ${latest.source}, ${Object.keys(latest.prices).length} securities; previous ${previous?.date ?? 'none'}` : 'prices: none available');

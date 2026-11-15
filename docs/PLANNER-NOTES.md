@@ -1,0 +1,152 @@
+# Planner direction: working notes
+
+## Start here (next session)
+
+1. **No code yet.** As of 15 Nov 2026 the founder wants research first: the best possible algorithm and intelligence for tax, investing and goal-based financial planning for different kinds of Indian families. Then build.
+2. **What exists:**
+   - Approved foundation design: `docs/superpowers/specs/2026-11-15-planner-foundation-design.md`
+   - Build plan, 13 tasks, not started: `docs/superpowers/plans/2026-11-15-planner-foundation.md`
+   - Tax and planning research for FY 2026-27: `docs/research/2026-11-15-family-financial-planning.md`
+3. **Research done (15 Nov 2026):** all 10 topics below, plus the synthesis `docs/research/2026-11-15-core-feature-list.md` (read it first). Its section 3 changes are now applied to the foundation spec and plan. Topic 9 was folded in on 16 Nov 2026.
+4. **Shipped (16 Nov 2026, branch `planner-foundation`, not merged):** the foundation plan's Tasks 0–13. Decisions taken while building are the `Ruling:` lines in the build log (`.superpowers/sdd/2026-11-15-planner-foundation/progress.md`, git-ignored); the important ones are in the branch's final summary.
+5. **Next:** the founder sends the CA and lawyer question sheets (`docs/research/2026-11-15-questions-for-ca-and-lawyer.md`); write the beta-features design, then the full-planner design, from the feature list.
+6. **Projects in order:** foundation → secure storage (before any beta invites) → beta features → full planner (target-first, goals) → public launch (RIA registration, per-member sign-in, Account Aggregator, Expo).
+
+## Research agenda (to build the planning intelligence)
+
+Each topic ends in a research note in `docs/research/` with primary sources and, where it is an algorithm, a written method the engine can implement and test. Ranked by how much they shape the engine.
+
+1. **Goal-based planning method.** How a goal (amount today, date, priority) becomes a monthly investment and an allocation that changes as the date nears (glide path). Probability of reaching the goal vs a single assumed return; Monte Carlo vs simple scenarios; how to combine several goals into one family plan, with priorities when money falls short.
+2. **Indian return, risk and inflation data.** Long-run returns, volatility and correlations for Indian equity (Nifty 50 / 500 total return), debt, gold and cash; CPI inflation and education and health inflation. Sources: NSE indices, RBI, MOSPI, AMFI. These replace the placeholder "assumed returns".
+3. **Tax-aware placement across the family.** Writing "which member holds which asset" as an optimisation: maximise the family's after-tax wealth under clubbing, gift, ownership and regime rules. Literature on asset location; whether a simple ranking is enough or a solver is needed; how to explain the result in plain English.
+4. **Tax-aware selling and rebalancing.** Choosing lots and members to raise ₹X or rebalance with the least tax; tax budgets; harvesting gains and losses inside a rebalance. Literature on tax-aware rebalancing, adapted to Indian set-off rules.
+5. **Risk profiling.** SEBI's risk-profiling requirements for advisers; validated questionnaires; separating capacity (income, dependants, horizon) from willingness; how the profile limits the allocation.
+6. **Family archetypes.** 6–8 typical Indian families as fixed test cases: salaried nuclear family with home loan; joint family with retired parents and an HUF; business owner; single earner supporting parents; retired couple living on interest; young couple saving for a child's education; family with a child abroad. Each with income, assets, goals and the plan an expert would make, to test the engine against.
+7. **Retirement income.** Drawing down in India: SWP taxation, bucket strategy, safe withdrawal rates on Indian data, annuities, SCSS and the ₹12 L rebate for retired members.
+8. **Debt and insurance in the plan.** Prepay vs invest after tax by regime; emergency fund sizing by income stability; term and health cover adequacy as checks (not product advice).
+9. **Product universe.** Direct vs regular cost drag; index vs active evidence in India (SPIVA India); category choice within a tax type; small savings, NPS, EPF/VPF and where each fits.
+10. **Behaviour and explanation.** How to present a plan so families act on it: defaults, nudges, explaining tax in rupees, avoiding over-trading.
+
+Running notes from the 15 Nov 2026 brainstorm on turning the app from a tax-harvesting tool into a tax-first family financial planner. Not a design yet: the design doc comes once the open decisions below are settled.
+
+## Decided
+
+- **Direction:** a family financial planner with tax as the main rule. Every suggestion is judged by what comes home after tax for the whole family.
+- **It recommends,** not just calculates: how much in funds vs stocks, which member holds what, where new money goes.
+- **Registration:** the founder registers as a SEBI investment adviser before the public launch, to keep full control.
+- **This season (2026-27) is a soft launch** for family and friends. It behaves like the real tool; regulatory guardrails wait for the public launch. **Free and invite-only, with a "not a registered adviser yet" disclaimer on every recommendation screen (confirmed 15 Nov 2026).** The recommendation record is written from the start; the risk profile comes with the full planner (questionnaire step 7), since the beta starts from holdings.
+
+- **Architecture (decided 16 Nov 2026): Supabase plus server functions, one engine** (approach A in `docs/superpowers/specs/2026-11-16-architecture-design.md`). No dedicated backend until the public launch. The foundation plan gains Task 0: storage behind one interface, a module-boundary test, an engine bundle that runs outside the browser, and India-time dates.
+
+### Decided on 15 Nov 2026 (open-questions round)
+
+| Question | Decision |
+|---|---|
+| Plan buddy (read-only view for another family member) | **Not in the beta.** Revisit at the full planner; needs consent from each member whose data is shown. Drop beta experiment E7. |
+| Gift to a parent who has other heirs | **Warn and add to the checklist:** explain that the money passes by the parent's will, add "tell siblings / update the will" to the gift paperwork. No blocking step. |
+| Loans to a spouse | **None in the beta.** Mention only as "ask your CA" until a CA confirms the rule under the new Act. |
+| Goal order when money is short | Priority tier first; **inside a tier, goals for a child come before other goals**, then by date. The family can reorder. |
+| Safe withdrawal rate for retired members | **3.25%** with Guyton–Klinger guardrails; the full planner includes an in-house backtest (Nifty TRI, debt index, CPI since 1999) to confirm or move it. |
+| EPF long-run rate | **Today's notified 8.25%** for every year, editable per family. (The research suggested 7.5%; the founder chose the notified rate.) |
+| Legal and tax open questions | Claude drafts question sheets for a CA and a lawyer: `docs/research/2026-11-15-questions-for-ca-and-lawyer.md`. |
+
+**Claude's calls (minor; the founder can overrule):**
+- "Where to put new money" ranks with one sale at the end of the period (as the foundation spec does); "sell a slice each year" comes later as an option.
+- After-tax equity return is worked out per holder (a nil-tax parent's harvesting room counts), not one family figure.
+- Goal success targets by priority stay 95 / 90 / 75 / 50%.
+- Retired members' spending inflation blends 5% general and 8% health by their spending mix.
+- Retirement defaults: 40% equity, plan to age 95.
+- Cooling-off step for gifts and moves over ₹5 L; moves under ₹1,000 not shown.
+
+- **The beta starts from holdings (decided 15 Nov 2026, later the same day):** beta users start from their statements; the target split, emergency fund and questionnaire steps 3–7 come with the full planner after beta feedback. The target-first flow below is the full planner's flow, not the beta's.
+- **Secure storage is its own project (Claude's proposal, not objected to):** the table split, field encryption, admin-read logging and backups run right after the foundation and before any beta invites. The foundation keeps today's single saved document with the new shapes.
+- **A plan starts from a target (decided 15 Nov 2026, for the full planner):** a ~2-minute questionnaire (expenses, loans, goals with dates, reaction to a fall) gives an emergency fund and a family-level split; statements then show the gap and the lowest-tax moves to close it, compared across members.
+
+- **Synced data stays readable on the server, hardened (decided 15 Nov 2026):** normal password reset, server-side alerts, and the founder can debug for users. Because a breach would expose everything, the hardening items in the security to-do are required before the beta, not nice-to-haves.
+
+- **Cross-member suggestions allowed, flagged as gifts (decided 15 Nov 2026):** the app may rank every member as the holder of new money. A move into someone else's name is marked as a gift, with what that means (it becomes their money, counts as their income, passes by their will or nominee) and the paperwork to keep. Clubbing rules still exclude spouse, minor child, daughter-in-law and HUF.
+- **Foundation design (proposed 15 Nov 2026, not yet written up):** six tax types (equity, debt-like, in-between, interest, tax-free, dividends) taken from the SEBI fund category plus a maintained override list, showing "check" when unsure; a "what it brings home" table per member, with editable default return assumptions per category. Fixes today's name-based guess in `prototype/src/parsers/common.ts`, which taxes conservative hybrid, gold and international funds as equity.
+
+- **Beta consent: one manager (decided 15 Nov 2026):** one person signs in and manages every member. For each adult the manager records "they agreed" with a date, stored so per-member sign-in can replace it at the public launch without losing data.
+
+- **Build approach: extend the current engine (decided 15 Nov 2026).** The design draft is `docs/superpowers/specs/2026-11-15-planner-foundation-design.md`.
+
+## Open decisions
+
+None right now.
+
+## Features to explore, in order
+
+1. **Foundation**
+   - Family profile and onboarding: members, AIS upload, 2-minute questionnaire.
+   - Every asset type taxed correctly: debt, the three hybrid treatments, gold, deposits and interest, dividend payouts.
+   - "What it brings home" per member, for any fund or product.
+2. **Beta, this season**
+   - Where to put new money.
+   - Cheapest way to raise ₹X.
+   - Harvesting with alerts.
+   - Advance tax tracker.
+   - Regular-to-direct switch.
+   - Capital gains schedule ready for the tax return.
+3. **Full planner**
+   - Target split and emergency fund, with the lowest-tax moves to reach it.
+   - Family net worth.
+   - Goals after tax.
+   - Rebalance on a tax budget.
+   - Real return.
+4. **Later**
+   - AIS mismatch check; old vs new regime per member.
+   - Gift and loan paperwork; when an HUF pays off; nominee and will checklist.
+   - Account Aggregator for live bank and deposit data.
+
+## Where the data comes from
+
+| Source | Gives |
+|---|---|
+| Mutual fund CAS (CAMS / KFintech, detailed) | All folios and transactions; regular vs direct plan and distributor code. The parser currently drops the distributor code (`prototype/src/parsers/cas.ts`). |
+| Demat CAS (NSDL / CDSL) | Shares, ETFs, bonds and gold bonds held today; no buy prices. |
+| Broker tradebook / tax P&L | Buy dates and prices. |
+| PAN | Name, date of birth (age), person or HUF. No income or holdings. |
+| AIS (each member downloads it) | Salary, interest, dividends, rent, tax deducted, reported sales. |
+| Family questionnaire | Expenses, goals, risk, loans, insurance, property, PPF / EPF / NPS. |
+| Account Aggregator (after registration) | Bank deposits, PPF, NPS, insurance. |
+
+The app never asks for income tax portal or broker passwords.
+
+## Data by sensitivity
+
+| Tier | Data |
+|---|---|
+| 1. Never store | Raw statement files, PDF passwords, portal or broker logins, full PAN |
+| 2. Highly sensitive | AIS income, holdings and transactions, folio and demat numbers, loans, insurance |
+| 3. Personal | Member names, relations, ages, regime, goals, expenses, risk profile, children's details |
+| 4. Account | Login email, phone, name |
+| 5. Must keep later | Recommendations and their reasons, consent records |
+| 6. Public | Prices, NAVs, fund categories, tax rules |
+
+## Security to-do
+
+Before the beta (data is readable on the server, so these are required):
+
+- [ ] Split the single family JSON row into tables, so access and encryption can differ by tier.
+- [ ] Encrypt tier 2 fields (income, holdings, account numbers) with a key held outside the database, so a database dump alone is unreadable.
+- [ ] Log every admin or support read of a family's data, and show the family when it happened.
+- [ ] Back up the database daily and test a restore once.
+- [ ] Keep statements on the device: parse in the browser, never upload raw files or PDF passwords.
+- [ ] Store only the PAN's last four characters.
+- [ ] Encrypt the family data saved in the browser (it is plain text in `localStorage` today).
+- [ ] Lock the page to our own scripts (Content Security Policy); host the fonts ourselves instead of loading Google Fonts.
+- [ ] Turn on two-factor sign-in (passkey or authenticator app).
+- [ ] Check the Supabase project's region; move to Mumbai (`ap-south-1`) before the public launch.
+- [ ] Limit who has admin access to the Supabase project and keep the secret key out of the code and repo.
+- [ ] Delete an account and all its data within a day of the request.
+- [ ] Consent per family member, and parental consent for children's data, under India's data protection law.
+- [ ] Before the public launch: risk profile per member, a saved record of each recommendation, Account Aggregator on a proper server.
+
+## Adviser rules that shape the public launch (from the research)
+
+- Risk profiling comes before any advice, and the client must consent to the completed profile (SEBI IA Regulations, Reg 16–17).
+- No free trials (IA Regulations and the IA Master Circular of 27 Jun 2025, per the risk-profiling research; an "Oct 2024 circular" cited earlier could not be traced). Affects a free tier that recommends.
+- SEBI's "family" for fees is the client plus dependent spouse, children and parents. An earning adult child or working spouse may count as a separate client, which affects per-family pricing.
+- Implementation only through direct plans; no commission.
+- Not yet researched: SEBI fee caps per family.

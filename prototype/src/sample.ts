@@ -6,22 +6,22 @@ const rs = (n: number) => Math.round(n * 100);
 /** A made-up family of five, matching the design canvas. Prices and fund ISINs are invented. */
 export function sampleState(): AppState {
   const members: Member[] = [
-    { id: 'a', name: 'Arjun', relation: 'self', age: 38, regime: 'new', otherIncome: rs(30_00_000) },
-    { id: 'm', name: 'Meera', relation: 'spouse', age: 36, regime: 'new', otherIncome: rs(18_00_000) },
-    { id: 'r', name: 'Ramesh', relation: 'parent', age: 64, regime: 'new', otherIncome: rs(4_60_000) },
-    { id: 's', name: 'Sunita', relation: 'parent', age: 61, regime: 'new', otherIncome: rs(4_20_000) },
-    { id: 'k', name: 'Kabir', relation: 'child_adult', age: 19, regime: 'new', otherIncome: 0 },
+    { id: 'a', name: 'Arjun', relation: 'self', age: 38, regime: 'new', type: 'person', income: [{ kind: 'other', amount: rs(30_00_000), from: 'manual' }] },
+    { id: 'm', name: 'Meera', relation: 'spouse', age: 36, regime: 'new', type: 'person', income: [{ kind: 'other', amount: rs(18_00_000), from: 'manual' }] },
+    { id: 'r', name: 'Ramesh', relation: 'parent', age: 64, regime: 'new', type: 'person', income: [{ kind: 'other', amount: rs(4_60_000), from: 'manual' }] },
+    { id: 's', name: 'Sunita', relation: 'parent', age: 61, regime: 'new', type: 'person', income: [{ kind: 'other', amount: rs(4_20_000), from: 'manual' }] },
+    { id: 'k', name: 'Kabir', relation: 'child_adult', age: 19, regime: 'new', type: 'person', income: [{ kind: 'other', amount: 0, from: 'manual' }] },
   ];
   const d = '2026-11-13';
   const securities: Security[] = [
-    { isin: 'INE467B01029', name: 'TCS', kind: 'equity', price: rs(4450), priceDate: d },
-    { isin: 'INE009A01021', name: 'Infosys', kind: 'equity', price: rs(3700), priceDate: d },
-    { isin: 'INE040A01034', name: 'HDFC Bank', kind: 'equity', price: rs(2000), priceDate: d },
-    { isin: 'INE154A01025', name: 'ITC', kind: 'equity', price: rs(610), priceDate: d, fmv2018: rs(270) },
-    { isin: 'INE018A01030', name: 'Larsen & Toubro', kind: 'equity', price: rs(3700), priceDate: d },
-    { isin: 'INF0SAMPLE01', name: 'Nifty 50 index fund (sample)', kind: 'equity_mf', price: rs(180), priceDate: d },
-    { isin: 'INF0SAMPLE02', name: 'Flexi-cap fund (sample)', kind: 'equity_mf', price: rs(438), priceDate: d },
-    { isin: 'INF0SAMPLE03', name: 'Large-cap fund (sample)', kind: 'equity_mf', price: rs(104), priceDate: d },
+    { isin: 'INE467B01029', name: 'TCS', taxType: 'equity', listed: true, price: rs(4450), priceDate: d },
+    { isin: 'INE009A01021', name: 'Infosys', taxType: 'equity', listed: true, price: rs(3700), priceDate: d },
+    { isin: 'INE040A01034', name: 'HDFC Bank', taxType: 'equity', listed: true, price: rs(2000), priceDate: d },
+    { isin: 'INE154A01025', name: 'ITC', taxType: 'equity', listed: true, price: rs(610), priceDate: d, fmv2018: rs(270) },
+    { isin: 'INE018A01030', name: 'Larsen & Toubro', taxType: 'equity', listed: true, price: rs(3700), priceDate: d },
+    { isin: 'INF0SAMPLE01', name: 'Nifty 50 index fund (sample)', taxType: 'equity', listed: false, price: rs(180), priceDate: d },
+    { isin: 'INF0SAMPLE02', name: 'Flexi-cap fund (sample)', taxType: 'equity', listed: false, price: rs(438), priceDate: d },
+    { isin: 'INF0SAMPLE03', name: 'Large-cap fund (sample)', taxType: 'equity', listed: false, price: rs(104), priceDate: d },
   ];
   let n = 0;
   const t = (memberId: string, isin: string, date: string, side: 'buy' | 'sell', units: number, price: number) => ({
@@ -46,7 +46,7 @@ export function sampleState(): AppState {
     t('s', 'INF0SAMPLE02', '2020-02-01', 'buy', 1000, 400),
   ];
   return {
-    version: 1, isSample: true, members, securities, txns, positions: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [],
+    version: 1, isSample: true, members, securities, txns, positions: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [],
     imports: [{ id: 'sample', memberId: 'a', fileName: 'Sample family', format: 'Sample data', at: '2026-11-14T00:00:00Z', txns: txns.length, prices: securities.length, warnings: [] }],
   };
 }

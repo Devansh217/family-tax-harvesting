@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDematCAS, parseMutualFundCAS } from './cas';
+import { parseDematCAS, parseMutualFundCAS, schemeDetails } from './cas';
 import { parseCSV, parseDate, parseNumber } from './common';
 import { parseStatementLines, parseTablePreview, previewTable } from './index';
 
@@ -55,7 +55,7 @@ describe('broker trade files', () => {
     const csv = 'Scheme Name,ISIN,Transaction Type,Date,Units,NAV,Amount\nParag Flexi Cap Direct Growth,INF879O01027,Purchase,01-Apr-2024,100.123,50.0000,5006.15\nParag Flexi Cap Direct Growth,INF879O01027,Redemption,01-Jun-2026,20.000,80.0000,1600.00';
     const p = previewTable(csv);
     const r = parseTablePreview(p, p.mapping, 'etmoney.csv');
-    expect(r.txns[0]).toMatchObject({ kind: 'equity_mf', side: 'buy', qty: 1_001_230 });
+    expect(r.txns[0]).toMatchObject({ side: 'buy', qty: 1_001_230 });
     expect(r.txns[1]).toMatchObject({ side: 'sell', amount: 1600_00 });
   });
 
@@ -91,6 +91,13 @@ describe('CAS PDFs (text lines)', () => {
     expect(r.txns[0]!.name).toBe('Parag Parikh Flexi Cap Fund - Direct Plan Growth');
     expect(r.txns[0]!.account).toBe('Folio 1234567/89');
     expect(r.warnings).toHaveLength(0);
+  });
+
+  it('keeps plan, option and distributor from the scheme line', () => {
+    expect(schemeDetails('X Flexi Cap Fund - Regular Plan - Growth (Advisor: ARN-12345) ISIN: INF000X01011')).toEqual({ plan: 'regular', option: 'growth', distributor: 'ARN-12345' });
+    expect(schemeDetails('X Fund - Direct Plan - IDCW Payout (Advisor: DIRECT) ISIN: INF000X01011')).toEqual({ plan: 'direct', option: 'idcw', distributor: undefined });
+    expect(schemeDetails('X Fund - Dividend Reinvestment ISIN: INF000X01011')).toEqual({ plan: undefined, option: 'idcw', distributor: undefined });
+    expect(parseMutualFundCAS(mfLines).prices[0]).toMatchObject({ plan: 'direct', option: 'growth' });
   });
 
   it('warns when the units do not reconcile with the closing balance', () => {

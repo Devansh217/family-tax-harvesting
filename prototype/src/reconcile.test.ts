@@ -74,7 +74,7 @@ describe('Zerodha holdings and check-only tax P&L', () => {
     const r = parseZerodhaHoldings(holdings);
     expect(r.prices).toHaveLength(2);
     expect(r.prices[0]).toMatchObject({ isin: 'INE009A01021', qty: 100_000, ltQty: 60_000, price: 1900_00, cost: 15000_00 });
-    expect(r.prices[1]).toMatchObject({ isin: 'INF879O01027', kind: 'equity_mf', qty: 1_005_000 });
+    expect(r.prices[1]).toMatchObject({ isin: 'INF879O01027', qty: 1_005_000 });
   });
 
   it('check-only keeps the broker totals and F&O but adds no trades', () => {

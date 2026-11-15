@@ -1,6 +1,7 @@
 import { isLongTerm } from './dates';
 import { FY_2026_27, type TaxRules } from './rules';
-import { QTY_SCALE, type IntradayTrade, type Ledger, type Lot, type Paise, type Qty, type Realised, type Security, type Txn } from './types';
+import { longTermMonthsFor, lotTaxType } from './tax';
+import { QTY_SCALE, type IntradayTrade, type Ledger, type ISODate, type Lot, type Paise, type Qty, type Realised, type Security, type Txn } from './types';
 
 export const lotKey = (memberId: string, isin: string, account = '') => `${memberId}|${isin}|${account}`;
 
@@ -19,7 +20,7 @@ export function effectiveCost(
   security: Security | undefined,
   rules: TaxRules,
 ): Paise {
-  if (!security?.fmv2018 || security.kind === 'other' || lot.date > rules.grandfatherDate) return actualCost;
+  if (!security?.fmv2018 || security.taxType !== 'equity' || lot.date > rules.grandfatherDate) return actualCost;
   const fmv = Math.round((security.fmv2018 * qty) / QTY_SCALE);
   return Math.max(actualCost, Math.min(fmv, saleValue));
 }
@@ -29,6 +30,16 @@ export function effectiveCost(
  * account (demat or folio), as the depositories do.
  * Sells on a date are applied before buys on that date, so a same-day buyback is never consumed by its own sale.
  */
+/**
+ * Tax type and term of a sold lot. The type is per lot (debt units bought before April 2023 are other long-term);
+ * unknown securities are treated as listed shares, as before.
+ */
+export function lotTerms(sec: Security | undefined, buyDate: ISODate, sellDate: ISODate, rules: TaxRules): Pick<Realised, 'taxType' | 'term'> {
+  const taxType = sec ? lotTaxType(sec, buyDate, rules) : 'equity';
+  const months = longTermMonthsFor(taxType, sec?.listed ?? true, rules);
+  return { taxType, term: months != null && isLongTerm(buyDate, sellDate, months) ? 'lt' : 'st' };
+}
+
 export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules = FY_2026_27): Ledger {
   const bySec = new Map(securities.map((s) => [s.isin, s]));
   const { delivery, intraday } = splitIntraday(txns);
@@ -68,7 +79,7 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
         proceeds,
         cost,
         gain: proceeds - cost,
-        term: isLongTerm(lot.date, t.date, rules.longTermMonths) ? 'lt' : 'st',
+        ...lotTerms(bySec.get(t.isin), lot.date, t.date, rules),
       });
       lot.qty -= take;
       lot.cost -= actualCost;

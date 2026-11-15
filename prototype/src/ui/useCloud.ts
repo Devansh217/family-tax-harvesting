@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { loadFamily, loadProfile, namesFromLogin, saveFamily, saveProfile, signOut, supabase, type CloudFamily, type Profile, type Session } from '../cloud';
+import { namesFromLogin, signOut, supabase, type Session } from '../cloud';
+import { familyStore, loadProfile, saveProfile, type CloudFamily, type Profile } from '../storage';
 import { sampleState } from '../sample';
 import { hasRealData, normalizeState, type AppState } from '../store';
 
@@ -74,7 +75,7 @@ export function useCloud(state: AppState, setState: Dispatch<SetStateAction<AppS
     setStatus('loading');
     void (async () => {
       try {
-        const [loaded, cloud] = await Promise.all([loadProfile(uid), loadFamily(uid)]);
+        const [loaded, cloud] = await Promise.all([loadProfile(uid), familyStore.load(uid)]);
         let p = loaded;
         // Fill a missing name from the login (Google shares it) and keep it on the profile.
         if (p && (!p.first_name || !p.last_name) && session?.user) {
@@ -118,9 +119,9 @@ export function useCloud(state: AppState, setState: Dispatch<SetStateAction<AppS
     setStatus('saving');
     const t = window.setTimeout(async () => {
       try {
-        const r = await saveFamily(uid, state, version.current);
+        const r = await familyStore.save(uid, state, version.current);
         if (r === 'conflict') {
-          const cloud = await loadFamily(uid);
+          const cloud = await familyStore.load(uid);
           if (cloud) {
             version.current = cloud.version;
             applyAccountCopy(cloud.state);

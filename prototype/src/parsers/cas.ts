@@ -1,5 +1,5 @@
 import {
-  findIsin, kindFromIsin, parseDate, parseNumber, toPaise, toQty,
+  findIsin, parseDate, parseNumber, toPaise, toQty,
   type ParsedPrice, type ParsedTxn, type ParseResult,
 } from './common';
 
@@ -19,6 +19,22 @@ export function isDematCAS(text: string) {
   return /(NSDL|CDSL)/.test(text) && /\bINE[A-Z0-9]{9}\b/.test(text);
 }
 
+/**
+ * Plan, option and distributor from a CAS scheme line, read before schemeName() strips the advisor part. A regular
+ * plan pays a distributor commission; the distributor code (ARN) shows who. "Advisor: DIRECT" means no distributor.
+ */
+export function schemeDetails(line: string): Pick<ParsedPrice, 'plan' | 'option' | 'distributor'> {
+  const head = line.replace(/ISIN\s*:.*$/i, ' ');
+  const plan = /\bdirect\b/i.test(head) ? 'direct' : /\bregular\b/i.test(head) ? 'regular' : undefined;
+  const option = /\b(idcw|dividend|payout|reinvest\w*)\b/i.test(head) ? 'idcw' : /\bgrowth\b/i.test(head) ? 'growth' : undefined;
+  const adv = line.match(/(?:Advisor|ARN)\s*:\s*([A-Z0-9-]+)/i)?.[1];
+  const distributor = adv && !/^direct$/i.test(adv) ? adv.toUpperCase() : undefined;
+  return { plan, option, distributor };
+}
+
+/** Drops undefined fields so parsed rows stay compact and comparable. */
+const defined = <T extends object>(o: T): Partial<T> => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+
 function schemeName(line: string): string {
   return line
     .replace(/\(?\s*(Advisor|ARN|Registrar)\s*:.*$/i, '')
@@ -34,7 +50,7 @@ export function parseMutualFundCAS(lines: string[]): ParseResult {
   const prices: ParsedPrice[] = [];
   const warnings: string[] = [];
   let skipped = 0;
-  let cur: { isin: string; name: string; units: number; closing: number | null; cost: number | null; folio?: string } | null = null;
+  let cur: { isin: string; name: string; units: number; closing: number | null; cost: number | null; folio?: string; details: ReturnType<typeof schemeDetails> } | null = null;
   let folio: string | undefined;
 
   const closeScheme = () => {
@@ -50,7 +66,7 @@ export function parseMutualFundCAS(lines: string[]): ParseResult {
     const isin = findIsin(line);
     if (isin && /ISIN/i.test(line) && isin.startsWith('INF')) {
       closeScheme();
-      cur = { isin, name: schemeName(line), units: 0, closing: null, cost: null, folio };
+      cur = { isin, name: schemeName(line), units: 0, closing: null, cost: null, folio, details: schemeDetails(line) };
       continue;
     }
     if (!cur) continue;
@@ -59,7 +75,7 @@ export function parseMutualFundCAS(lines: string[]): ParseResult {
     if (nav) {
       const price = parseNumber(nav[2]);
       if (price != null) {
-        prices.push({ isin: cur.isin, name: cur.name, kind: kindFromIsin(cur.isin, cur.name), price: toPaise(price), priceDate: parseDate(nav[1]) ?? undefined });
+        prices.push({ isin: cur.isin, name: cur.name, price: toPaise(price), priceDate: parseDate(nav[1]) ?? undefined, ...defined(cur.details) });
       }
     }
     const closing = line.match(CLOSING);
@@ -77,7 +93,7 @@ export function parseMutualFundCAS(lines: string[]): ParseResult {
     if (!date || amount == null || units == null || units === 0) { skipped++; continue; }
     cur.units += units;
     txns.push({
-      date, isin: cur.isin, name: cur.name, kind: kindFromIsin(cur.isin, cur.name),
+      date, isin: cur.isin, name: cur.name, 
       side: units < 0 ? 'sell' : 'buy', qty: toQty(Math.abs(units)), amount: toPaise(Math.abs(amount)), account: cur.folio,
     });
   }
@@ -109,7 +125,7 @@ export function parseDematCAS(lines: string[]): ParseResult {
     if (qty == null || price == null || value == null || qty === 0) { skipped++; continue; }
     if (Math.abs(qty * price - value) > Math.max(1, value * 0.01)) { skipped++; continue; }
     const clean = name!.replace(/\s+(EQ|EQUITY SHARES?|#.*)$/i, '').trim();
-    prices.push({ isin: isin!, name: clean, kind: kindFromIsin(isin!, clean), price: toPaise(price), priceDate, qty: toQty(qty) });
+    prices.push({ isin: isin!, name: clean, price: toPaise(price), priceDate, qty: toQty(qty) });
   }
   if (prices.length === 0) warnings.push('No holdings rows recognised in this demat statement.');
   else warnings.push('Demat CAS has current holdings but no buy dates or prices. Add the broker trade history for exact gains.');

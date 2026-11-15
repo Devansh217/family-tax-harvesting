@@ -10,7 +10,7 @@ const buy = (memberId: string, isin: string, date: string, units: number, priceR
   id: `b${++seq}`, memberId, isin, date, side: 'buy', qty: q(units), amount: rs(units * priceRs), source: 'test',
 });
 const person = (id: string, relation: Member['relation'], over: Partial<Member> = {}): Member => ({
-  id, name: id, relation, age: 40, regime: 'new', otherIncome: rs(20_00_000), ...over,
+  id, name: id, relation, age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: rs(20_00_000), from: 'manual' as const }], ...over,
 });
 const ASOF = '2026-11-14';
 
@@ -18,7 +18,7 @@ describe('harvest gain moves', () => {
   it('fills the room with whole shares from long-term lots and states the saving', () => {
     const fam = computeFamily({
       members: [person('a', 'self')],
-      securities: [{ isin: 'X', name: 'X Ltd', kind: 'equity', price: rs(2000) }],
+      securities: [{ isin: 'X', name: 'X Ltd', taxType: 'equity' as const, listed: true, price: rs(2000) }],
       txns: [buy('a', 'X', '2023-01-01', 500, 1000)], // ₹1,000 gain per share
     }, ASOF, R);
     const m = fam.moves.find((x) => x.kind === 'harvest_gain')!;
@@ -32,14 +32,14 @@ describe('harvest gain moves', () => {
   it('skips moves too small to beat their trading costs', () => {
     const fam = computeFamily({
       members: [person('a', 'self')],
-      securities: [{ isin: 'X', name: 'X', kind: 'equity', price: rs(1400) }],
+      securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(1400) }],
       txns: [buy('a', 'X', '2023-01-01', 10, 1000)], // ₹4,000 gain → ₹520 avoided, less ~₹45 costs
     }, ASOF, R);
     expect(fam.moves.filter((x) => x.kind === 'harvest_gain')).toHaveLength(0);
   });
 
   it('never suggests moves on lots with guessed dates or a missing 31 Jan 2018 value', () => {
-    const base = { members: [person('a', 'self')], securities: [{ isin: 'X', name: 'X', kind: 'equity' as const, price: rs(2000) }] };
+    const base = { members: [person('a', 'self')], securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(2000) }] };
     const estimated = computeFamily({ ...base, txns: [{ ...buy('a', 'X', '2023-01-01', 100, 1000), estimated: true }] }, ASOF, R);
     expect(estimated.moves).toHaveLength(0);
     expect(estimated.totals.uncertainLots).toBe(1);
@@ -53,7 +53,7 @@ describe('harvest gain moves', () => {
   it('harvests from each demat account separately', () => {
     const fam = computeFamily({
       members: [person('a', 'self')],
-      securities: [{ isin: 'X', name: 'X', kind: 'equity', price: rs(2000) }],
+      securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(2000) }],
       txns: [{ ...buy('a', 'X', '2023-01-01', 40, 1000), account: 'Zerodha' }, { ...buy('a', 'X', '2023-06-01', 40, 1000), account: 'Angel One' }],
     }, ASOF, R);
     const h = fam.moves.filter((x) => x.kind === 'harvest_gain');
@@ -63,7 +63,7 @@ describe('harvest gain moves', () => {
   it('never sells into short-term lots', () => {
     const fam = computeFamily({
       members: [person('a', 'self')],
-      securities: [{ isin: 'X', name: 'X', kind: 'equity', price: rs(2000) }],
+      securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(2000) }],
       txns: [buy('a', 'X', '2023-01-01', 20, 1000), buy('a', 'X', '2026-08-01', 500, 1000)],
     }, ASOF, R);
     const m = fam.moves.find((x) => x.kind === 'harvest_gain')!;
@@ -74,7 +74,7 @@ describe('harvest gain moves', () => {
   it('allows fractional mutual fund units to three decimals', () => {
     const fam = computeFamily({
       members: [person('a', 'self')],
-      securities: [{ isin: 'F', name: 'Fund', kind: 'equity_mf', price: rs(300) }],
+      securities: [{ isin: 'F', name: 'Fund', taxType: 'equity' as const, listed: false, price: rs(300) }],
       txns: [buy('a', 'F', '2023-01-01', 10_000, 100)], // ₹200 gain per unit
     }, ASOF, R);
     const m = fam.moves.find((x) => x.kind === 'harvest_gain')!;
@@ -86,7 +86,7 @@ describe('harvest gain moves', () => {
 describe('planned sales and money needed soon', () => {
   const state = {
     members: [person('a', 'self')],
-    securities: [{ isin: 'X', name: 'X', kind: 'equity' as const, price: rs(2000) }, { isin: 'Y', name: 'Y', kind: 'equity' as const, price: rs(2000) }],
+    securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(2000) }, { isin: 'Y', name: 'Y', taxType: 'equity' as const, listed: true as const, price: rs(2000) }],
     txns: [buy('a', 'X', '2022-01-01', 100, 1000), buy('a', 'Y', '2022-01-01', 100, 1000)],
   };
 
@@ -116,7 +116,7 @@ describe('planned sales and money needed soon', () => {
 
 describe('gift moves', () => {
   const base = {
-    securities: [{ isin: 'X', name: 'X', kind: 'equity' as const, price: rs(2000) }],
+    securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(2000) }],
     txns: [buy('a', 'X', '2020-01-01', 1000, 1000)], // ₹10 L of LT gain with the owner
   };
 
@@ -133,7 +133,7 @@ describe('gift moves', () => {
   it('does not gift mutual fund units', () => {
     const fam = computeFamily({
       members: [person('a', 'self'), person('p', 'parent')],
-      securities: [{ isin: 'F', name: 'Fund', kind: 'equity_mf', price: rs(300) }],
+      securities: [{ isin: 'F', name: 'Fund', taxType: 'equity' as const, listed: false, price: rs(300) }],
       txns: [buy('a', 'F', '2020-01-01', 100_000, 100)],
     }, ASOF, R);
     expect(fam.moves.some((x) => x.kind === 'gift')).toBe(false);
@@ -144,7 +144,7 @@ describe('wait and loss moves', () => {
   it('suggests waiting when a winner turns long-term within 90 days', () => {
     const fam = computeFamily({
       members: [person('a', 'self')],
-      securities: [{ isin: 'H', name: 'H', kind: 'equity', price: rs(1500) }],
+      securities: [{ isin: 'H', name: 'H', taxType: 'equity' as const, listed: true, price: rs(1500) }],
       txns: [buy('a', 'H', '2025-12-06', 100, 1000)],
     }, ASOF, R);
     const w = fam.moves.find((x) => x.kind === 'wait')!;
@@ -156,8 +156,8 @@ describe('wait and loss moves', () => {
     const fam = computeFamily({
       members: [person('a', 'self')],
       securities: [
-        { isin: 'W', name: 'Winner', kind: 'equity', price: rs(100) },
-        { isin: 'L', name: 'Loser', kind: 'equity', price: rs(500) },
+        { isin: 'W', name: 'Winner', taxType: 'equity' as const, listed: true, price: rs(100) },
+        { isin: 'L', name: 'Loser', taxType: 'equity' as const, listed: true, price: rs(500) },
       ],
       txns: [
         buy('a', 'W', '2026-05-01', 1000, 50),
@@ -175,7 +175,7 @@ describe('wait and loss moves', () => {
 describe('family totals and simulator', () => {
   const state = {
     members: [person('a', 'self'), person('p', 'parent', { age: 64 })],
-    securities: [{ isin: 'N', name: 'Nifty fund', kind: 'equity_mf' as const, price: rs(200) }],
+    securities: [{ isin: 'N', name: 'Nifty fund', taxType: 'equity' as const, listed: false as const, price: rs(200) }],
     txns: [buy('a', 'N', '2022-01-01', 3000, 100), buy('p', 'N', '2022-01-01', 3000, 150)],
   };
 
@@ -194,3 +194,16 @@ describe('family totals and simulator', () => {
     expect(p.roomUsed).toBe(rs(1_00_000));
   });
 });
+
+describe('funds to check', () => {
+  it('a fund whose tax type is unknown gets no moves until it is set', () => {
+    const st = (taxType: 'check' | 'equity') => ({
+      members: [person('a', 'self')],
+      securities: [{ isin: 'INFBAF', name: 'Balanced advantage', taxType, listed: false, price: rs(200) }],
+      txns: [buy('a', 'INFBAF', '2023-01-01', 1000, 100)],
+    });
+    expect(computeFamily(st('check'), ASOF, R).moves).toHaveLength(0);
+    expect(computeFamily(st('equity'), ASOF, R).moves.some((x) => x.kind === 'harvest_gain')).toBe(true);
+  });
+});
+

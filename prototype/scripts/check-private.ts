@@ -45,7 +45,7 @@ for (const f of files) {
       } else if (isZerodhaTaxPnl(asSheets)) {
         r = parseZerodhaTaxPnl(asSheets);
         // Reconcile: rebuild gains from the exits and compare with Zerodha's own totals. Prints match / % only.
-        let st: AppState = { ...emptyState(), members: [{ id: 'm', name: 'Member', relation: 'self', age: 40, regime: 'new', otherIncome: 20_00_000_00 }] };
+        let st: AppState = { ...emptyState(), members: [{ id: 'm', name: 'Member', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: 20_00_000_00 , from: 'manual' as const }]}] };
         st = applyImport(st, 'm', f, r, { account: 'Zerodha' });
         const fam = computeFamily(st, r.brokerSummary!.to ?? FY_2026_27.end, FY_2026_27);
         console.log(`\n${f}: Zerodha Tax P&L, ${r.brokerSummary!.from} to ${r.brokerSummary!.to}`);

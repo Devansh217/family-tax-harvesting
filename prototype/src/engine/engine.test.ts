@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { addMonths, isLongTerm, longTermFrom } from './dates';
+import { addMonths, isLongTerm, longTermFrom, todayISO } from './dates';
 import { buildLedger } from './ledger';
-import { FY_2026_27 as R } from './rules';
+import { FY_2026_27 as R, roundTripCost } from './rules';
+import { classifyByIsin } from '../parsers/common';
 import { summariseYear } from './tax';
 import { QTY_SCALE, type Member, type Security, type Txn } from './types';
 
@@ -12,9 +13,28 @@ const tx = (memberId: string, isin: string, date: string, side: 'buy' | 'sell', 
   id: `t${++seq}`, memberId, isin, date, side, qty: q(units), amount: rs(units * priceRs), source: 'test',
 });
 const member = (over: Partial<Member> = {}): Member => ({
-  id: 'm1', name: 'Test', relation: 'self', age: 40, regime: 'new', otherIncome: rs(20_00_000), ...over,
+  id: 'm1', name: 'Test', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: rs(20_00_000), from: 'manual' as const }], ...over,
 });
-const sec = (isin: string, over: Partial<Security> = {}): Security => ({ isin, name: isin, kind: 'equity', ...over });
+const sec = (isin: string, over: Partial<Security> = {}): Security => ({ isin, name: isin, taxType: 'equity', listed: true, ...over });
+
+describe('tax types', () => {
+  it('classifies by ISIN', () => {
+    expect(classifyByIsin('INE002A01018')).toEqual({ taxType: 'equity', listed: true, taxTypeSource: 'share' });
+    expect(classifyByIsin('INF209K01YN0')).toEqual({ taxType: 'check', listed: false });
+  });
+  it('round-trip cost follows listing, not asset class', () => {
+    expect(roundTripCost({ listed: false }, rs(1_00_000), R)).toBe(Math.round(rs(1_00_000) * R.costs.mfStampBuy));
+    expect(roundTripCost({ listed: true }, rs(1_00_000), R)).toBeGreaterThan(rs(200));
+  });
+});
+
+describe('today in India', () => {
+  it('uses India time whatever the machine time zone', () => {
+    expect(todayISO(new Date('2027-03-30T19:00:00Z'))).toBe('2027-03-31'); // 00:30 IST
+    expect(todayISO(new Date('2027-03-31T18:29:00Z'))).toBe('2027-03-31'); // 23:59 IST
+    expect(todayISO(new Date('2027-03-31T18:30:00Z'))).toBe('2027-04-01'); // midnight IST
+  });
+});
 
 describe('dates', () => {
   it('clamps month ends', () => {
@@ -136,7 +156,7 @@ describe('tax year summary', () => {
   });
 
   it('gives low-income members bonus room from unused basic exemption, short-term first', () => {
-    const parent = member({ otherIncome: rs(2_50_000) }); // shortfall 1,50,000 under new regime
+    const parent = member({ income: [{ kind: 'other' as const, amount: rs(2_50_000) , from: 'manual' as const }]}); // shortfall 1,50,000 under new regime
     const s = summariseYear(parent, [
       ...sell('2026-05-01', '2026-06-01', 10_000, 1_10_000), // ST +1,00,000
       ...sell('2024-01-01', '2026-06-01', 1_00_000, 2_75_000), // LT +1,75,000
@@ -150,7 +170,7 @@ describe('tax year summary', () => {
   });
 
   it('assumes no bonus room when other income is not entered', () => {
-    const s = summariseYear(member({ otherIncome: undefined }), sell('2024-01-01', '2026-06-01', 1_00_000, 3_25_000), R);
+    const s = summariseYear(member({ income: undefined }), sell('2024-01-01', '2026-06-01', 1_00_000, 3_25_000), R);
     expect(s.bonus.total).toBe(0);
     expect(s.tax).toBe(rs(13_000));
   });
@@ -167,12 +187,12 @@ describe('income bands', () => {
     const { incomeBands, slabRate } = await import('./rules');
     const bands = incomeBands({ regime: 'new', age: 40 }, R);
     expect(bands.find((b) => b.label.startsWith('Up to ₹4 L'))!.assumed).toBe(rs(4_00_000));
-    const student = member({ otherIncome: 0, incomeBand: 'No other income' });
+    const student = member({ income: [{ kind: 'other' as const, amount: 0, from: 'band' as const, band: 'No other income' }] });
     expect(summariseYear(student, [], R).bonus.total).toBe(rs(4_00_000));
-    const upTo4 = member({ otherIncome: rs(4_00_000), incomeBand: 'Up to ₹4 L (nil)' });
+    const upTo4 = member({ income: [{ kind: 'other' as const, amount: rs(4_00_000), from: 'band' as const, band: 'Up to ₹4 L (nil)' }] });
     expect(summariseYear(upTo4, [], R).bonus.total).toBe(0);
-    expect(slabRate(member({ otherIncome: rs(10_00_000) }), R)).toBe(0.1);
-    expect(slabRate(member({ otherIncome: undefined }), R)).toBeNull();
+    expect(slabRate(member({ income: [{ kind: 'other' as const, amount: rs(10_00_000) , from: 'manual' as const }]}), R)).toBe(0.1);
+    expect(slabRate(member({ income: undefined }), R)).toBeNull();
   });
 });
 
@@ -217,16 +237,16 @@ describe('intraday and F&O', () => {
   });
 
   it('taxes trading profit at the slab, with the 87A rebate below ₹12 L', () => {
-    const low = summariseYear(member({ otherIncome: rs(6_00_000) }), [], R, { speculative: 0, nonSpeculative: rs(2_00_000) });
+    const low = summariseYear(member({ income: [{ kind: 'other' as const, amount: rs(6_00_000) , from: 'manual' as const }]}), [], R, { speculative: 0, nonSpeculative: rs(2_00_000) });
     expect(low.business.tax).toBe(0); // total ₹8 L: slab tax ₹20,000 fully rebated
-    const high = summariseYear(member({ otherIncome: rs(20_00_000) }), [], R, { speculative: 0, nonSpeculative: rs(2_00_000) });
+    const high = summariseYear(member({ income: [{ kind: 'other' as const, amount: rs(20_00_000) , from: 'manual' as const }]}), [], R, { speculative: 0, nonSpeculative: rs(2_00_000) });
     expect(high.business.tax).toBe(rs(52_000)); // ₹2 L in the 25% slab, plus cess
-    const unknown = summariseYear(member({ otherIncome: undefined }), [], R, { speculative: rs(1_00_000), nonSpeculative: 0 });
+    const unknown = summariseYear(member({ income: undefined }), [], R, { speculative: rs(1_00_000), nonSpeculative: 0 });
     expect(unknown.business).toMatchObject({ tax: rs(31_200), assumedTopSlab: true });
   });
 
   it('trading profit uses up basic exemption that would otherwise be bonus room', () => {
-    const s = summariseYear(member({ otherIncome: rs(1_00_000) }), [], R, { speculative: 0, nonSpeculative: rs(2_00_000) });
+    const s = summariseYear(member({ income: [{ kind: 'other' as const, amount: rs(1_00_000) , from: 'manual' as const }]}), [], R, { speculative: 0, nonSpeculative: rs(2_00_000) });
     expect(s.bonus.total).toBe(rs(1_00_000));
   });
 });

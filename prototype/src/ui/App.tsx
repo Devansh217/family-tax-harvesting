@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { daysBetween, todayISO } from '../engine/dates';
 import { computeFamily } from '../engine/family';
+import { newShownRecords } from '../engine/records';
 import { FY_2026_27 } from '../engine/rules';
 import { sampleState } from '../sample';
 import { loadState, saveState, type AppState } from '../store';
 import { AppCtx, type Ctx } from './app-context';
-import { addSnapshot, loadMarket, snapshotOf, withPrices, type Market } from './market';
+import { addSnapshot, loadMarket, snapshotOf, withFunds, withPrices, type Market } from './market';
 import { Svg, Icon } from './parts';
 import { Home } from './screens/Home';
 import { MemberScreen } from './screens/Member';
 import { Plan } from './screens/Plan';
+import { Compare } from './screens/Compare';
+import { Setup } from './screens/Setup';
 import { Simulate } from './screens/Simulate';
 import { Family } from './screens/Family';
 import { Import } from './screens/Import';
@@ -21,6 +24,7 @@ const TABS = [
   { route: 'home', label: 'Home', icon: Icon.home },
   { route: 'plan', label: 'Plan', icon: Icon.plan },
   { route: 'simulate', label: 'Simulate', icon: Icon.sim },
+  { route: 'compare', label: 'Compare', icon: Icon.gift },
   { route: 'family', label: 'Family', icon: Icon.family },
   { route: 'import', label: 'Import', icon: Icon.upload },
 ];
@@ -48,19 +52,27 @@ export function App() {
     timer.current = window.setTimeout(() => setToast(null), 2600);
   }, []);
   const cloud = useCloud(state, setState, toast);
-  const [market, setMarket] = useState<Market>({ latest: null, previous: null });
+  const [market, setMarket] = useState<Market>({ latest: null, previous: null, funds: null });
   useEffect(() => { void loadMarket().then(setMarket); }, []);
 
   // The sample family keeps its own made-up prices; real families are re-priced at the latest close.
   const live = !state.isSample;
+  const securities = useMemo(() => withFunds(state.securities, market.funds, state.taxTypeOverrides), [state.securities, market.funds, state.taxTypeOverrides]);
   const fam = useMemo(
-    () => computeFamily(live ? { ...state, securities: withPrices(state.securities, market.latest) } : state, asOf, FY_2026_27),
-    [state, asOf, market, live],
+    () => computeFamily(live ? { ...state, securities: withPrices(securities, market.latest) } : state, asOf, FY_2026_27),
+    [state, securities, asOf, market, live],
   );
   const famPrev = useMemo(
-    () => (live && market.previous ? computeFamily({ ...state, securities: withPrices(state.securities, market.previous) }, asOf, FY_2026_27) : null),
-    [state, asOf, market, live],
+    () => (live && market.previous ? computeFamily({ ...state, securities: withPrices(securities, market.previous) }, asOf, FY_2026_27) : null),
+    [state, securities, asOf, market, live],
   );
+
+  // Record each move the first time it is shown (append-only), for real families only.
+  useEffect(() => {
+    if (!live) return;
+    const fresh = newShownRecords(fam.moves, state.recommendations, new Date().toISOString());
+    if (fresh.length) setState((s) => ({ ...s, recommendations: [...s.recommendations, ...newShownRecords(fam.moves, s.recommendations, fresh[0]!.at)] }));
+  }, [fam.moves, live, state.recommendations]);
 
   useEffect(() => {
     if (!live || !market.latest || state.members.length === 0) return;
@@ -84,6 +96,8 @@ export function App() {
   if (route.startsWith('member-')) screen = <MemberScreen id={route.slice(7)} />;
   else if (route === 'plan') screen = <Plan />;
   else if (route === 'simulate') screen = <Simulate />;
+  else if (route === 'compare') screen = <Compare />;
+  else if (route === 'setup') screen = <Setup />;
   else if (route === 'family') screen = <Family />;
   else if (route === 'import') screen = <Import />;
   else if (route === 'about') screen = <About />;
