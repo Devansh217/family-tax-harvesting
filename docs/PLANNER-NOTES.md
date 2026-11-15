@@ -1,5 +1,30 @@
 # Planner direction: working notes
 
+## Start here (next session)
+
+1. **No code yet.** As of 15 Nov 2026 the founder wants research first: the best possible algorithm and intelligence for tax, investing and goal-based financial planning for different kinds of Indian families. Then build.
+2. **What exists:**
+   - Approved foundation design: `docs/superpowers/specs/2026-11-15-planner-foundation-design.md`
+   - Build plan, 13 tasks, not started: `docs/superpowers/plans/2026-11-15-planner-foundation.md`
+   - Tax and planning research for FY 2026-27: `docs/research/2026-11-15-family-financial-planning.md`
+3. **Next:** run the research agenda below, one note per topic in `docs/research/`. Then fold the findings into the foundation spec (if they change it) and write the full-planner design.
+4. **Projects in order:** foundation → secure storage (before any beta invites) → beta features → full planner (target-first, goals) → public launch (RIA registration, per-member sign-in, Account Aggregator, Expo).
+
+## Research agenda (to build the planning intelligence)
+
+Each topic ends in a research note in `docs/research/` with primary sources and, where it is an algorithm, a written method the engine can implement and test. Ranked by how much they shape the engine.
+
+1. **Goal-based planning method.** How a goal (amount today, date, priority) becomes a monthly investment and an allocation that changes as the date nears (glide path). Probability of reaching the goal vs a single assumed return; Monte Carlo vs simple scenarios; how to combine several goals into one family plan, with priorities when money falls short.
+2. **Indian return, risk and inflation data.** Long-run returns, volatility and correlations for Indian equity (Nifty 50 / 500 total return), debt, gold and cash; CPI inflation and education and health inflation. Sources: NSE indices, RBI, MOSPI, AMFI. These replace the placeholder "assumed returns".
+3. **Tax-aware placement across the family.** Writing "which member holds which asset" as an optimisation: maximise the family's after-tax wealth under clubbing, gift, ownership and regime rules. Literature on asset location; whether a simple ranking is enough or a solver is needed; how to explain the result in plain English.
+4. **Tax-aware selling and rebalancing.** Choosing lots and members to raise ₹X or rebalance with the least tax; tax budgets; harvesting gains and losses inside a rebalance. Literature on tax-aware rebalancing, adapted to Indian set-off rules.
+5. **Risk profiling.** SEBI's risk-profiling requirements for advisers; validated questionnaires; separating capacity (income, dependants, horizon) from willingness; how the profile limits the allocation.
+6. **Family archetypes.** 6–8 typical Indian families as fixed test cases: salaried nuclear family with home loan; joint family with retired parents and an HUF; business owner; single earner supporting parents; retired couple living on interest; young couple saving for a child's education; family with a child abroad. Each with income, assets, goals and the plan an expert would make, to test the engine against.
+7. **Retirement income.** Drawing down in India: SWP taxation, bucket strategy, safe withdrawal rates on Indian data, annuities, SCSS and the ₹12 L rebate for retired members.
+8. **Debt and insurance in the plan.** Prepay vs invest after tax by regime; emergency fund sizing by income stability; term and health cover adequacy as checks (not product advice).
+9. **Product universe.** Direct vs regular cost drag; index vs active evidence in India (SPIVA India); category choice within a tax type; small savings, NPS, EPF/VPF and where each fits.
+10. **Behaviour and explanation.** How to present a plan so families act on it: defaults, nudges, explaining tax in rupees, avoiding over-trading.
+
 Running notes from the 15 Nov 2026 brainstorm on turning the app from a tax-harvesting tool into a tax-first family financial planner. Not a design yet: the design doc comes once the open decisions below are settled.
 
 ## Decided
