@@ -99,6 +99,11 @@ function upsertSecurity(list: Security[], p: { isin: string; name: string }, pri
     s.price = price.price;
     s.priceDate = price.priceDate ?? s.priceDate;
   }
+  // Plan, option and distributor from a fund statement: kept for the regular-to-direct switch.
+  if (price?.plan) s.plan = price.plan;
+  if (price?.option) s.option = price.option;
+  if (price?.plan === 'direct') delete s.distributor;
+  else if (price?.distributor) s.distributor = price.distributor;
 }
 
 export interface ImportOptions {

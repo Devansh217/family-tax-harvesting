@@ -97,6 +97,10 @@ export interface ParsedPrice {
   name: string;
   price: Paise;
   priceDate?: ISODate;
+  /** From a mutual fund CAS scheme line: direct or regular plan, growth or IDCW option, distributor (ARN) code. */
+  plan?: 'direct' | 'regular';
+  option?: 'growth' | 'idcw';
+  distributor?: string;
   /** Units held per the statement, for reconciling and for opening lots. */
   qty?: Qty;
   /** Average or total cost if the statement shows it. */

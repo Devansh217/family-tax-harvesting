@@ -12,6 +12,18 @@ const tradebook = 'symbol,isin,trade_date,segment,trade_type,quantity,price\nINF
 const holdings = 'Instrument,Qty.,Avg. cost,LTP\nINFY,20,1500,1900\nTCS,5,3000,4400';
 
 describe('importing', () => {
+  it('keeps a fund statement’s plan, option and distributor on the security', () => {
+    const r = (plan: 'regular' | 'direct', distributor?: string) => ({
+      format: 'CAS', txns: [], warnings: [], skipped: 0,
+      prices: [{ isin: 'INF879O01027', name: 'X Flexi', price: 100_00, plan, option: 'growth' as const, distributor }],
+    });
+    let s = applyImport(withMember(), 'a', 'cas.pdf', r('regular', 'ARN-12345'));
+    expect(s.securities[0]).toMatchObject({ isin: 'INF879O01027', taxType: 'check', plan: 'regular', option: 'growth', distributor: 'ARN-12345' });
+    s = applyImport(s, 'a', 'cas2.pdf', r('direct'));
+    expect(s.securities[0]).toMatchObject({ plan: 'direct' });
+    expect(s.securities[0]!.distributor).toBeUndefined();
+  });
+
   it('keeps identical fills apart but ignores a repeated import of the same file', () => {
     let s = applyImport(withMember(), 'a', 'tb.csv', parse(tradebook));
     expect(s.txns).toHaveLength(2);
