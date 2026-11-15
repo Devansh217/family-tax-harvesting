@@ -4,7 +4,8 @@ import { todayISO } from '../../engine/dates';
 import type { Member } from '../../engine/types';
 import { sampleState } from '../../sample';
 import { emptyState, removeMember, uid, type AppState } from '../../store';
-import { incomeBands, incomeTotal, FY_2026_27 } from '../../engine/rules';
+import { FY_2026_27 } from '../../engine/rules';
+import { IncomeFields, LossFields, PersonFields } from './memberFields';
 import { useApp } from '../app-context';
 import { inr, RELATIONS } from '../format';
 import { Avatar, Section } from '../parts';
@@ -24,65 +25,30 @@ const toSignedPaise = (t: string) => {
 const signed = (p?: number) => (p == null ? '' : String(p / 100));
 
 function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m: Member) => void; onCancel: () => void }) {
+  const { state, asOf } = useApp();
   const [m, setM] = useState(initial);
-  const known = incomeTotal(initial);
-  const initialBand = initial.income?.find((s) => s.band)?.band;
-  const [income, setIncome] = useState(known == null || initialBand ? '' : rupees(known));
-  const [mode, setMode] = useState<'exact' | 'slab' | 'unknown'>(initialBand ? 'slab' : known == null ? 'unknown' : 'exact');
-  const [band, setBand] = useState(initialBand ?? '');
-  const bands = incomeBands(m, FY_2026_27);
-  const [cfSt, setCfSt] = useState(rupees(initial.carriedLoss?.st ?? 0));
-  const [cfLt, setCfLt] = useState(rupees(initial.carriedLoss?.lt ?? 0));
   const [intraday, setIntraday] = useState(signed(initial.business?.intraday));
   const [fno, setFno] = useState(signed(initial.business?.fno));
   const [turnover, setTurnover] = useState(initial.business?.fnoTurnover == null ? '' : rupees(initial.business.fnoTurnover));
   const f = `mf-${initial.id}`;
+  const manager = state.members.find((x) => x.relation === 'self');
+  const others = state.members.some((x) => x.id === m.id) ? state.members : [...state.members, m];
   return (
     <form
       className="stack pad"
       onSubmit={(e) => {
         e.preventDefault();
-        const picked = bands.find((b) => b.label === band);
-        const exact = toOptionalPaise(income);
-        // Until the setup screen (Task 12) asks per source, one figure is stored as 'other' income.
-        const incomeFields: Pick<Member, 'income'> = mode === 'exact' && exact != null ? { income: [{ kind: 'other', amount: exact, from: 'manual' }] }
-          : mode === 'slab' && picked ? { income: [{ kind: 'other', amount: picked.assumed, from: 'band', band: picked.label }] }
-          : { income: undefined };
         const business = { intraday: toSignedPaise(intraday), fno: toSignedPaise(fno), fnoTurnover: toOptionalPaise(turnover) };
-        onSave({ ...m, name: m.name.trim() || 'Member', ...incomeFields, carriedLoss: { st: toPaise(cfSt), lt: toPaise(cfLt) }, business });
+        onSave({ ...m, name: m.name.trim() || 'Member', business });
       }}
     >
-      <div className="form-grid">
-        <label className="field" htmlFor={`${f}-name`}>Name<input id={`${f}-name`} value={m.name} onChange={(e) => setM({ ...m, name: e.target.value })} required /></label>
-        <label className="field" htmlFor={`${f}-rel`}>Relation to you
-          <select id={`${f}-rel`} value={m.relation} onChange={(e) => setM({ ...m, relation: e.target.value as Member['relation'] })}>
-            {Object.entries(RELATIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </label>
-        <label className="field" htmlFor={`${f}-age`}>Age<input id={`${f}-age`} type="number" min={0} max={120} value={m.age} onChange={(e) => setM({ ...m, age: Number(e.target.value) })} /></label>
-        <label className="field" htmlFor={`${f}-reg`}>Tax regime
-          <select id={`${f}-reg`} value={m.regime} onChange={(e) => setM({ ...m, regime: e.target.value as Member['regime'] })}>
-            <option value="new">New regime</option><option value="old">Old regime</option>
-          </select>
-        </label>
-        <fieldset className="field" style={{ border: 0, padding: 0, margin: 0, gridColumn: 'span 2', minWidth: 0 }}>
-          <legend style={{ padding: 0, marginBottom: 4 }}>Taxable income besides capital gains</legend>
-          <div className="seg-ctl" role="group" aria-label="How to give income">
-            <button type="button" aria-pressed={mode === 'exact'} onClick={() => setMode('exact')}>Amount</button>
-            <button type="button" aria-pressed={mode === 'slab'} onClick={() => setMode('slab')}>Tax slab</button>
-            <button type="button" aria-pressed={mode === 'unknown'} onClick={() => setMode('unknown')}>Not sure</button>
-          </div>
-          {mode === 'exact' && <input id={`${f}-inc`} aria-label="Income in rupees" inputMode="numeric" placeholder="e.g. 1200000" value={income} onChange={(e) => setIncome(e.target.value)} style={{ marginTop: 8 }} />}
-          {mode === 'slab' && (
-            <select id={`${f}-band`} aria-label="Tax slab" value={band} onChange={(e) => setBand(e.target.value)} style={{ marginTop: 8 }}>
-              <option value="">Choose a slab</option>
-              {bands.map((b) => <option key={b.label} value={b.label}>{b.label}</option>)}
-            </select>
-          )}
-        </fieldset>
-        <label className="field" htmlFor={`${f}-cfst`}>Short-term loss brought forward (₹)<input id={`${f}-cfst`} inputMode="numeric" value={cfSt} onChange={(e) => setCfSt(e.target.value)} /></label>
-        <label className="field" htmlFor={`${f}-cflt`}>Long-term loss brought forward (₹)<input id={`${f}-cflt`} inputMode="numeric" value={cfLt} onChange={(e) => setCfLt(e.target.value)} /></label>
-      </div>
+      <PersonFields member={m} onChange={setM} members={others} managerId={manager?.id ?? (m.relation === 'self' ? undefined : undefined)} asOf={asOf} />
+      {!m.dob && m.type !== 'huf' && (
+        <label className="field" htmlFor={`${f}-age`}>Age (or add the date of birth above)<input id={`${f}-age`} type="number" min={0} max={120} value={m.age} onChange={(e) => setM({ ...m, age: Number(e.target.value) })} /></label>
+      )}
+      <h3 className="small" style={{ margin: 0 }}>Income besides capital gains</h3>
+      <IncomeFields member={m} onChange={setM} />
+      <LossFields member={m} onChange={setM} />
       <details>
         <summary>Intraday and F&amp;O this year</summary>
         <div className="form-grid" style={{ marginTop: 10 }}>
@@ -92,7 +58,6 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
         </div>
         <p className="tiny muted" style={{ marginTop: 6 }}>Take these from the broker&rsquo;s tax P&amp;L for {FY_2026_27.label}. Use a minus sign for a loss.</p>
       </details>
-      <p className="tiny muted">Other income is salary, pension, interest and rent before capital gains. Below the basic exemption, the gap becomes bonus room for gains. A slab is read at its top end, so bonus room is never overstated; "Not sure" assumes none. Long-term and short-term gains on delivery shares are taxed at fixed rates whatever the slab.</p>
       <div className="row"><button className="btn primary" type="submit">Save</button><button className="btn" type="button" onClick={onCancel}>Cancel</button></div>
     </form>
   );
@@ -131,7 +96,7 @@ export function Family() {
     }
   };
 
-  const newMember: Member = { id: uid('m'), name: '', relation: owner ? 'parent' : 'self', age: 40, regime: 'new' };
+  const newMember: Member = { id: uid('m'), name: '', relation: owner ? 'parent' : 'self', age: 40, regime: 'new', type: 'person' };
 
   return (
     <>

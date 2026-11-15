@@ -4,6 +4,7 @@ import { useApp } from '../app-context';
 import { inr, inrShort } from '../format';
 import { Avatar, Disclaimer, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow, movesNotDone } from './Plan';
+import { needsSetup } from './memberFields';
 import { FirstRunNotice } from './About';
 import { SinceClose } from './SinceClose';
 import { isLaterBenefit } from '../../engine/family';
@@ -22,7 +23,7 @@ export function SampleBanner() {
 }
 
 export function Home({ days }: { days: number }) {
-  const { state, fam, update, go } = useApp();
+  const { state, fam, update, go, asOf } = useApp();
 
   if (state.members.length === 0) {
     return (
@@ -112,6 +113,13 @@ export function Home({ days }: { days: number }) {
       </div>
 
       <SinceClose />
+
+      {needsSetup(state.members, asOf) && (
+        <div className="banner" role="status">
+          <span className="grow">Add each adult&rsquo;s date of birth and income so the tax figures are right.</span>
+          <a className="btn sm primary" href="#setup">Finish family setup</a>
+        </div>
+      )}
 
       {(toCheck > 0 || unchecked > 0) && (
         <div className="banner warn" role="status">

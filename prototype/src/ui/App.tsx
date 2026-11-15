@@ -12,6 +12,7 @@ import { Home } from './screens/Home';
 import { MemberScreen } from './screens/Member';
 import { Plan } from './screens/Plan';
 import { Compare } from './screens/Compare';
+import { Setup } from './screens/Setup';
 import { Simulate } from './screens/Simulate';
 import { Family } from './screens/Family';
 import { Import } from './screens/Import';
@@ -96,6 +97,7 @@ export function App() {
   else if (route === 'plan') screen = <Plan />;
   else if (route === 'simulate') screen = <Simulate />;
   else if (route === 'compare') screen = <Compare />;
+  else if (route === 'setup') screen = <Setup />;
   else if (route === 'family') screen = <Family />;
   else if (route === 'import') screen = <Import />;
   else if (route === 'about') screen = <About />;
