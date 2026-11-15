@@ -10,6 +10,9 @@
 | **PLACE** | `2026-11-15-family-asset-placement.md`: which member holds which asset |
 | **SELL** | `2026-11-15-tax-aware-selling-rebalancing.md`: raise ₹X, rebalance, harvest |
 | **RISK** | `2026-11-15-risk-profiling.md`: SEBI rules, questionnaire, scoring |
+| **ARCH** | `2026-11-15-family-archetypes.md`: Indian household data; 7 test families with expert plans and expected outputs |
+| **RETIRE** | `2026-11-15-retirement-income.md`: withdrawal rates on Indian data, corpus sizing, guardrail drawdown, NPS and annuities |
+| **DEBT** | `2026-11-15-debt-emergency-insurance.md`: prepay vs invest, payoff order, emergency fund, insurance gap checks, IRDAI limits |
 
 ## 1. What the research says the product should believe
 
@@ -21,6 +24,10 @@
 6. **India's FIFO rule changes the maths.** The cheapest rupee to sell is often not obvious, so selling needs breakpoints and look-ahead, not a simple rank. (SELL §2.4, §3.1)
 7. **Moving from equity to debt is a taxable sale in India,** so de-risking uses new money first, then each member's yearly exemption over several years. No Indian app documents doing this. (GOAL §3.6)
 8. **Gifts to relatives move assets in kind with no tax,** but are irrevocable and pass by the receiver's will. Every gift needs real transfer of control and paperwork. (PLACE §2.2, §6; TAX §3.10)
+9. **The US 4% withdrawal rule is too high for India:** plan on 3–3.25% to age 95 for the younger spouse. (RETIRE §1)
+10. **Prepaying a loan competes with safe debt, not equity:** compare the loan's after-tax rate with the best after-tax debt return of any family member. The home loan deduction rarely changes the answer. (DEBT §1)
+11. **The app's users are the top fifth of households:** only 9.5% of Indian households invest in securities, and household wealth is 77% property and 11% gold. Property and gold must appear in net worth even though the engine doesn't trade them. (ARCH §2)
+12. **Insurance can be checked, not sold or compared:** an unregistered app may show gaps in rupees only, with no insurer or product names, rankings, links or leads (IRDAI). A registered adviser may not distribute insurance to advisory clients. (DEBT §6)
 
 ## 2. Features
 
@@ -56,8 +63,13 @@ Columns: **Why** gives the evidence; **Method** points to the section an enginee
 | **Multi-goal priority waterfall** | Needs before wants before wishes; levers in rupees and months (GOAL §2.4) | GOAL §3.5 | |
 | **Glide path per goal, de-risked tax-aware** | Equity → debt is a taxable sale (GOAL §3.6) | GOAL §3.2, §3.6 | ✓ |
 | **Rebalance on a tax budget** | Bands of 5 points, trade to band edge (SELL §2.2) | SELL §3.2 with "drift vs tax" slider | ✓ |
-| Emergency fund and insurance checks | Planner order: protection before investing (TAX §2.2) | TAX §2.2; agenda topic 8 | |
-| Retirement drawdown (SWP order) | Withdrawal sequencing research, translated (SELL §3.4) | SELL §3.4; agenda topic 7 | |
+| **Prepay vs invest, and loan payoff order** | Example: 8.5% loan vs 7% tax-free with the mother → prepay, ~₹50k better over 5 years; smallest-balance-first cost ₹35,772 more in another (DEBT §4) | DEBT §3, with +1/+2 point EMI stress test | ✓ |
+| **Emergency fund size and tax-aware placement** | 3–12 months by income stability; held by the lowest-slab adult saves ~₹7,900/yr in the example (DEBT §4) | DEBT §3 (three layers, ₹12 L cliff check) | ✓ |
+| Insurance gap checks (term, health, parents) | Example family ~₹40–50 L short on term cover (DEBT §4); IRDAI limits on what can be shown | DEBT §3, rupee gaps only | |
+| **Retirement corpus and guardrail drawdown** | 3–3.25% default; ₹3 Cr couple wanting ₹12 L: fixed spending lasts to 95 in 76% of paths, with guardrails 98% (RETIRE §4) | RETIRE §3 (Monte Carlo corpus search, Guyton–Klinger guardrails, floor in each spouse's name) | ✓ |
+| **Tax-aware retirement income split** | ₹20.25 L of interest in one name costs ₹2,14,500/yr, nil split across a couple who each own it (RETIRE §1) | RETIRE §3, SELL §3.4 | ✓ |
+| NPS withdrawal planning | Dec 2025 PFRDA change: up to 80% lump sum, only 60% tax-free; spread the rest to stay under ₹12 L (RETIRE §2) | RETIRE §3 | |
+| Net worth including property and gold | 77% of household wealth is property, 11% gold (ARCH §2) | Asset entity, foundation spec §6.2 | |
 | Capital market assumptions as data, three scenarios | History vs forecasts differ 0.5–2 points (DATA §2.8) | DATA §3 table, reviewed every November | |
 
 ### 2.4 Public launch
@@ -68,6 +80,15 @@ Columns: **Why** gives the evidence; **Method** points to the section an enginee
 | 5-year records of profile, suitability and each advice with reasons | SEBI Reg 19 (RISK §4.8) | Foundation spec §6.2 records |
 | AI-use disclosure | SEBI Reg 18(9) (RISK §2) | — |
 | Fee within SEBI cap (₹1.51 L/family/yr or 2.5% of assets) | RISK §2 | — |
+
+### 2.5 The test suite every feature must pass
+
+The 7 families in ARCH §3 are fixed fixtures with expected outputs: salaried metro family with a home loan, joint family with an HUF, business owner, single earner supporting parents, retired couple on interest, young dual-income couple, family with a child abroad. Every algorithm (placement, raise ₹X, goals, retirement, debt) is tested against them, alongside each note's own test cases. Notable checks they carry:
+- The ₹12 L cliff in a salaried spouse: harvesting ₹1 L instead of ₹75,000 costs ₹26,000.
+- Placement against a risk limit: a grandmother whose 30% risk cap conflicts with holding the family's equity.
+- Six of 7 families have a goal marked "short": the waterfall must show levers, not just a gap.
+- The retired couple pays nil tax but withdraws 6.4% a year: the engine must suggest no tax moves yet warn that the money may last only to about age 90 (RETIRE's 3–3.25% rule).
+- Clubbing ends on a child's 18th birthday; raising ₹X across two tax years.
 
 ## 3. Changes the research suggests to the approved foundation spec
 
@@ -89,6 +110,11 @@ Columns: **Why** gives the evidence; **Method** points to the section an enginee
 - RBI October 2026 figures and repo rate, from rbi.org.in. (DATA)
 - No Indian backtest of harvesting value, and no glide-path study on Indian data: candidates for the app's own analysis. (SELL, GOAL)
 
-## 5. Research still to do (agenda topics 6–10 in `docs/PLANNER-NOTES.md`)
+- RBI repo rate (two notes cite 5.50% from 7 Oct 2026 via secondary copies). (DATA, DEBT)
+- Whether IRDAI's 2017 Web Aggregator Regulations were replaced in 2024. (DEBT)
+- New-Act section exempting the NPS 60% lump sum; tax on EPF interest after retirement. (RETIRE)
+- An in-house Indian backtest to settle a 2.8% vs 3.5% withdrawal rate. (RETIRE)
 
-6. Family archetypes as fixed test cases. 7. Retirement income. 8. Debt and insurance in the plan. 9. Product universe (direct vs regular, index vs active in India). 10. Behaviour and explanation.
+## 5. Research still to do (agenda in `docs/PLANNER-NOTES.md`)
+
+Topics 1–8 are done. Left: 9. Product universe (direct vs regular, index vs active in India). 10. Behaviour and explanation.
