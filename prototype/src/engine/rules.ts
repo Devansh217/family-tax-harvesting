@@ -1,3 +1,4 @@
+import { ageOn } from './dates';
 import type { ISODate, Member, Paise, Security } from './types';
 
 /** Tax rules for one tax year. Kept as data so a Budget change is a data change. */
@@ -128,9 +129,28 @@ export function incomeBands(member: Pick<Member, 'regime' | 'age'>, r: TaxRules)
   return bands;
 }
 
-/** Total yearly income from all sources, or null when income was not entered. Replaced by normalIncomeOf in Task 5. */
+/** Total yearly gross income from all sources, or null when income was not entered (display only; tax uses normalIncomeOf). */
 export function incomeTotal(member: Pick<Member, 'income'>): Paise | null {
   return member.income == null ? null : member.income.reduce((a, s) => a + s.amount, 0);
+}
+
+/**
+ * Income taxed at slab rates before capital gains, after the deductions the regime allows: the standard deduction
+ * once on salary plus pension (s.19); rent less 30%; old regime only, the senior interest deduction (s.153, capped at
+ * the interest) and the member's other deductions. Never below zero. Null when income was not entered.
+ */
+export function normalIncomeOf(m: Member, r: TaxRules, asOf: ISODate): Paise | null {
+  if (m.income == null) return null;
+  const sum = (kinds: string[]) => m.income!.filter((x) => kinds.includes(x.kind)).reduce((a, x) => a + x.amount, 0);
+  const wages = Math.max(0, sum(['salary', 'pension']) - r.standardDeduction[m.regime]);
+  const rent = Math.round(sum(['rent']) * (1 - r.rentDeduction));
+  const interestIncome = sum(['interest']);
+  let total = wages + rent + interestIncome + sum(['business', 'other']);
+  if (m.regime === 'old') {
+    if (ageOn(m, asOf) >= 60) total -= Math.min(interestIncome, r.seniorInterestDeduction);
+    total -= m.deductions ?? 0;
+  }
+  return Math.max(0, total);
 }
 
 /** Slab rate for a known income, or null when income is unknown. */
@@ -157,7 +177,7 @@ function slabs(member: Pick<Member, 'regime' | 'age'>, r: TaxRules): Array<[Pais
 /**
  * Tax on income charged at slab rates (salary, pension, business), before cess. Section 87A rebate (new regime:
  * total income up to ₹12 L, up to ₹60,000; old regime: up to ₹5 L, up to ₹12,500) is applied to this slab tax only,
- * never to special-rate capital gains. Marginal relief just above ₹12 L is not modelled.
+ * never to special-rate capital gains. Marginal relief just above ₹12 L is applied in taxForYear (tax.ts).
  */
 export function slabTax(normalIncome: Paise, totalIncome: Paise, member: Pick<Member, 'regime' | 'age'>, r: TaxRules): Paise {
   let tax = 0, lower = 0;

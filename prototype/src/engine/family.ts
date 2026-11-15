@@ -1,5 +1,5 @@
 import { daysBetween, isLongTerm, longTermFrom } from './dates';
-import { buildLedger, effectiveCost, lotKey, prorate } from './ledger';
+import { buildLedger, effectiveCost, lotKey, lotTerms, prorate } from './ledger';
 import { giftTransferCost, ltRate, roundTripCost, stRate, type TaxRules } from './rules';
 import { summariseYear, type BusinessIncome, type YearSummary } from './tax';
 import { inRange } from './dates';
@@ -185,7 +185,7 @@ export function previewSale(lots: Lot[], qty: Qty, sec: Security, saleDate: ISOD
     const cost = effectiveCost(lot, actual, take, value, sec, rules);
     out.push({
       memberId: lot.memberId, isin: lot.isin, account: lot.account, buyDate: lot.date, sellDate: saleDate, qty: take, proceeds: value, cost,
-      gain: value - cost, term: isLongTerm(lot.date, saleDate, rules.longTermMonths) ? 'lt' : 'st', taxType: sec.taxType,
+      gain: value - cost, ...lotTerms(sec, lot.date, saleDate, rules),
     });
     left -= take;
   }
