@@ -1,6 +1,6 @@
 # Core feature list, backed by research
 
-15 Nov 2026. A synthesis of the six research notes in this folder. Each feature names the evidence behind it and the note that holds the method. Read a feature's note before designing it.
+15 Nov 2026 (topic 9 folded in 16 Nov). A synthesis of the ten research notes in this folder. Each feature names the evidence behind it and the note that holds the method. Read a feature's note before designing it.
 
 | Short name | Note |
 |---|---|
@@ -14,6 +14,7 @@
 | **RETIRE** | `2026-11-15-retirement-income.md`: withdrawal rates on Indian data, corpus sizing, guardrail drawdown, NPS and annuities |
 | **DEBT** | `2026-11-15-debt-emergency-insurance.md`: prepay vs invest, payoff order, emergency fund, insurance gap checks, IRDAI limits |
 | **NUDGE** | `2026-11-15-behaviour-explanation.md`: what gets families to act, probability wording, copy per move, notification policy, SEBI/CCPA guardrails, beta experiments |
+| **UNIVERSE** | `2026-11-15-product-universe.md`: direct vs regular cost and switch rule, SPIVA India, category choice within each tax type, small savings, EPF, NPS, product table for the engine |
 
 ## 1. What the research says the product should believe
 
@@ -31,6 +32,8 @@
 12. **People act on one step with a date, not on explanations.** One move = one person, one action, a date they pick, one rupee figure; "why this" builds trust but didn't change uptake in a 2026 experiment. Only real deadlines create urgency: 31 March, advance-tax dates, lots turning long-term. (NUDGE §2–3)
 13. **Show tax savings in rupees against doing nothing, and chances as "about 8 in 10 market paths"** with the bad-case shortfall and what closes it; never a decimal or a single projected line. (NUDGE §3)
 14. **Insurance can be checked, not sold or compared:** an unregistered app may show gaps in rupees only, with no insurer or product names, rankings, links or leads (IRDAI). A registered adviser may not distribute insurance to advisory clients. (DEBT §6)
+15. **Cost is the one return the family controls.** A 1-point regular-plan fee gap costs ₹9.2 L over 20 years on a ₹10,000 SIP, and about 3 in 4 active large-cap funds trailed their index over 10 years (SPIVA India YE2025). Default to direct index funds for large and broad equity; recommend categories, never scheme names. Switching to direct is a sale, so time it into each member's yearly exemption. (UNIVERSE §1–3)
+16. **The right product depends on the holder's slab, not just the tax type.** Tax-free PPF at 7.1% is worth 10.3% taxable to a 30% earner but nothing extra to a nil-tax parent; arbitrage beats liquid only from the 15% slab (over 12 months) or 25% slab (under 12). EPF/VPF up to ₹2.5 L is the best risk-free return at any slab. (UNIVERSE §4–5)
 
 ## 2. Features
 
@@ -54,7 +57,10 @@ Columns: **Why** gives the evidence; **Method** points to the section an enginee
 | **Harvesting with alerts** (existing, extended) | Allowances lapse on 31 March; buy back on T+1, not same day (SELL §2.4, §3.3) | SELL §3.3; foundation spec §6.5 events | |
 | **Gift-then-sell** suggestions | No tax on gifts to relatives; receiver uses own room (TAX §3.10, PLACE §2.2) | SELL §3.3, PLACE §6 cautions | ✓ |
 | Advance tax tracker | Due dates and interest rules (TAX §3.11); seniors without business income exempt | TAX §3.11 | |
-| Regular-to-direct switch | Direct plans required for RIA implementation (RISK §2); cost drag (agenda topic 9) | Not yet researched in depth | |
+| **Regular-to-direct switch** | 1-point gap = ₹1.1 L over 10 years, ₹9.2 L over 20 on a ₹10k SIP; switching usually pays back in 3–5 years after tax (UNIVERSE §2); direct plans required for RIA implementation (RISK §2) | UNIVERSE §2.4 break-even rule (KEEP / WAIT / SWITCH / SWITCH_SLICES), run through the harvesting engine so each member's ₹1.25 L exemption absorbs the gain. *Design gap:* the note's SWITCH_SLICES condition (jointly owned) should become "spread over tax years within the exemption" | ✓ |
+| **Product defaults by category** (used by "where to put new money") | SPIVA India: 75–84% of active large-cap funds trailed; mid/small less clear (UNIVERSE §3) | UNIVERSE §6 product table (tax type, liquidity, lock-in, limit, cost, risk, fits whom, confidence) and §7 design rules: index default for large/broad equity, ELSS only for old-regime 80C room, international only if a scheme is open (≤10–15% of equity) | |
+| **Short-term parking by slab** | Arbitrage vs liquid flips at the holder's slab (UNIVERSE §4.1) | UNIVERSE §4.1 rule; emergency money always liquid or overnight | ✓ |
+| Small-savings and EPF/VPF fit per member | Tax-free rates matter only to taxed members (UNIVERSE §5.2) | UNIVERSE §5; rates from a quarterly data file, flagged stale after 100 days | |
 | Capital gains schedule for the return | Required reporting even below exemption (TAX §3.9) | TAX §3.9 | |
 
 ### 2.3 Full planner (after beta feedback, target-first)
@@ -131,8 +137,9 @@ Sent-ready versions, ranked by what they block: `2026-11-15-questions-for-ca-and
 - Whether IRDAI's 2017 Web Aggregator Regulations were replaced in 2024. (DEBT)
 - New-Act section exempting the NPS 60% lump sum; tax on EPF interest after retirement. (RETIRE)
 - An in-house Indian backtest to settle a 2.8% vs 3.5% withdrawal rate. (RETIRE)
+- Product data to confirm: SEBI's Feb 2026 hybrid categorisation circular (which hybrids are equity-taxed); holding period for gold ETF vs gold and international FoFs; AMFI's official direct-vs-regular TER gap by category; NPS exit rules after Dec 2025 and their tax under the new Act; DEA small-savings notice of 30 Sep 2026; EPF rate for FY 2026-27; overseas fund limits. (UNIVERSE §8.2)
 - **Does SEBI's ban on "assumptions or projections" reach in-app messages to clients, or only adverts?** It affects how goal probabilities and "brings home" figures may be shown after registration. Also: the Common Advertisement Code text and start date; whether CCPA dark-pattern rules apply to a free beta; DPDP consent for a read-only "plan buddy". (NUDGE §7)
 
 ## 5. Research still to do (agenda in `docs/PLANNER-NOTES.md`)
 
-All 10 topics are done. Topic 9, product universe (`2026-11-15-product-universe.md`: direct vs regular, SPIVA India, category choice by tax type, small savings, EPF and NPS, and a product table for the engine), still needs folding into sections 1–4 above.
+All 10 topics are done and folded in. Next: the beta-features design, then the full-planner design, each built from section 2.

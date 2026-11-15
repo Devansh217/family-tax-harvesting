@@ -7,8 +7,8 @@
    - Approved foundation design: `docs/superpowers/specs/2026-11-15-planner-foundation-design.md`
    - Build plan, 13 tasks, not started: `docs/superpowers/plans/2026-11-15-planner-foundation.md`
    - Tax and planning research for FY 2026-27: `docs/research/2026-11-15-family-financial-planning.md`
-3. **Research done (15 Nov 2026):** all 10 topics below, plus the synthesis `docs/research/2026-11-15-core-feature-list.md` (read it first). Its section 3 changes are now applied to the foundation spec and plan. Topic 9 (`2026-11-15-product-universe.md`) is not yet folded into the feature list.
-4. **Next:** fold topic 9 into the feature list; send the CA and lawyer question sheets; then write the beta-features and full-planner designs from the feature list.
+3. **Research done (15 Nov 2026):** all 10 topics below, plus the synthesis `docs/research/2026-11-15-core-feature-list.md` (read it first). Its section 3 changes are now applied to the foundation spec and plan. Topic 9 was folded in on 16 Nov 2026.
+4. **Next:** the founder sends the CA and lawyer question sheets (`docs/research/2026-11-15-questions-for-ca-and-lawyer.md`); write the beta-features design, then the full-planner design, from the feature list.
 5. **Projects in order:** foundation → secure storage (before any beta invites) → beta features → full planner (target-first, goals) → public launch (RIA registration, per-member sign-in, Account Aggregator, Expo).
 
 ## Research agenda (to build the planning intelligence)
