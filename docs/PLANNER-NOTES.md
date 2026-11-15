@@ -7,8 +7,9 @@
    - Approved foundation design: `docs/superpowers/specs/2026-11-15-planner-foundation-design.md`
    - Build plan, 13 tasks, not started: `docs/superpowers/plans/2026-11-15-planner-foundation.md`
    - Tax and planning research for FY 2026-27: `docs/research/2026-11-15-family-financial-planning.md`
-3. **Next:** run the research agenda below, one note per topic in `docs/research/`. Then fold the findings into the foundation spec (if they change it) and write the full-planner design.
-4. **Projects in order:** foundation → secure storage (before any beta invites) → beta features → full planner (target-first, goals) → public launch (RIA registration, per-member sign-in, Account Aggregator, Expo).
+3. **Research done so far (15 Nov 2026):** topics 1–5 below, plus the synthesis `docs/research/2026-11-15-core-feature-list.md` (read it first). Its section 3 lists changes suggested to the approved foundation spec, not yet applied.
+4. **Next:** review those spec changes with the founder; run topics 6–10; then write the beta-features and full-planner designs from the feature list.
+5. **Projects in order:** foundation → secure storage (before any beta invites) → beta features → full planner (target-first, goals) → public launch (RIA registration, per-member sign-in, Account Aggregator, Expo).
 
 ## Research agenda (to build the planning intelligence)
 
@@ -122,7 +123,7 @@ Before the beta (data is readable on the server, so these are required):
 ## Adviser rules that shape the public launch (from the research)
 
 - Risk profiling comes before any advice, and the client must consent to the completed profile (SEBI IA Regulations, Reg 16–17).
-- No free trials before risk profiling (SEBI circular, Oct 2024). Affects a free tier that recommends.
+- No free trials (IA Regulations and the IA Master Circular of 27 Jun 2025, per the risk-profiling research; an "Oct 2024 circular" cited earlier could not be traced). Affects a free tier that recommends.
 - SEBI's "family" for fees is the client plus dependent spouse, children and parents. An earning adult child or working spouse may count as a separate client, which affects per-family pricing.
 - Implementation only through direct plans; no commission.
 - Not yet researched: SEBI fee caps per family.
