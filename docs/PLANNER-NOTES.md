@@ -33,7 +33,27 @@ Running notes from the 15 Nov 2026 brainstorm on turning the app from a tax-harv
 - **Direction:** a family financial planner with tax as the main rule. Every suggestion is judged by what comes home after tax for the whole family.
 - **It recommends,** not just calculates: how much in funds vs stocks, which member holds what, where new money goes.
 - **Registration:** the founder registers as a SEBI investment adviser before the public launch, to keep full control.
-- **This season (2026-27) is a soft launch** for family and friends. It behaves like the real tool; regulatory guardrails wait for the public launch. Proposed, not yet confirmed: keep it free and invite-only, show a disclaimer, and build the risk profile and recommendation record now but leave them switched off.
+- **This season (2026-27) is a soft launch** for family and friends. It behaves like the real tool; regulatory guardrails wait for the public launch. **Free and invite-only, with a "not a registered adviser yet" disclaimer on every recommendation screen (confirmed 15 Nov 2026).** The recommendation record is written from the start; the risk profile comes with the full planner (questionnaire step 7), since the beta starts from holdings.
+
+### Decided on 15 Nov 2026 (open-questions round)
+
+| Question | Decision |
+|---|---|
+| Plan buddy (read-only view for another family member) | **Not in the beta.** Revisit at the full planner; needs consent from each member whose data is shown. Drop beta experiment E7. |
+| Gift to a parent who has other heirs | **Warn and add to the checklist:** explain that the money passes by the parent's will, add "tell siblings / update the will" to the gift paperwork. No blocking step. |
+| Loans to a spouse | **None in the beta.** Mention only as "ask your CA" until a CA confirms the rule under the new Act. |
+| Goal order when money is short | Priority tier first; **inside a tier, goals for a child come before other goals**, then by date. The family can reorder. |
+| Safe withdrawal rate for retired members | **3.25%** with Guyton–Klinger guardrails; the full planner includes an in-house backtest (Nifty TRI, debt index, CPI since 1999) to confirm or move it. |
+| EPF long-run rate | **Today's notified 8.25%** for every year, editable per family. (The research suggested 7.5%; the founder chose the notified rate.) |
+| Legal and tax open questions | Claude drafts question sheets for a CA and a lawyer: `docs/research/2026-11-15-questions-for-ca-and-lawyer.md`. |
+
+**Claude's calls (minor; the founder can overrule):**
+- "Where to put new money" ranks with one sale at the end of the period (as the foundation spec does); "sell a slice each year" comes later as an option.
+- After-tax equity return is worked out per holder (a nil-tax parent's harvesting room counts), not one family figure.
+- Goal success targets by priority stay 95 / 90 / 75 / 50%.
+- Retired members' spending inflation blends 5% general and 8% health by their spending mix.
+- Retirement defaults: 40% equity, plan to age 95.
+- Cooling-off step for gifts and moves over ₹5 L; moves under ₹1,000 not shown.
 
 - **The beta starts from holdings (decided 15 Nov 2026, later the same day):** beta users start from their statements; the target split, emergency fund and questionnaire steps 3–7 come with the full planner after beta feedback. The target-first flow below is the full planner's flow, not the beta's.
 - **Secure storage is its own project (Claude's proposal, not objected to):** the table split, field encryption, admin-read logging and backups run right after the foundation and before any beta invites. The foundation keeps today's single saved document with the new shapes.

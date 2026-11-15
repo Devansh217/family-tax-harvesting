@@ -85,7 +85,7 @@ Columns: **Why** gives the evidence; **Method** points to the section an enginee
 | Notification policy: monthly digest (weekly 1 Feb–31 Mar), dated alerts worth ≥ ₹2,000, max 2 pushes a week (4 in season), quiet 9 pm–9 am | Avoid fatigue; only real deadlines | NUDGE §4 |
 | Guardrails: no streaks or badges, neutral "Not now", cooling-off for gifts and moves over ₹5 L, ₹1,000 floor to show a move, trades-this-year count, no market-move alerts | SEBI advertisement code, CCPA dark-pattern guidelines 2023; 93% of F&O traders lost money (SEBI) | NUDGE §3, §7 |
 | "Acted on" tracking from the next import; main metric is rupees realised | Matches the product's north star | NUDGE §5 |
-| 8 beta experiments (probability wording, date prompt, goal copy, "why this" placement, digest frequency, season alert timing, read-only "plan buddy", step-up at next raise) | Small beta: test within families | NUDGE §5 |
+| 7 beta experiments (probability wording, date prompt, goal copy, "why this" placement, digest frequency, season alert timing, step-up at next raise); the read-only "plan buddy" (E7) is out of the beta by founder decision | Small beta: test within families | NUDGE §5 |
 
 ### 2.5 Public launch
 
@@ -116,6 +116,8 @@ The 7 families in ARCH §3 are fixed fixtures with expected outputs: salaried me
 5. **Free-trial ban citation:** the "Oct 2024 circular" in `PLANNER-NOTES.md` could not be traced; RISK cites the IA Regulations and Master Circular instead.
 
 ## 4. Open questions across the notes (need a CA, lawyer or primary text)
+
+Sent-ready versions, ranked by what they block: `2026-11-15-questions-for-ca-and-lawyer.md`. Founder decisions on the product questions (plan buddy, gifts to parents, spouse loans, goal order, withdrawal rate, EPF rate) are in `docs/PLANNER-NOTES.md`, "Decided on 15 Nov 2026".
 
 - Do s.196 / s.198 gains count toward the ₹12 L rebate test? (TAX, PLACE, SELL)
 - Does in-app consent count as SEBI's "registered email" consent? (RISK)
