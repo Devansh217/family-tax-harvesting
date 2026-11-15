@@ -1,5 +1,4 @@
 import { createClient, type Session } from '@supabase/supabase-js';
-import type { AppState } from './store';
 
 /**
  * Supabase project for sign-in and saving a family to an account. The publishable key is meant to ship in the web
@@ -63,7 +62,9 @@ export async function signOut() {
   await supabase.auth.signOut();
 }
 
-export interface Profile { first_name: string; last_name: string }
+import type { Profile } from './storage/supabase';
+
+export type { Profile };
 
 /**
  * First and last name from what the sign-in provider shared. Google sends given_name / family_name (sometimes under
@@ -79,51 +80,4 @@ export function namesFromLogin(meta: Record<string, unknown> | undefined): Profi
     first_name: str(m.first_name) || str(m.given_name) || str(claims.given_name) || head,
     last_name: str(m.last_name) || str(m.family_name) || str(claims.family_name) || tail.join(' '),
   };
-}
-
-export async function loadProfile(userId: string): Promise<Profile | null> {
-  const { data, error } = await supabase.from('profiles').select('first_name, last_name').eq('id', userId).maybeSingle();
-  if (error) throw new Error(friendly(error.message));
-  return data;
-}
-
-export async function saveProfile(userId: string, p: Profile) {
-  const { error } = await supabase.from('profiles').update({ first_name: p.first_name.trim(), last_name: p.last_name.trim() }).eq('id', userId);
-  if (error) throw new Error(friendly(error.message));
-}
-
-export interface CloudFamily { state: AppState; version: number }
-
-export async function loadFamily(userId: string): Promise<CloudFamily | null> {
-  const { data, error } = await supabase.from('family_data').select('state, version').eq('user_id', userId).maybeSingle();
-  if (error) throw new Error(friendly(error.message));
-  return data as CloudFamily | null;
-}
-
-/**
- * Saves the family. With `knownVersion` it only writes if nobody else saved in between, and returns the new
- * version; 'conflict' means another device saved first and the caller should reload.
- */
-export async function saveFamily(userId: string, state: AppState, knownVersion: number | null): Promise<number | 'conflict'> {
-  if (knownVersion == null) {
-    const { error } = await supabase.from('family_data').insert({ user_id: userId, state, version: 1 });
-    if (error) {
-      if (error.code === '23505') return 'conflict';
-      throw new Error(friendly(error.message));
-    }
-    return 1;
-  }
-  const { data, error } = await supabase
-    .from('family_data')
-    .update({ state, version: knownVersion + 1 })
-    .eq('user_id', userId)
-    .eq('version', knownVersion)
-    .select('version');
-  if (error) throw new Error(friendly(error.message));
-  return data && data.length ? (data[0] as { version: number }).version : 'conflict';
-}
-
-export async function deleteFamily(userId: string) {
-  const { error } = await supabase.from('family_data').delete().eq('user_id', userId);
-  if (error) throw new Error(friendly(error.message));
 }

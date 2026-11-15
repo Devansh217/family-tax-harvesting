@@ -2,3 +2,4 @@ node_modules/
 dist/
 public/prices/
 public/.private-demo/
+dist-engine/

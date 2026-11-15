@@ -40,7 +40,14 @@ export function isLongTerm(buy: ISODate, sell: ISODate, months: number): boolean
 
 export const inRange = (d: ISODate, start: ISODate, end: ISODate) => d >= start && d <= end;
 
-export function todayISO(): ISODate {
-  const t = new Date();
-  return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+/** India's offset from UTC. India has no daylight saving, so this never changes. */
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+
+/**
+ * Today's date in India, whatever the machine's time zone. A server runs in UTC: a local-time date there would be
+ * yesterday until 5:30 am IST and misdate a 31 March deadline.
+ */
+export function todayISO(now: Date = new Date()): ISODate {
+  const t = new Date(now.getTime() + IST_OFFSET_MS);
+  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
 }

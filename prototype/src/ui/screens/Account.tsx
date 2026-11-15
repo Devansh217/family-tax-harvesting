@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { deleteFamily, saveProfile, sendPasswordReset, setNewPassword, signIn, signInWithGoogle, signUp } from '../../cloud';
+import { sendPasswordReset, setNewPassword, signIn, signInWithGoogle, signUp } from '../../cloud';
+import { familyStore, saveProfile } from '../../storage';
 import { useApp } from '../app-context';
 import { Icon, Svg } from '../parts';
 
@@ -157,7 +158,7 @@ function SignedIn() {
               <p className="small">Delete your saved family from your account? This browser keeps its copy until you sign out. This cannot be undone.</p>
               <div className="row">
                 <button className="btn danger" type="button" onClick={async () => {
-                  try { await deleteFamily(user.id); toast('Saved family deleted from your account'); setConfirmDelete(false); await cloud.signOutAndClear(); }
+                  try { await familyStore.remove(user.id); toast('Saved family deleted from your account'); setConfirmDelete(false); await cloud.signOutAndClear(); }
                   catch (err) { toast((err as Error).message); }
                 }}>Delete</button>
                 <button className="btn" type="button" onClick={() => setConfirmDelete(false)}>Keep</button>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addMonths, isLongTerm, longTermFrom } from './dates';
+import { addMonths, isLongTerm, longTermFrom, todayISO } from './dates';
 import { buildLedger } from './ledger';
 import { FY_2026_27 as R } from './rules';
 import { summariseYear } from './tax';
@@ -15,6 +15,14 @@ const member = (over: Partial<Member> = {}): Member => ({
   id: 'm1', name: 'Test', relation: 'self', age: 40, regime: 'new', otherIncome: rs(20_00_000), ...over,
 });
 const sec = (isin: string, over: Partial<Security> = {}): Security => ({ isin, name: isin, kind: 'equity', ...over });
+
+describe('today in India', () => {
+  it('uses India time whatever the machine time zone', () => {
+    expect(todayISO(new Date('2027-03-30T19:00:00Z'))).toBe('2027-03-31'); // 00:30 IST
+    expect(todayISO(new Date('2027-03-31T18:29:00Z'))).toBe('2027-03-31'); // 23:59 IST
+    expect(todayISO(new Date('2027-03-31T18:30:00Z'))).toBe('2027-04-01'); // midnight IST
+  });
+});
 
 describe('dates', () => {
   it('clamps month ends', () => {
