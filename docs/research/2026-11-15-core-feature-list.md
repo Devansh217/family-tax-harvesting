@@ -13,6 +13,7 @@
 | **ARCH** | `2026-11-15-family-archetypes.md`: Indian household data; 7 test families with expert plans and expected outputs |
 | **RETIRE** | `2026-11-15-retirement-income.md`: withdrawal rates on Indian data, corpus sizing, guardrail drawdown, NPS and annuities |
 | **DEBT** | `2026-11-15-debt-emergency-insurance.md`: prepay vs invest, payoff order, emergency fund, insurance gap checks, IRDAI limits |
+| **NUDGE** | `2026-11-15-behaviour-explanation.md`: what gets families to act, probability wording, copy per move, notification policy, SEBI/CCPA guardrails, beta experiments |
 
 ## 1. What the research says the product should believe
 
@@ -27,6 +28,8 @@
 9. **The US 4% withdrawal rule is too high for India:** plan on 3–3.25% to age 95 for the younger spouse. (RETIRE §1)
 10. **Prepaying a loan competes with safe debt, not equity:** compare the loan's after-tax rate with the best after-tax debt return of any family member. The home loan deduction rarely changes the answer. (DEBT §1)
 11. **The app's users are the top fifth of households:** only 9.5% of Indian households invest in securities, and household wealth is 77% property and 11% gold. Property and gold must appear in net worth even though the engine doesn't trade them. (ARCH §2)
+13. **People act on one step with a date, not on explanations.** One move = one person, one action, a date they pick, one rupee figure; "why this" builds trust but didn't change uptake in a 2026 experiment. Only real deadlines create urgency: 31 March, advance-tax dates, lots turning long-term. (NUDGE §2–3)
+14. **Show tax savings in rupees against doing nothing, and chances as "about 8 in 10 market paths"** with the bad-case shortfall and what closes it; never a decimal or a single projected line. (NUDGE §3)
 12. **Insurance can be checked, not sold or compared:** an unregistered app may show gaps in rupees only, with no insurer or product names, rankings, links or leads (IRDAI). A registered adviser may not distribute insurance to advisory clients. (DEBT §6)
 
 ## 2. Features
@@ -72,7 +75,19 @@ Columns: **Why** gives the evidence; **Method** points to the section an enginee
 | Net worth including property and gold | 77% of household wealth is property, 11% gold (ARCH §2) | Asset entity, foundation spec §6.2 | |
 | Capital market assumptions as data, three scenarios | History vs forecasts differ 0.5–2 points (DATA §2.8) | DATA §3 table, reviewed every November | |
 
-### 2.4 Public launch
+### 2.4 Across every feature (NUDGE)
+
+| Feature | Why | Method |
+|---|---|---|
+| **Move cards:** one person, one action, a date they pick, one rupee figure; buyback as a linked second step | Date prompts raised follow-through 4.2 points (Milkman et al.) | NUDGE §3, copy per move type |
+| Goal-labelled reminders, one headline goal | Goal-named reminders raised saving 16%, generic ones nothing (Karlan et al.) | NUDGE §3–4 |
+| Defaults only the engine would defend; never pre-tick gifts or cross-member moves | Defaults stick, good or bad (Madrian & Shea) | NUDGE §3 |
+| Notification policy: monthly digest (weekly 1 Feb–31 Mar), dated alerts worth ≥ ₹2,000, max 2 pushes a week (4 in season), quiet 9 pm–9 am | Avoid fatigue; only real deadlines | NUDGE §4 |
+| Guardrails: no streaks or badges, neutral "Not now", cooling-off for gifts and moves over ₹5 L, ₹1,000 floor to show a move, trades-this-year count, no market-move alerts | SEBI advertisement code, CCPA dark-pattern guidelines 2023; 93% of F&O traders lost money (SEBI) | NUDGE §3, §7 |
+| "Acted on" tracking from the next import; main metric is rupees realised | Matches the product's north star | NUDGE §5 |
+| 8 beta experiments (probability wording, date prompt, goal copy, "why this" placement, digest frequency, season alert timing, read-only "plan buddy", step-up at next raise) | Small beta: test within families | NUDGE §5 |
+
+### 2.5 Public launch
 
 | Feature | Why | Method |
 |---|---|---|
@@ -81,7 +96,7 @@ Columns: **Why** gives the evidence; **Method** points to the section an enginee
 | AI-use disclosure | SEBI Reg 18(9) (RISK §2) | — |
 | Fee within SEBI cap (₹1.51 L/family/yr or 2.5% of assets) | RISK §2 | — |
 
-### 2.5 The test suite every feature must pass
+### 2.6 The test suite every feature must pass
 
 The 7 families in ARCH §3 are fixed fixtures with expected outputs: salaried metro family with a home loan, joint family with an HUF, business owner, single earner supporting parents, retired couple on interest, young dual-income couple, family with a child abroad. Every algorithm (placement, raise ₹X, goals, retirement, debt) is tested against them, alongside each note's own test cases. Notable checks they carry:
 - The ₹12 L cliff in a salaried spouse: harvesting ₹1 L instead of ₹75,000 costs ₹26,000.
@@ -114,7 +129,8 @@ The 7 families in ARCH §3 are fixed fixtures with expected outputs: salaried me
 - Whether IRDAI's 2017 Web Aggregator Regulations were replaced in 2024. (DEBT)
 - New-Act section exempting the NPS 60% lump sum; tax on EPF interest after retirement. (RETIRE)
 - An in-house Indian backtest to settle a 2.8% vs 3.5% withdrawal rate. (RETIRE)
+- **Does SEBI's ban on "assumptions or projections" reach in-app messages to clients, or only adverts?** It affects how goal probabilities and "brings home" figures may be shown after registration. Also: the Common Advertisement Code text and start date; whether CCPA dark-pattern rules apply to a free beta; DPDP consent for a read-only "plan buddy". (NUDGE §7)
 
 ## 5. Research still to do (agenda in `docs/PLANNER-NOTES.md`)
 
-Topics 1–8 are done. Left: 9. Product universe (direct vs regular, index vs active in India). 10. Behaviour and explanation.
+Topics 1–8 and 10 are done. Left: 9. Product universe (direct vs regular, index vs active in India).
