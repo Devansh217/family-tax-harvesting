@@ -110,8 +110,8 @@ A `check` security still shows its value and the possible treatments, but is lef
   - equity ST at 20%; equity LT at 12.5% after the ₹1.25 L exemption;
   - `other_lt` LT at 12.5% with no exemption;
   - `slab` gains, `other_lt` ST and `interest` added to income taxed at slab rates, using the existing `slabTax`, so slab position and the s.87A rebate are handled in one place.
-- Set-off keeps the existing order: short-term losses against any capital gain, long-term losses only against long-term gains, across all tax types (s.108, s.111). Capital losses never reduce other income (s.109(2)).
-- **The ₹12 L rebate (s.156, new regime):** covers tax on slab-taxed income, including `slab` gains and interest, so a member with little other income can take up to ₹12 L of it at nil tax. It never covers s.196 / s.198 tax, but those gains **count toward the ₹12 L test** (the common reading; see section 11). **Marginal relief** just above ₹12 L, not modelled today (`rules.ts`), must be added: without it, the "cliff" where ₹1 L more of gains costs about ₹61,750 is wrong in both directions.
+- Set-off follows the law's limits: short-term losses against any capital gain, long-term losses only against long-term gains, across all tax types (s.108, s.111). Capital losses never reduce other income (s.109(2)). **Within those limits the engine picks the order that gives the member the lowest tax** (revised 15 Nov 2026), e.g. a short-term loss goes against slab-taxed or short-term gains before long-term equity gains that the ₹1.25 L exemption would have covered anyway. Whether the law lets the taxpayer choose this order is an open question for a CA (section 11); the chosen order is shown so it can be checked.
+- **The ₹12 L rebate (s.156, new regime):** covers tax on slab-taxed income, including `slab` gains and interest, so a member with little other income can take up to ₹12 L of it at nil tax. It never covers s.196 / s.198 tax, and the engine also treats the 12.5% tax on `other_lt` long-term gains (gold, international, in-between funds) as not covered, the conservative reading until confirmed (section 11); those gains **count toward the ₹12 L test** (the common reading; see section 11). **Marginal relief** just above ₹12 L, not modelled today (`rules.ts`), must be added: without it, the "cliff" where ₹1 L more of gains costs about ₹61,750 is wrong in both directions.
 - **Deductions** (old regime) reduce only slab-taxed income, never s.196 / s.198 gains (s.196(4), s.198(6)).
 - **Minor's income:** clubbed to the parent with higher income; the ₹1,500 exemption applies in the old regime only.
 - The basic exemption gap for residents is used first by slab-rate income, then by special-rate gains, short-term first (existing behaviour, extended).
@@ -125,7 +125,7 @@ A `check` security still shows its value and the possible treatments, but is lef
 The user picks a fund (search the AMFI list) or a category, an amount and a period. Every member is shown side by side, best first:
 
 ```
-₹5 L in a conservative hybrid fund, 3 years, ~8% a year (assumed, edit)
+₹5 L in a conservative hybrid fund, 3 years, 7.8% a year (assumed average, base scenario, edit)
 
                Slab   Gain      Tax       Brings home
 Mum (no inc.)   0%    ₹1.30 L   ₹0        ₹6.30 L   ← best · gift from you
@@ -150,7 +150,7 @@ For each member: tax in the sale year **with** the gain minus tax **without** it
 - **Golden test framing.** The research's "₹21,840 vs ₹0 a year" example is tested as a one-year period, where both models agree.
 - **What can be compared.** Any AMFI fund, any fund category, plus three products as categories with an assumed rate: fixed deposit (`interest`), PPF (`exempt`, with its yearly limit) and gold ETF (`other_lt`). Other products wait for the Asset screens.
 
-- **Assumed returns:** one default per category, kept as data with the tax rules, labelled "assumed" on screen and editable per comparison. No fund-specific predictions.
+- **Assumed returns** (revised 15 Nov 2026 from `docs/research/2026-11-15-india-returns-risk-inflation.md` §3): stored as data in `marketAssumptions.ts` as **real returns above inflation**, with base CPI 5% and three scenarios (cautious, base, optimistic). Nominal = (1 + real) × (1 + CPI) − 1. Base nominal defaults: equity 11%, debt 7%, conservative hybrid 7.8%, balanced 9%, gold 8%, international 10%, fixed deposit 6.75%, PPF at its notified rate (7.1%). On screen they read "assumed average return" with the scenario named, editable per comparison, plus "assumptions reviewed Nov 2026". An average return overstates the typical outcome for volatile assets (equity's median is nearer 9.3%), so the label must say "average". No fund-specific predictions.
 - **Costs:** stamp duty on purchase and exit loads where known; the existing `roundTripCost` stays for harvesting.
 - **Simplification (stated on screen):** each member's income stays at today's level for the whole period.
 - **Warnings on the row,** not just a number: "near the ₹12 L line: more gains here cost about 62%"; "this member is on the old regime: deductions don't reduce these gains"; "gift: becomes theirs".
@@ -264,3 +264,5 @@ Still to confirm (none blocks building; each is a rule in data that can change):
 - Holding period for gold and silver ETFs and international FoFs in FY 2026-27.
 - Where the new Act puts the rule that a gifted asset keeps the giver's cost and holding period (old s.49). Gift suggestions depend on it.
 - Sovereign Gold Bond redemption exemption after Budget 2026 (original subscribers only, per reports).
+- Whether the ₹12 L rebate covers 12.5% long-term tax on `other_lt` gains (gold, international, in-between funds). The engine assumes not.
+- Whether a taxpayer may choose the order in which short-term losses are set off. The engine picks the lowest-tax order and shows it.

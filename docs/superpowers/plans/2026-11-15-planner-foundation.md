@@ -202,7 +202,9 @@ it('an equity-only family saved before the change keeps its tax figures', () => 
   - `longTermMonthsFor(t: TaxType, listed: boolean, r: TaxRules): number | null`: equity → `r.longTermMonths`; `other_lt` → listed ? `r.longTermMonths` : `r.otherLongTermMonths`; others → `null` (never long-term). `buildLedger` and `previewSale` set `Realised.taxType` via `lotTaxType` and `term` via this.
   - `normalIncomeOf(m: Member, r: TaxRules, asOf: ISODate): Paise | null`: null when `income` is undefined. Salary and pension less the regime's standard deduction (once, on their sum, not below 0); rent × (1 − `rentDeduction`); old regime only: less `seniorInterestDeduction` (capped at interest) when `ageOn ≥ 60`, then less `deductions`; never below 0.
   - `interface GainBuckets { equitySt: Paise; equityLt: Paise; otherLt: Paise; slab: Paise }` (all ≥ 0, after set-off)
-  - `setOff(realised: Realised[], carried: { st: Paise; lt: Paise }): { net: GainBuckets; carryForward: { st: Paise; lt: Paise }; unchecked: Paise }`. Short-term losses (any type, `term: 'st'`) offset in this fixed order: `slab`, `equitySt`, `otherLt`, `equityLt`. Long-term losses offset `otherLt` then `equityLt`. Carried losses after this year's, same rules. `check` gains are taxed as `slab` and summed into `unchecked` so the UI can say so.
+  - `type StOrder = Array<keyof GainBuckets>` (a permutation of all four buckets); `type LtOrder = Array<'otherLt' | 'equityLt'>`
+  - `setOff(realised: Realised[], carried: { st: Paise; lt: Paise }, order: { st: StOrder; lt: LtOrder }): { net: GainBuckets; carryForward: { st: Paise; lt: Paise }; unchecked: Paise }`. Short-term losses (any type, `term: 'st'`) offset buckets in `order.st`; long-term losses offset `order.lt`. Carried losses after this year's, same rules. `check` gains are taxed as `slab` and summed into `unchecked` so the UI can say so.
+  - `bestSetOff(realised: Realised[], carried: { st: Paise; lt: Paise }, m: Member, normal: Paise, r: TaxRules, asOf: ISODate): ReturnType<typeof setOff> & { order: { st: StOrder; lt: LtOrder } }`: tries all 24 × 2 orders and keeps the one with the lowest `taxForYear(...).tax`; ties keep the first in this default order: st `['slab', 'equitySt', 'otherLt', 'equityLt']`, lt `['otherLt', 'equityLt']`. `summariseYear` uses it and exposes `setOffOrder` on `YearSummary` (spec §4.3: the law's freedom to choose is an open question, so the order is shown).
   - `interface TaxBreakdown { total: Paise; exemptionUsed: Paise; basicGapUsed: Paise; rebate: Paise; marginalRelief: Paise; tax: Paise /* incl. cess, rounded to the rupee */ }`
   - `taxForYear(m: Member, normal: Paise, g: GainBuckets, r: TaxRules, asOf: ISODate): TaxBreakdown`
 
@@ -246,7 +248,14 @@ it('debt lots bought before April 2023 are long-term other after 24 months', () 
   expect(lotTaxType(debtFund, '2023-03-31', R)).toBe('other_lt');
   expect(lotTaxType(debtFund, '2023-04-01', R)).toBe('slab');
 });
-it('a short-term equity loss offsets a debt fund gain first', () => { /* setOff */ });
+it('a short-term loss avoids long-term gains the exemption already covers', () => {
+  // 30% earner; ₹1 L short-term equity loss; gains: ₹1 L equity LT (inside ₹1.25 L) and ₹1 L debt fund (slab).
+  // bestSetOff puts the loss against the slab gain (31.2%), leaving the LT gain inside the exemption: gains tax 0.
+  // The opposite order would leave ₹1 L slab gain taxed: ₹31,200. Expect order.st[0] === 'slab' and tax delta 0.
+});
+it('other long-term gains get no rebate', () => {
+  // new regime, interest ₹6 L, other_lt LT gain ₹1 L (gold): tax = ₹1 L × 12.5% × 1.04 = ₹13,000
+});
 it('unknown income keeps today’s meaning', () => { /* Review Focus #3: income undefined → bonus.total 0 */ });
 ```
 
@@ -329,22 +338,24 @@ it('unknown income keeps today’s meaning', () => { /* Review Focus #3: income 
 
 **Files:**
 - Create: `src/engine/planner.ts`
-- Modify: `src/engine/categories.ts` (`ASSUMED_RETURNS`)
+- Create: `src/engine/marketAssumptions.ts`; Modify: `src/engine/rules.ts` (`smallSavings`)
 - Test: `src/engine/planner.test.ts`
 
 **Interfaces:**
 - Consumes: `taxForYear`, `normalIncomeOf`, `clubbing`, `rulesFor`, `classifyFund`, `FamilyView.members[].plan` (current-year context).
 - Produces:
-  - `ASSUMED_RETURNS: Record<ReturnClass, number>`: equity 0.12, debt 0.07, conservative_hybrid 0.08, balanced 0.09, gold 0.08, international 0.10, fd 0.07, ppf 0.071 (defaults to show the founder before the beta).
+  - `src/engine/marketAssumptions.ts`: copy the data block from `docs/research/2026-11-15-india-returns-risk-inflation.md` §3 verbatim (`AssetClass`, `Scenario`, `CPI`, `REAL_RETURN`, `VOLATILITY`, `CORRELATION_ORDER`, `CORRELATION`, `GoalKind`, `GOAL_INFLATION`), plus `ASSUMPTIONS_REVIEWED = '2026-11-15'`. Volatility, correlations and goal inflation are unused until the full planner but live here now.
+  - `RETURN_MIX: Record<Exclude<ReturnClass, 'ppf'>, Partial<Record<AssetClass, number>>>`: equity `{ equity_large: 1 }`, debt `{ debt_short: 1 }`, conservative_hybrid `{ equity_large: 0.2, debt_short: 0.8 }`, balanced `{ equity_large: 0.5, debt_short: 0.5 }`, gold `{ gold: 1 }`, international `{ intl_equity: 1 }`, fd `{ fd: 1 }`.
+  - `nominalReturn(c: ReturnClass, s: Scenario = 'base', r: TaxRules): number`: weighted real return × CPI as `(1 + real)(1 + CPI[s]) − 1`; `ppf` returns `r.smallSavings.ppf` (add `smallSavings: { ppf: 0.071, scss: 0.082, ssy: 0.082, nsc: 0.077 }` to `TaxRules`, Oct–Dec 2026, refreshed quarterly).
   - `type Product = { kind: 'fund'; isin: string } | { kind: 'category'; category: string } | { kind: 'fd' } | { kind: 'ppf' } | { kind: 'gold_etf' }`
-  - `interface BringsHomeInput { product: Product; amount: Paise; years: number; annualReturn?: number; fromMemberId: string; payout?: 'growth' | 'idcw' }`
+  - `interface BringsHomeInput { product: Product; amount: Paise; years: number; annualReturn?: number; scenario?: Scenario; fromMemberId: string; payout?: 'growth' | 'idcw' }`
   - `interface BringsHomeRow { memberId: string; taxedInId: string; gift: boolean; clubbedReason?: string; value: Paise; gain: Paise; tax: Paise; bringsHome: Paise; warnings: string[] }`
   - `type BringsHomeResult = { status: 'ok'; taxType: TaxType; listed: boolean; annualReturn: number; rows: BringsHomeRow[] } | { status: 'check'; reason: string } | { status: 'invalid'; field: 'amount' | 'years' | 'annualReturn'; message: string }`
   - `bringsHome(input: BringsHomeInput, view: FamilyView, members: Member[], securities: Security[], asOf: ISODate): BringsHomeResult`
 
 Rules (spec 5.2, builder-check calls): rows for every member, sorted by `bringsHome` descending. Growth: `value = amount × (1 + r)^years`, one sale at `addMonths(asOf, round(years × 12))`; term from `longTermMonthsFor`. Sale inside `view.rules` year → context is that member's current-year `plan` gains and carried losses; later year → clean year with `rulesFor(saleDate)`. `interest` and `idcw`: tax each year on that year's income against a clean year; balance compounds after tax. `exempt`: tax 0; warn when amount > ₹1.5 L ("PPF takes at most ₹1.5 L a year") or years < 15 ("PPF locks money for 15 years"). FD → `interest`, PPF → `exempt`, gold ETF → `other_lt` listed. Tax lands on `clubbing(...).taxedInId` when clubbed; for a minor's clubbed income, the parent's taxable amount is reduced by ₹1,500 only if that parent is on the old regime (Sch III Sl. 17). Unlisted fund purchases deduct stamp duty (`amount × mfStampBuy`) before growth; exit loads are not modelled. Warnings: `gift` row → "Gift from <name>: it becomes theirs"; new regime and sale-year total within ₹2 L of ₹12 L → "Near the ₹12 L line: more income here can cost far more"; old regime with equity → "Old regime: deductions don't reduce these gains". Validation (Review Focus #5): `amount > 0`; `0.25 ≤ years ≤ 40`; `−0.5 ≤ annualReturn ≤ 0.5`.
 
-- [ ] **Step 1: Write the failing tests:** ₹5 L conservative hybrid, 1 year, 8%: the no-income parent's row is first with tax 0 and `gift: true`, the 30% earner pays 31.2% of the gain; a spouse row has `taxedInId` = giver and the giver's tax; a `check` fund returns `{ status: 'check' }`; a 3-year equity fund for a no-income adult uses a clean future year (full ₹1.25 L exemption); PPF ₹2 L warns; `amount: 0`, `years: 0.1`, `annualReturn: 0.9` each return `invalid` naming the field.
+- [ ] **Step 1: Write the failing tests:** `nominalReturn` base: equity ≈ 0.1104, conservative_hybrid ≈ 0.0780, fd ≈ 0.0673, ppf = 0.071 (to 4 decimals); cautious equity < base < optimistic. ₹5 L conservative hybrid, 1 year, 7.8%: the no-income parent's row is first with tax 0 and `gift: true`, the 30% earner pays 31.2% of the gain; a spouse row has `taxedInId` = giver and the giver's tax; a `check` fund returns `{ status: 'check' }`; a 3-year equity fund for a no-income adult uses a clean future year (full ₹1.25 L exemption); PPF ₹2 L warns; `amount: 0`, `years: 0.1`, `annualReturn: 0.9` each return `invalid` naming the field.
 - [ ] **Step 2:** `npm test` → FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm test && npm run typecheck` → pass.
@@ -357,9 +368,9 @@ Rules (spec 5.2, builder-check calls): rows for every member, sorted by `bringsH
 - Modify: `src/ui/App.tsx` (route `compare`, tab "Compare"), `src/ui/market.ts` (expose the loaded `FundsFile` for search), `src/styles.css`
 
 **Interfaces:**
-- Consumes: `bringsHome`, `ASSUMED_RETURNS`, `FundsFile` (Tasks 2, 9).
+- Consumes: `bringsHome`, `nominalReturn`, `Scenario`, `ASSUMPTIONS_REVIEWED`, `FundsFile` (Tasks 2, 9).
 
-Screen (spec 5.1): product picker (search the funds file by name, ≥ 3 characters, top 20; plus "Fund category", "Fixed deposit", "PPF", "Gold ETF"); amount; years; "Whose money" (default the manager); return prefilled from `ASSUMED_RETURNS`, labelled "assumed", editable; growth / payout toggle for funds. Output: the table from the spec sketch (member, slab, gain, tax, brings home), best first, gift and clubbing notes and warnings under each row, one tap on "gift" opens the gift explanation (becomes theirs, counts as their income, passes by their will or nominee, keep a gift letter and a bank transfer from giver to receiver). "Compare with another fund" adds a second "Brings home" column. A `check` result shows "Set this fund's tax type first" with a link to the member screen; `invalid` shows the message by its field.
+Screen (spec 5.1): product picker (search the funds file by name, ≥ 3 characters, top 20; plus "Fund category", "Fixed deposit", "PPF", "Gold ETF"); amount; years; "Whose money" (default the manager); scenario toggle (Cautious / Base / Optimistic, default Base); return prefilled from `nominalReturn`, labelled "assumed average return", editable, with "Assumptions reviewed Nov 2026" underneath; growth / payout toggle for funds. Output: the table from the spec sketch (member, slab, gain, tax, brings home), best first, gift and clubbing notes and warnings under each row, one tap on "gift" opens the gift explanation (becomes theirs, counts as their income, passes by their will or nominee, keep a gift letter and a bank transfer from giver to receiver). "Compare with another fund" adds a second "Brings home" column. A `check` result shows "Set this fund's tax type first" with a link to the member screen; `invalid` shows the message by its field.
 
 - [ ] **Step 1:** Build the screen.
 - [ ] **Step 2:** `npm run typecheck` → pass.

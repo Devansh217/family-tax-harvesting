@@ -71,7 +71,7 @@ Columns: **Why** gives the evidence; **Method** points to the section an enginee
 
 ## 3. Changes the research suggests to the approved foundation spec
 
-Not yet applied; review with the founder before building.
+**Applied on 15 Nov 2026** (founder approved): 1–4 in the foundation spec (§4.3, §5.2, §11) and plan (Tasks 5, 9, 10); 5 in `docs/PLANNER-NOTES.md`.
 
 1. **Default assumed returns** (spec §5.2, plan Task 9): equity 11% (was 12%), FD 6.75% (was 7%), conservative hybrid 7.8% (was 8%); store as real returns over 5% CPI, with conservative/base/optimistic variants (DATA §3).
 2. **Label single-return figures as an average,** or show the median (≈ 9.3% for equity) — DATA §5, GOAL §2.3.
