@@ -5,7 +5,13 @@ export type ISODate = string;
 
 export const QTY_SCALE = 10_000;
 
-export type AssetKind = 'equity' | 'equity_mf' | 'other';
+/**
+ * How a holding's gains are taxed (Income-tax Act 2025): `equity` 20% short / 12.5% long above ₹1.25 L (s.196, s.198);
+ * `slab` at the member's slab rate, e.g. debt and conservative hybrid funds (s.76); `other_lt` slab short-term and
+ * 12.5% long-term with no exemption, e.g. gold, international and balanced hybrid funds; `interest` taxed yearly at
+ * slab; `exempt` not taxed; `check` not yet known (taxed as slab and flagged).
+ */
+export type TaxType = 'equity' | 'slab' | 'other_lt' | 'interest' | 'exempt' | 'check';
 
 export type Relation =
   | 'self'
@@ -49,7 +55,17 @@ export interface IntradayTrade {
 export interface Security {
   isin: string;
   name: string;
-  kind: AssetKind;
+  taxType: TaxType;
+  /** Traded on an exchange (shares, ETFs): decides holding period for `other_lt` and dealing costs. */
+  listed: boolean;
+  /** Where the tax type came from: the ISIN (a share), AMFI's category, the repo override list, or the user. */
+  taxTypeSource?: 'share' | 'amfi' | 'override' | 'user';
+  /** SEBI category heading from AMFI, e.g. "Hybrid Scheme - Conservative Hybrid Fund". */
+  category?: string;
+  plan?: 'direct' | 'regular';
+  option?: 'growth' | 'idcw';
+  /** Distributor (ARN) code from the CAS, for regular plans. */
+  distributor?: string;
   /** Latest price per whole unit. */
   price?: Paise;
   priceDate?: ISODate;
@@ -100,6 +116,7 @@ export interface Realised {
   cost: Paise;
   gain: Paise;
   term: Term;
+  taxType: TaxType;
 }
 
 export interface LedgerWarning {

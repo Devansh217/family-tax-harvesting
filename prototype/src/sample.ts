@@ -14,14 +14,14 @@ export function sampleState(): AppState {
   ];
   const d = '2026-11-13';
   const securities: Security[] = [
-    { isin: 'INE467B01029', name: 'TCS', kind: 'equity', price: rs(4450), priceDate: d },
-    { isin: 'INE009A01021', name: 'Infosys', kind: 'equity', price: rs(3700), priceDate: d },
-    { isin: 'INE040A01034', name: 'HDFC Bank', kind: 'equity', price: rs(2000), priceDate: d },
-    { isin: 'INE154A01025', name: 'ITC', kind: 'equity', price: rs(610), priceDate: d, fmv2018: rs(270) },
-    { isin: 'INE018A01030', name: 'Larsen & Toubro', kind: 'equity', price: rs(3700), priceDate: d },
-    { isin: 'INF0SAMPLE01', name: 'Nifty 50 index fund (sample)', kind: 'equity_mf', price: rs(180), priceDate: d },
-    { isin: 'INF0SAMPLE02', name: 'Flexi-cap fund (sample)', kind: 'equity_mf', price: rs(438), priceDate: d },
-    { isin: 'INF0SAMPLE03', name: 'Large-cap fund (sample)', kind: 'equity_mf', price: rs(104), priceDate: d },
+    { isin: 'INE467B01029', name: 'TCS', taxType: 'equity', listed: true, price: rs(4450), priceDate: d },
+    { isin: 'INE009A01021', name: 'Infosys', taxType: 'equity', listed: true, price: rs(3700), priceDate: d },
+    { isin: 'INE040A01034', name: 'HDFC Bank', taxType: 'equity', listed: true, price: rs(2000), priceDate: d },
+    { isin: 'INE154A01025', name: 'ITC', taxType: 'equity', listed: true, price: rs(610), priceDate: d, fmv2018: rs(270) },
+    { isin: 'INE018A01030', name: 'Larsen & Toubro', taxType: 'equity', listed: true, price: rs(3700), priceDate: d },
+    { isin: 'INF0SAMPLE01', name: 'Nifty 50 index fund (sample)', taxType: 'equity', listed: false, price: rs(180), priceDate: d },
+    { isin: 'INF0SAMPLE02', name: 'Flexi-cap fund (sample)', taxType: 'equity', listed: false, price: rs(438), priceDate: d },
+    { isin: 'INF0SAMPLE03', name: 'Large-cap fund (sample)', taxType: 'equity', listed: false, price: rs(104), priceDate: d },
   ];
   let n = 0;
   const t = (memberId: string, isin: string, date: string, side: 'buy' | 'sell', units: number, price: number) => ({

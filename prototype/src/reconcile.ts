@@ -22,7 +22,8 @@ export function reconcile(fam: FamilyView, rec: { memberId: string; account: str
   const { summary: s } = rec;
   const from = s.from ?? fam.rules.start, to = s.to ?? fam.rules.end;
   const mine = fam.ledger.realised.filter((r) => r.memberId === rec.memberId && (r.account ?? '') === rec.account && inRange(r.sellDate, from, to));
-  const kindOf = (isin: string) => fam.securities.get(isin)?.kind ?? 'equity';
+  // Brokers report shares (listed) and mutual funds separately.
+  const isShare = (isin: string) => fam.securities.get(isin)?.listed ?? true;
   const total = (pred: (r: (typeof mine)[number]) => boolean) => mine.filter(pred).reduce((a, r) => a + r.gain, 0);
   const intraday = fam.ledger.intraday
     .filter((t) => t.memberId === rec.memberId && t.account === rec.account && inRange(t.date, from, to))
@@ -30,10 +31,10 @@ export function reconcile(fam: FamilyView, rec: { memberId: string; account: str
 
   const lines: Array<[string, Paise | null, Paise]> = [
     ['Intraday', s.intraday, intraday],
-    ['Shares, short-term', s.equityShortTerm, total((r) => r.term === 'st' && kindOf(r.isin) === 'equity')],
-    ['Shares, long-term', s.equityLongTerm, total((r) => r.term === 'lt' && kindOf(r.isin) === 'equity')],
-    ['Mutual funds, short-term', s.mfShortTerm, total((r) => r.term === 'st' && kindOf(r.isin) !== 'equity')],
-    ['Mutual funds, long-term', s.mfLongTerm, total((r) => r.term === 'lt' && kindOf(r.isin) !== 'equity')],
+    ['Shares, short-term', s.equityShortTerm, total((r) => r.term === 'st' && isShare(r.isin))],
+    ['Shares, long-term', s.equityLongTerm, total((r) => r.term === 'lt' && isShare(r.isin))],
+    ['Mutual funds, short-term', s.mfShortTerm, total((r) => r.term === 'st' && !isShare(r.isin))],
+    ['Mutual funds, long-term', s.mfLongTerm, total((r) => r.term === 'lt' && !isShare(r.isin))],
   ];
   return lines
     .filter((l): l is [string, Paise, Paise] => l[1] != null)

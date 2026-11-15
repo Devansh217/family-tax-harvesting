@@ -1,4 +1,4 @@
-import type { ISODate, Member, Paise } from './types';
+import type { ISODate, Member, Paise, Security } from './types';
 
 /** Tax rules for one tax year. Kept as data so a Budget change is a data change. */
 export interface TaxRules {
@@ -13,6 +13,16 @@ export interface TaxRules {
   grandfatherDate: ISODate;
   basicExemptionNew: Paise;
   basicExemptionOld: { below60: Paise; from60: Paise; from80: Paise };
+  /** Holding period for unlisted `other_lt` assets (e.g. international and gold fund of funds). */
+  otherLongTermMonths: number;
+  /** Debt-fund units bought before this date are outside the specified-fund rule (s.76) and can be long-term. */
+  specifiedFundCutoff: ISODate;
+  /** Standard deduction on salary and pension (s.19), by regime. */
+  standardDeduction: { new: Paise; old: Paise };
+  /** Deduction on deposit interest for members aged 60+, old regime only (s.153). */
+  seniorInterestDeduction: Paise;
+  /** Share of rent deducted for repairs before tax. */
+  rentDeduction: number;
   /** Approximate trading costs, used to net them off each suggested move. */
   costs: {
     /** Securities transaction tax on delivery equity, each side. */
@@ -45,6 +55,11 @@ export const FY_2026_27: TaxRules = {
   grandfatherDate: '2018-01-31',
   basicExemptionNew: 4_00_000_00,
   basicExemptionOld: { below60: 2_50_000_00, from60: 3_00_000_00, from80: 5_00_000_00 },
+  otherLongTermMonths: 24,
+  specifiedFundCutoff: '2023-04-01',
+  standardDeduction: { new: 75_000_00, old: 50_000_00 },
+  seniorInterestDeduction: 50_000_00,
+  rentDeduction: 0.3,
   costs: {
     equityStt: 0.001,
     equityStampBuy: 0.00015,
@@ -58,9 +73,9 @@ export const FY_2026_27: TaxRules = {
 };
 
 /** Cost of selling `value` and buying it back the next day. Brokerage assumed zero (discount broker, delivery). */
-export function roundTripCost(kind: 'equity' | 'equity_mf' | 'other', value: Paise, r: TaxRules): Paise {
+export function roundTripCost(sec: Pick<Security, 'listed'>, value: Paise, r: TaxRules): Paise {
   const c = r.costs;
-  if (kind === 'equity') {
+  if (sec.listed) {
     const pct = c.equityStt * 2 + c.equityStampBuy + c.exchangePerSide * 2 * (1 + c.gst);
     return Math.round(value * pct + c.dpPerSale);
   }

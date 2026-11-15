@@ -1,5 +1,5 @@
 import {
-  findIsin, kindFromIsin, parseDate, parseNumber, toPaise, toQty,
+  findIsin, parseDate, parseNumber, toPaise, toQty,
   type ParsedPrice, type ParsedTxn, type ParseResult,
 } from './common';
 
@@ -59,7 +59,7 @@ export function parseMutualFundCAS(lines: string[]): ParseResult {
     if (nav) {
       const price = parseNumber(nav[2]);
       if (price != null) {
-        prices.push({ isin: cur.isin, name: cur.name, kind: kindFromIsin(cur.isin, cur.name), price: toPaise(price), priceDate: parseDate(nav[1]) ?? undefined });
+        prices.push({ isin: cur.isin, name: cur.name, price: toPaise(price), priceDate: parseDate(nav[1]) ?? undefined });
       }
     }
     const closing = line.match(CLOSING);
@@ -77,7 +77,7 @@ export function parseMutualFundCAS(lines: string[]): ParseResult {
     if (!date || amount == null || units == null || units === 0) { skipped++; continue; }
     cur.units += units;
     txns.push({
-      date, isin: cur.isin, name: cur.name, kind: kindFromIsin(cur.isin, cur.name),
+      date, isin: cur.isin, name: cur.name, 
       side: units < 0 ? 'sell' : 'buy', qty: toQty(Math.abs(units)), amount: toPaise(Math.abs(amount)), account: cur.folio,
     });
   }
@@ -109,7 +109,7 @@ export function parseDematCAS(lines: string[]): ParseResult {
     if (qty == null || price == null || value == null || qty === 0) { skipped++; continue; }
     if (Math.abs(qty * price - value) > Math.max(1, value * 0.01)) { skipped++; continue; }
     const clean = name!.replace(/\s+(EQ|EQUITY SHARES?|#.*)$/i, '').trim();
-    prices.push({ isin: isin!, name: clean, kind: kindFromIsin(isin!, clean), price: toPaise(price), priceDate, qty: toQty(qty) });
+    prices.push({ isin: isin!, name: clean, price: toPaise(price), priceDate, qty: toQty(qty) });
   }
   if (prices.length === 0) warnings.push('No holdings rows recognised in this demat statement.');
   else warnings.push('Demat CAS has current holdings but no buy dates or prices. Add the broker trade history for exact gains.');

@@ -51,7 +51,8 @@ export interface Holding {
   memberId: string;
   isin: string;
   name: string;
-  kind: Security['kind'];
+  taxType: Security['taxType'];
+  listed: boolean;
   qty: Qty;
   cost: Paise;
   price: Paise | null;
@@ -121,13 +122,13 @@ const WAIT_WINDOW_DAYS = 90;
 const MIN_GAIN: Paise = 1_000_00;
 const MIN_NET_SAVING: Paise = 500_00;
 
-/** Smallest tradable step: whole shares, 0.001 MF units. */
-const step = (kind: Security['kind']) => (kind === 'equity_mf' ? QTY_SCALE / 1000 : QTY_SCALE);
+/** Smallest tradable step: 0.001 units for mutual funds (INF…), whole shares otherwise. */
+export const unitStep = (sec: Pick<Security, 'isin'>): Qty => (sec.isin.startsWith('INF') ? QTY_SCALE / 1000 : QTY_SCALE);
 const valueOf = (sec: Security, qty: Qty) => Math.round(((sec.price ?? 0) * qty) / QTY_SCALE);
 
 export function isCertain(lot: Pick<Lot, 'date' | 'estimated'>, sec: Security, rules: TaxRules) {
   if (lot.estimated) return false;
-  return !(sec.kind !== 'other' && lot.date <= rules.grandfatherDate && !sec.fmv2018);
+  return !(sec.taxType === 'equity' && lot.date <= rules.grandfatherDate && !sec.fmv2018);
 }
 
 function lotGain(lot: Pick<Lot, 'date' | 'qty' | 'cost'>, qty: Qty, sec: Security, rules: TaxRules) {
@@ -184,7 +185,7 @@ export function previewSale(lots: Lot[], qty: Qty, sec: Security, saleDate: ISOD
     const cost = effectiveCost(lot, actual, take, value, sec, rules);
     out.push({
       memberId: lot.memberId, isin: lot.isin, account: lot.account, buyDate: lot.date, sellDate: saleDate, qty: take, proceeds: value, cost,
-      gain: value - cost, term: isLongTerm(lot.date, saleDate, rules.longTermMonths) ? 'lt' : 'st',
+      gain: value - cost, term: isLongTerm(lot.date, saleDate, rules.longTermMonths) ? 'lt' : 'st', taxType: sec.taxType,
     });
     left -= take;
   }
@@ -197,7 +198,7 @@ export function previewSale(lots: Lot[], qty: Qty, sec: Security, saleDate: ISOD
  */
 function harvestableQty(lots: Lot[], sec: Security, asOf: ISODate, rules: TaxRules, room: Paise, skip: Qty) {
   let qty = 0, gain = 0, toSkip = skip;
-  const unit = step(sec.kind);
+  const unit = unitStep(sec);
   for (const lot of lots) {
     let avail = lot.qty;
     if (toSkip > 0) {
@@ -251,7 +252,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
     const s = b.summary;
     const from = s.from ?? rules.start, to = s.to ?? rules.end;
     const mine = ledger.realised.filter((r) => r.memberId === b.memberId && (r.account ?? '') === b.account && inRange(r.sellDate, from, to));
-    const isEq = (isin: string) => (secs.get(isin)?.kind ?? 'equity') === 'equity';
+    const isEq = (isin: string) => secs.get(isin)?.listed ?? true;
     const cats: Array<[string, Paise | null, Term, boolean]> = [
       ['Shares, short-term', s.equityShortTerm, 'st', true], ['Shares, long-term', s.equityLongTerm, 'lt', true],
       ['Mutual funds, short-term', s.mfShortTerm, 'st', false], ['Mutual funds, long-term', s.mfLongTerm, 'lt', false],
@@ -265,7 +266,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   }
   const adjRealised: Realised[] = brokerAdjustments.map((a) => ({
     memberId: a.memberId, isin: `ADJ:${a.label}`, account: a.account, buyDate: rules.start, sellDate: rules.start,
-    qty: 0, proceeds: 0, cost: 0, gain: a.gain, term: a.term,
+    qty: 0, proceeds: 0, cost: 0, gain: a.gain, term: a.term, taxType: 'equity',
   }));
   const booked = [...ledger.realised, ...adjRealised];
 
@@ -298,7 +299,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
       }));
       const sum = (f: (x: HoldingLot) => number) => hl.reduce((a, x) => a + f(x), 0);
       holdings.push({
-        memberId: member.id, isin, name: sec.name, kind: sec.kind,
+        memberId: member.id, isin, name: sec.name, taxType: sec.taxType, listed: sec.listed,
         qty: sum((x) => x.qty), cost: sum((x) => x.cost), price: sec.price ?? null,
         value: priced ? sum((x) => x.value ?? 0) : null,
         ltGain: sum((x) => (x.term === 'lt' ? x.gain ?? 0 : 0)),
@@ -335,7 +336,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   for (const v of views) {
     let room = v.roomAfterPlan;
     const cands = v.holdings
-      .filter((h) => h.price != null && !needSoon(v.member.id, h.isin))
+      .filter((h) => h.taxType === 'equity' && h.price != null && !needSoon(v.member.id, h.isin))
       .flatMap((h) => queues(ledger, v.member.id, h.isin).map((q) => ({ h, q, ...harvestableQty(q.lots, secs.get(h.isin)!, asOf, rules, room, 0) })))
       .sort((a, b) => b.gain - a.gain);
     for (const c of cands) {
@@ -344,7 +345,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
       const r = harvestableQty(c.q.lots, sec, asOf, rules, room, 0);
       if (r.gain < MIN_GAIN) continue;
       const value = valueOf(sec, r.qty);
-      const costs = roundTripCost(sec.kind, value, rules);
+      const costs = roundTripCost(sec, value, rules);
       const taxAvoided = Math.round(r.gain * LT);
       if (taxAvoided - costs < MIN_NET_SAVING) continue;
       moves.push({ kind: 'harvest_gain', id: id(), memberId: v.member.id, isin: c.h.isin, name: c.h.name, account: c.q.account, qty: r.qty, value, gain: r.gain, taxAvoided, costs, saving: taxAvoided - costs });
@@ -357,7 +358,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   // 2. Gifts of listed shares from members with gains left over to members with room left over.
   for (const giver of views) {
     for (const h of giver.holdings) {
-      if (h.kind !== 'equity' || h.price == null || needSoon(giver.member.id, h.isin)) continue;
+      if (h.taxType !== 'equity' || !h.listed || h.price == null || needSoon(giver.member.id, h.isin)) continue;
       const sec = secs.get(h.isin)!;
       for (const q of queues(ledger, giver.member.id, h.isin)) {
         const key = lotKey(giver.member.id, h.isin, q.account);
@@ -366,7 +367,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
           const r = harvestableQty(q.lots, sec, asOf, rules, rec.roomAfterPlan, usedQty.get(key) ?? 0);
           if (r.gain < MIN_GAIN) continue;
           const value = valueOf(sec, r.qty);
-          const costs = giftTransferCost(value, rules) + roundTripCost(sec.kind, value, rules);
+          const costs = giftTransferCost(value, rules) + roundTripCost(sec, value, rules);
           const taxAvoided = Math.round(r.gain * LT);
           if (taxAvoided - costs < MIN_NET_SAVING) continue;
           moves.push({ kind: 'gift', id: id(), fromId: giver.member.id, toId: rec.member.id, isin: h.isin, name: h.name, account: q.account, qty: r.qty, value, gain: r.gain, taxAvoided, costs, saving: taxAvoided - costs });
@@ -381,7 +382,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   for (const v of views) {
     let stDue = v.plan.stTaxable, ltDue = v.plan.ltTaxable;
     for (const h of v.holdings) {
-      if (h.price == null) continue;
+      if (h.taxType !== 'equity' || h.price == null) continue;
       const sec = secs.get(h.isin)!;
       for (const { account, lots } of queues(ledger, v.member.id, h.isin)) {
         if (stDue + ltDue > 0) {
@@ -399,14 +400,14 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
             const used = offsetSt + offsetLt;
             if (used === 0) break;
             saved += offsetSt * ST + offsetLt * LT;
-            const take = used >= loss ? l.qty : Math.ceil((l.qty * used) / loss / step(sec.kind)) * step(sec.kind);
+            const take = used >= loss ? l.qty : Math.ceil((l.qty * used) / loss / unitStep(sec)) * unitStep(sec);
             qty += Math.min(take, l.qty);
             lossTotal += used;
             if (used < loss) break;
           }
           if (lossTotal >= MIN_GAIN) {
             const value = valueOf(sec, qty);
-            const costs = roundTripCost(sec.kind, value, rules);
+            const costs = roundTripCost(sec, value, rules);
             const taxAvoided = Math.round(saved);
             if (taxAvoided - costs >= MIN_NET_SAVING) {
               moves.push({ kind: 'harvest_loss', id: id(), memberId: v.member.id, isin: h.isin, name: h.name, account, qty, value, loss: lossTotal, term, taxAvoided, costs, saving: taxAvoided - costs });

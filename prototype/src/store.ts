@@ -1,3 +1,4 @@
+import { classifyByIsin } from './parsers/common';
 import type { PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
 import type { ISODate, Member, Qty, Security, Txn } from './engine/types';
@@ -85,10 +86,10 @@ function resolveIsin(isin: string, name: string, securities: Security[]): string
   return hit?.isin ?? isin;
 }
 
-function upsertSecurity(list: Security[], p: { isin: string; name: string; kind: Security['kind'] }, price?: ParsedPrice) {
+function upsertSecurity(list: Security[], p: { isin: string; name: string }, price?: ParsedPrice) {
   let s = list.find((x) => x.isin === p.isin);
   if (!s) {
-    s = { isin: p.isin, name: p.name, kind: p.kind };
+    s = { isin: p.isin, name: p.name, ...classifyByIsin(p.isin) };
     list.push(s);
   } else if ((s.name === s.isin || s.name.length < 3) && p.name) s.name = p.name;
   if (p.name && !p.isin.startsWith('SYM:') && p.name !== s.name) s.symbols = [...new Set([...(s.symbols ?? []), p.name])];

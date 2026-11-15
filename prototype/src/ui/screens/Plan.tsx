@@ -13,9 +13,9 @@ const KIND_ORDER: Array<{ kind: Move['kind']; title: string; blurb: string }> = 
   { kind: 'wait', title: 'Wait', blurb: 'These turn long-term soon. Selling before then is taxed at 20% instead of 12.5%.' },
 ];
 
-function describe(m: Move, nameOf: (id: string) => string, kindOf: (isin: string) => string | undefined, bonusOf: (id: string) => number) {
+function describe(m: Move, nameOf: (id: string) => string, bonusOf: (id: string) => number) {
   const u = units(m.qty);
-  const noun = kindOf(m.isin) === 'equity' ? 'share' : 'unit';
+  const noun = m.isin.startsWith('INF') ? 'unit' : 'share';
   const unitWord = m.qty === 10_000 ? noun : `${noun}s`;
   const where = m.account ? ` · ${m.account}` : '';
   switch (m.kind) {
@@ -37,7 +37,7 @@ export function MoveRow({ move }: { move: Move }) {
   const { state, update, nameOf, indexOf, fam } = useApp();
   const key = moveKey(move);
   const done = !!state.done[key];
-  const d = describe(move, nameOf, (isin) => fam.securities.get(isin)?.kind, (id) => fam.members.find((v) => v.member.id === id)?.year.bonus.free ?? 0);
+  const d = describe(move, nameOf, (id) => fam.members.find((v) => v.member.id === id)?.year.bonus.free ?? 0);
   const who = state.members.find((m) => m.id === d.who);
   const later = isLaterBenefit(move);
   const gain = move.kind === 'harvest_gain' || move.kind === 'gift' ? move.gain : 0;

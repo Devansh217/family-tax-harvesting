@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { addMonths, isLongTerm, longTermFrom, todayISO } from './dates';
 import { buildLedger } from './ledger';
-import { FY_2026_27 as R } from './rules';
+import { FY_2026_27 as R, roundTripCost } from './rules';
+import { classifyByIsin } from '../parsers/common';
 import { summariseYear } from './tax';
 import { QTY_SCALE, type Member, type Security, type Txn } from './types';
 
@@ -14,7 +15,18 @@ const tx = (memberId: string, isin: string, date: string, side: 'buy' | 'sell', 
 const member = (over: Partial<Member> = {}): Member => ({
   id: 'm1', name: 'Test', relation: 'self', age: 40, regime: 'new', otherIncome: rs(20_00_000), ...over,
 });
-const sec = (isin: string, over: Partial<Security> = {}): Security => ({ isin, name: isin, kind: 'equity', ...over });
+const sec = (isin: string, over: Partial<Security> = {}): Security => ({ isin, name: isin, taxType: 'equity', listed: true, ...over });
+
+describe('tax types', () => {
+  it('classifies by ISIN', () => {
+    expect(classifyByIsin('INE002A01018')).toEqual({ taxType: 'equity', listed: true, taxTypeSource: 'share' });
+    expect(classifyByIsin('INF209K01YN0')).toEqual({ taxType: 'check', listed: false });
+  });
+  it('round-trip cost follows listing, not asset class', () => {
+    expect(roundTripCost({ listed: false }, rs(1_00_000), R)).toBe(Math.round(rs(1_00_000) * R.costs.mfStampBuy));
+    expect(roundTripCost({ listed: true }, rs(1_00_000), R)).toBeGreaterThan(rs(200));
+  });
+});
 
 describe('today in India', () => {
   it('uses India time whatever the machine time zone', () => {

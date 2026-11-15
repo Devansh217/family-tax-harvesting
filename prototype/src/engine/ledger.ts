@@ -19,7 +19,7 @@ export function effectiveCost(
   security: Security | undefined,
   rules: TaxRules,
 ): Paise {
-  if (!security?.fmv2018 || security.kind === 'other' || lot.date > rules.grandfatherDate) return actualCost;
+  if (!security?.fmv2018 || security.taxType !== 'equity' || lot.date > rules.grandfatherDate) return actualCost;
   const fmv = Math.round((security.fmv2018 * qty) / QTY_SCALE);
   return Math.max(actualCost, Math.min(fmv, saleValue));
 }
@@ -69,6 +69,7 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
         cost,
         gain: proceeds - cost,
         term: isLongTerm(lot.date, t.date, rules.longTermMonths) ? 'lt' : 'st',
+        taxType: bySec.get(t.isin)?.taxType ?? 'equity',
       });
       lot.qty -= take;
       lot.cost -= actualCost;

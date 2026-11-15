@@ -55,7 +55,7 @@ describe('broker trade files', () => {
     const csv = 'Scheme Name,ISIN,Transaction Type,Date,Units,NAV,Amount\nParag Flexi Cap Direct Growth,INF879O01027,Purchase,01-Apr-2024,100.123,50.0000,5006.15\nParag Flexi Cap Direct Growth,INF879O01027,Redemption,01-Jun-2026,20.000,80.0000,1600.00';
     const p = previewTable(csv);
     const r = parseTablePreview(p, p.mapping, 'etmoney.csv');
-    expect(r.txns[0]).toMatchObject({ kind: 'equity_mf', side: 'buy', qty: 1_001_230 });
+    expect(r.txns[0]).toMatchObject({ side: 'buy', qty: 1_001_230 });
     expect(r.txns[1]).toMatchObject({ side: 'sell', amount: 1600_00 });
   });
 
