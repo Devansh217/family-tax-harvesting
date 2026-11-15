@@ -11,6 +11,7 @@ import { Svg, Icon } from './parts';
 import { Home } from './screens/Home';
 import { MemberScreen } from './screens/Member';
 import { Plan } from './screens/Plan';
+import { Compare } from './screens/Compare';
 import { Simulate } from './screens/Simulate';
 import { Family } from './screens/Family';
 import { Import } from './screens/Import';
@@ -22,6 +23,7 @@ const TABS = [
   { route: 'home', label: 'Home', icon: Icon.home },
   { route: 'plan', label: 'Plan', icon: Icon.plan },
   { route: 'simulate', label: 'Simulate', icon: Icon.sim },
+  { route: 'compare', label: 'Compare', icon: Icon.gift },
   { route: 'family', label: 'Family', icon: Icon.family },
   { route: 'import', label: 'Import', icon: Icon.upload },
 ];
@@ -93,6 +95,7 @@ export function App() {
   if (route.startsWith('member-')) screen = <MemberScreen id={route.slice(7)} />;
   else if (route === 'plan') screen = <Plan />;
   else if (route === 'simulate') screen = <Simulate />;
+  else if (route === 'compare') screen = <Compare />;
   else if (route === 'family') screen = <Family />;
   else if (route === 'import') screen = <Import />;
   else if (route === 'about') screen = <About />;

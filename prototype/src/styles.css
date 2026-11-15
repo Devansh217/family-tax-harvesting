@@ -45,7 +45,7 @@ main { flex: 1; width: 100%; max-width: 1040px; margin: 0 auto; padding: 20px ma
 .tabbar { display: none; }
 @media (max-width: 760px) {
   .topnav, .privacy-note { display: none; }
-  .tabbar { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); position: fixed; inset: auto 0 0 0; z-index: 6; background: var(--surface); border-top: 1px solid var(--line); padding: 6px 4px calc(8px + env(safe-area-inset-bottom)); }
+  .tabbar { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); position: fixed; inset: auto 0 0 0; z-index: 6; background: var(--surface); border-top: 1px solid var(--line); padding: 6px 4px calc(8px + env(safe-area-inset-bottom)); }
   .tabbar a { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 44px; padding-top: 4px; font-size: 11px; font-weight: 600; color: var(--ink-2); text-decoration: none; }
   .tabbar a[aria-current="page"] { color: var(--ink); }
   main { padding-top: 16px; gap: 24px; }
