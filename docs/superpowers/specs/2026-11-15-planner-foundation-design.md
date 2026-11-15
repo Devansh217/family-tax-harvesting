@@ -1,6 +1,32 @@
 # Planner foundation: design
 
-Status: **draft, not approved.** Research: `docs/research/2026-11-15-family-financial-planning.md`.
+Status: **built, merged and live (16 Nov 2026).** Research: `docs/research/2026-11-15-family-financial-planning.md`.
+
+## Status (16 Nov 2026)
+
+| Item | State |
+|---|---|
+| Design | Approved 15 Nov 2026; research changes applied (core feature list §3) |
+| Architecture | Supabase plus server functions, one engine: `2026-11-16-architecture-design.md` |
+| Build | Plan Tasks 0–13 done (`docs/superpowers/plans/2026-11-15-planner-foundation.md`); 138 tests, typecheck and build pass |
+| Review | Fresh whole-branch review: no critical issues; 6 important fixed with tests first |
+| Merged | PR #1 (foundation) and PR #2 (money fields keep a typed 0), both to `main` and deployed to GitHub Pages; `prices/funds.json` publishes nightly |
+| Checked live | Sign-in, load and save through `FamilyStore` (founder, Google sign-in); Compare loads on the live site |
+| Not checked in the app | Multi-member families in the browser (the founder's signed-in account would be overwritten); covered by engine tests and a code comparison with `main` |
+| Decisions taken while building | `docs/superpowers/plans/2026-11-15-planner-foundation-rulings.md` (38 rulings, each with its cost if wrong) |
+
+**Deferred (minor review findings):**
+- Choosing "Amounts" before typing a figure counts as zero income, so full bonus room shows; removing the last row switches to "No income".
+- The member page's basic-exemption sentence and Compare's Slab column mix gross and after-deduction income.
+- A fund's chosen tax type can't be changed or cleared afterwards.
+- "Brings home" ignores this year's trading profit for a sale this year.
+- An unknown "whose money" member makes "brings home" fail instead of returning an error.
+- A no-op `managerId` expression in the Family form; the Family page uses `todayISO()` instead of `asOf`.
+- The module-boundary test misses `export … from` and dynamic `import()`.
+
+**Still to confirm (section 11):** unchanged; the open legal and tax questions are in `docs/research/2026-11-15-questions-for-ca-and-lawyer.md`, waiting for a CA and a lawyer.
+
+**Next:** secure storage (Mumbai Supabase project, server functions for field encryption and logged admin reads, daily backups, encrypted browser copy) before any beta invites; then the beta-features design.
 
 Background and the decisions behind this doc: `docs/PLANNER-NOTES.md`.
 
