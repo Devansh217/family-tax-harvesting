@@ -35,6 +35,8 @@ Running notes from the 15 Nov 2026 brainstorm on turning the app from a tax-harv
 - **Registration:** the founder registers as a SEBI investment adviser before the public launch, to keep full control.
 - **This season (2026-27) is a soft launch** for family and friends. It behaves like the real tool; regulatory guardrails wait for the public launch. **Free and invite-only, with a "not a registered adviser yet" disclaimer on every recommendation screen (confirmed 15 Nov 2026).** The recommendation record is written from the start; the risk profile comes with the full planner (questionnaire step 7), since the beta starts from holdings.
 
+- **Architecture (decided 16 Nov 2026): Supabase plus server functions, one engine** (approach A in `docs/superpowers/specs/2026-11-16-architecture-design.md`). No dedicated backend until the public launch. The foundation plan gains Task 0: storage behind one interface, a module-boundary test, an engine bundle that runs outside the browser, and India-time dates.
+
 ### Decided on 15 Nov 2026 (open-questions round)
 
 | Question | Decision |

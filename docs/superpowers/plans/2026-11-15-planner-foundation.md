@@ -15,7 +15,8 @@
 ## Global Constraints
 
 - Money is integer paise (`Paise`), quantities are units × `QTY_SCALE`, dates are ISO `YYYY-MM-DD`. Round tax to the rupee only at the end.
-- The engine (`src/engine/**`) stays pure: no React, DOM, `localStorage`, `fetch` or Supabase imports.
+- The engine (`src/engine/**`) stays pure: no React, DOM, `localStorage`, `fetch`, Supabase, Node built-ins or randomness, so the same code runs in the browser, in server functions and later in the phone apps. Task 0's boundary test enforces it.
+- Family data reaches Supabase only through `src/storage/` (architecture design, 16 Nov 2026).
 - FY 2026-27 values: equity STCG 20% (s.196); equity LTCG 12.5% above ₹1,25,000 (s.198); other long-term 12.5% with no exemption; cess 4%; new-regime nil band ₹4 L, rebate up to ₹60,000 if total income ≤ ₹12 L (s.156); old-regime nil band ₹2.5 L / ₹3 L (60+) / ₹5 L (80+), rebate up to ₹12,500 if total ≤ ₹5 L; standard deduction on salary and pension ₹75,000 new, ₹50,000 old (s.19); senior deposit-interest deduction ₹50,000, old regime only (s.153); rent taxed after a 30% deduction; specified-fund cutoff 1 April 2023; holding periods 12 months (equity, listed other) and 24 months (unlisted other).
 - Tax rules, rates, category mappings and assumed returns are data in `TaxRules` / `categories.ts`, never inline in logic.
 - Never store a full PAN: `panLast4` only. Statements are parsed in the browser and never uploaded.
@@ -31,6 +32,40 @@
 5. **"Brings home" with a nonsense input** (amount ≤ 0, period under 3 months or over 40 years, return below −50% or above 50%). Return an error result naming the field; never NaN in the table. Test in Task 9.
 
 ---
+
+### Task 0: Module boundaries, storage behind one interface, engine runs outside the browser
+
+From `docs/superpowers/specs/2026-11-16-architecture-design.md` (read it first). No behaviour changes: the app works exactly as before.
+
+**Files:**
+- Create: `src/storage/index.ts` (`FamilyStore`, `familyStore`), `src/storage/supabase.ts` (`supabaseFamilyStore`, plus `loadProfile` / `saveProfile` moved from `cloud.ts`)
+- Create: `src/engine/index.ts` (re-exports the engine's public API)
+- Modify: `src/engine/dates.ts` (`todayISO` in India time)
+- Create: `scripts/build-engine.ts` (bundles `src/engine/index.ts` to `dist-engine/engine.js`, one ESM file, no external imports), `package.json` script `build:engine`
+- Modify: `src/cloud.ts` (keeps only the Supabase client, sign-in, sign-out, password reset, `namesFromLogin`, `friendly`), `src/ui/useCloud.ts`, `src/ui/screens/Account.tsx` (data calls go through `familyStore` and `src/storage`), `.gitignore` (`dist-engine/`)
+- Test: `src/boundaries.test.ts`, `src/engine/bundle.test.ts`, existing `src/cloud.test.ts` (move data-function tests to `src/storage/supabase.test.ts`)
+
+**Interfaces:**
+- Produces:
+  - `interface FamilyStore { load(userId: string): Promise<CloudFamily | null>; save(userId: string, state: AppState, knownVersion: number | null): Promise<number | 'conflict'>; remove(userId: string): Promise<void> }`; `CloudFamily` moves to `src/storage/index.ts`.
+  - `familyStore: FamilyStore` (today `supabaseFamilyStore`, with the bodies of `loadFamily`, `saveFamily`, `deleteFamily` unchanged).
+  - `src/engine/index.ts` exports everything the UI and later server functions import from the engine; UI may keep importing individual engine files.
+  - `todayISO(now: Date = new Date()): ISODate` in `src/engine/dates.ts`: the calendar date at UTC+5:30, not the machine's local time.
+
+- [ ] **Step 1: Write the failing tests.** `boundaries.test.ts` reads every non-test `.ts`/`.tsx` file under `src/` and checks its `import … from '…'` paths:
+  - files in `src/engine/` import only from `src/engine/` (and `vitest` in tests);
+  - files in `src/parsers/` and `src/prices/` import from `src/engine/` with `import type` only, or from each other;
+  - no file outside `src/cloud.ts` and `src/storage/` imports `@supabase/supabase-js`;
+  - no file outside `src/storage/` calls `supabase.from(` (sign-in calls on `supabase.auth` stay allowed in `cloud.ts` and `useCloud.ts`);
+  - no file in `src/engine/` mentions `window`, `document`, `localStorage`, `fetch(`, `Math.random` or `crypto.`, and `new Date(` appears only in `todayISO`.
+
+  `bundle.test.ts` runs `npm run build:engine` once, dynamically imports `dist-engine/engine.js`, runs one existing golden case from `engine.test.ts` through both the bundle and the source engine, and expects identical results.
+
+  In `engine.test.ts`: `todayISO` returns the date **in India** whatever the machine's time zone. A server runs in UTC, and between midnight and 5:30 am IST a local-time date would be yesterday, which would misdate 31 March alerts. Test with a fixed instant: `todayISO(new Date('2027-03-30T19:00:00Z'))` → `'2027-03-31'` (00:30 IST).
+- [ ] **Step 2:** `npm test` → `boundaries.test.ts` FAILS on `useCloud.ts` and `Account.tsx` (data calls through `cloud.ts`); `bundle.test.ts` FAILS (no bundle).
+- [ ] **Step 3:** Create `src/storage/`, move the data functions, update `useCloud.ts` and `Account.tsx` to use `familyStore` and `src/storage` profile functions. Create `src/engine/index.ts` and `scripts/build-engine.ts` (Vite library mode or esbuild, whichever adds no new dependency; target `es2022`, format `esm`).
+- [ ] **Step 4:** `npm test && npm run typecheck && npm run build` → all pass. Then sign in on the dev server (`fasal-prototype`, port 5199) with a test account, change a member's name, reload, and see it saved.
+- [ ] **Step 5:** Commit: `git commit -am "Storage behind one interface; module boundary test; engine bundle"`
 
 ### Task 1: Tax types replace asset kinds
 
