@@ -11,4 +11,5 @@ export * from './tax';
 export * from './family';
 export * from './relations';
 export * from './records';
+export * from './events';
 export * from './categories';

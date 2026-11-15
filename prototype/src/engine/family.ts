@@ -3,7 +3,7 @@ import { buildLedger, effectiveCost, lotKey, lotTerms, prorate } from './ledger'
 import { giftTransferCost, ltRate, roundTripCost, stRate, type TaxRules } from './rules';
 import { moveId, type MoveDraft } from './records';
 import { canGift } from './relations';
-import { summariseYear, type BusinessIncome, type YearSummary } from './tax';
+import { longTermMonthsFor, lotTaxType, summariseYear, type BusinessIncome, type YearSummary } from './tax';
 import { inRange } from './dates';
 import {
   QTY_SCALE, type ISODate, type Ledger, type Lot, type Member, type Paise, type Qty, type Realised, type Security, type Term, type Txn,
@@ -289,7 +289,9 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
         const g = priced ? lotGain(l, l.qty, sec, rules) : null;
         return {
           account: l.account, date: l.date, qty: l.qty, cost: l.cost, value: priced ? valueOf(sec, l.qty) : null, gain: g,
-          term: isLongTerm(l.date, asOf, rules.longTermMonths) ? 'lt' : 'st', longTermOn: longTermFrom(l.date, rules.longTermMonths),
+          // Term per lot and type: slab-taxed funds never turn long-term (longTermOn then shows the equity date, unused).
+          term: lotTerms(sec, l.date, asOf, rules).term,
+          longTermOn: longTermFrom(l.date, longTermMonthsFor(lotTaxType(sec, l.date, rules), sec.listed, rules) ?? rules.longTermMonths),
           certain: isCertain(l, sec, rules),
         } satisfies HoldingLot;
       }));

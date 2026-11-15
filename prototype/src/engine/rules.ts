@@ -73,6 +73,23 @@ export const FY_2026_27: TaxRules = {
   },
 };
 
+/** Every tax year's rules the app knows, oldest first. Add a year here when a Budget changes the numbers. */
+export const RULES: TaxRules[] = [FY_2026_27];
+
+/**
+ * The rules for the tax year a date falls in. For a year after the last known one, the latest rules are assumed to
+ * carry on, with the label and dates moved to that year.
+ */
+export function rulesFor(date: ISODate): TaxRules {
+  const hit = RULES.find((r) => date >= r.start && date <= r.end);
+  if (hit) return hit;
+  const last = RULES[RULES.length - 1]!;
+  const [y, m] = date.split('-').map(Number) as [number, number];
+  const startYear = m >= 4 ? y : y - 1;
+  if (startYear < Number(last.start.slice(0, 4))) return RULES[0]!;
+  return { ...last, label: `FY ${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`, start: `${startYear}-04-01`, end: `${startYear + 1}-03-31` };
+}
+
 /** Cost of selling `value` and buying it back the next day. Brokerage assumed zero (discount broker, delivery). */
 export function roundTripCost(sec: Pick<Security, 'listed'>, value: Paise, r: TaxRules): Paise {
   const c = r.costs;
