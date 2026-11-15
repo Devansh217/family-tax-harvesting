@@ -135,4 +135,4 @@ Sent-ready versions, ranked by what they block: `2026-11-15-questions-for-ca-and
 
 ## 5. Research still to do (agenda in `docs/PLANNER-NOTES.md`)
 
-Topics 1–8 and 10 are done. Left: 9. Product universe (direct vs regular, index vs active in India).
+All 10 topics are done. Topic 9, product universe (`2026-11-15-product-universe.md`: direct vs regular, SPIVA India, category choice by tax type, small savings, EPF and NPS, and a product table for the engine), still needs folding into sections 1–4 above.
