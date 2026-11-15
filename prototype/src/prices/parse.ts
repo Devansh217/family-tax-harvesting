@@ -56,6 +56,26 @@ export function parseAmfiNav(text: string): { date: ISODate | null; prices: Map<
   return { date, prices };
 }
 
+/** Fund name and SEBI category heading per ISIN, published nightly at `prices/funds.json`. */
+export interface FundsFile { date: ISODate; funds: Record<string, { n: string; c: string }> }
+
+const HEADING = /^(?:Open Ended|Close Ended|Interval Fund) Schemes\s*\((.*)\)\s*$/;
+
+/** Each fund's category heading from AMFI NAVAll.txt: the bracketed text of the last "… Schemes(…)" line above it. */
+export function parseAmfiFunds(text: string): FundsFile['funds'] {
+  const funds: FundsFile['funds'] = {};
+  let heading: string | null = null;
+  for (const line of text.split(/\r?\n/)) {
+    const h = line.trim().match(HEADING);
+    if (h) { heading = h[1]!.trim(); continue; }
+    const f = line.split(';');
+    if (!heading || f.length < 4 || !/^\d+$/.test((f[0] ?? '').trim())) continue;
+    const name = (f[3] ?? '').trim();
+    for (const isin of [f[1], f[2]].map((s) => (s ?? '').trim())) if (/^INF[A-Z0-9]{9}$/.test(isin)) funds[isin] = { n: name, c: heading };
+  }
+  return funds;
+}
+
 /** NSE first, then BSE for anything NSE lacks, then fund NAVs. The file's date is the exchanges' date when present. */
 export function mergePriceFiles(parts: Array<{ date: ISODate | null; prices: Map<string, Paise> } | null>): PriceFile | null {
   const prices: Record<string, Paise> = {};

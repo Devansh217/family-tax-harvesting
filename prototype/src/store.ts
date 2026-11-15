@@ -1,7 +1,7 @@
 import { classifyByIsin } from './parsers/common';
 import type { PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
-import type { ISODate, Member, Qty, Security, Txn } from './engine/types';
+import type { ISODate, Member, Qty, Security, TaxType, Txn } from './engine/types';
 import type { BrokerSummary, ParsedPrice, ParseResult } from './parsers';
 
 export interface ImportRecord {
@@ -36,13 +36,15 @@ export interface AppState {
   ackGuidance?: boolean;
   /** `${memberId}|${isin}` → money needed within 12 months. */
   needSoon: Record<string, boolean>;
+  /** ISIN → tax type the person chose for a fund, overriding AMFI's category. */
+  taxTypeOverrides: Record<string, TaxType>;
 }
 
 // Kept from the working name so data already in people's browsers still loads.
 const KEY = 'fasal-prototype-v1';
 
 export const emptyState = (): AppState => ({
-  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [],
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {},
 });
 
 export function loadState(): AppState | null {
@@ -59,7 +61,7 @@ export function loadState(): AppState | null {
 /** Fills fields added after a copy was saved (older browser data or an account copy). Null if unusable. */
 export function normalizeState(s: AppState | null | undefined): AppState | null {
   if (!s || s.version !== 1 || !Array.isArray(s.members)) return null;
-  return { ...s, plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done: s.done ?? {}, positions: s.positions ?? [], brokerSummaries: s.brokerSummaries ?? [] };
+  return { ...s, plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done: s.done ?? {}, positions: s.positions ?? [], brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {} };
 }
 
 /** True when the state holds a real family worth keeping, not the sample or an untouched start. */

@@ -1,15 +1,21 @@
 import type { FamilyView } from '../engine/family';
-import type { ISODate, Paise, Security } from '../engine/types';
-import type { PriceFile } from '../prices/parse';
+import { classifyFund } from '../engine/categories';
+import overridesFile from '../engine/fund-overrides.json';
+import type { ISODate, Paise, Security, TaxType } from '../engine/types';
+import type { FundsFile, PriceFile } from '../prices/parse';
 
-export interface Market { latest: PriceFile | null; previous: PriceFile | null }
+export interface Market { latest: PriceFile | null; previous: PriceFile | null; funds: FundsFile | null }
 
 async function getJson(path: string): Promise<PriceFile | null> {
+  const j = await fetchJson<PriceFile>(path);
+  return j && typeof j.date === 'string' && j.prices ? j : null;
+}
+
+async function fetchJson<T>(path: string): Promise<T | null> {
   try {
     const r = await fetch(path, { cache: 'no-cache' });
     if (!r.ok) return null;
-    const j = (await r.json()) as PriceFile;
-    return j && typeof j.date === 'string' && j.prices ? j : null;
+    return (await r.json()) as T;
   } catch {
     return null;
   }
@@ -18,7 +24,9 @@ async function getJson(path: string): Promise<PriceFile | null> {
 /** Closing prices published with the site by the nightly job. Missing files (local dev, first deploy) are fine. */
 export async function loadMarket(): Promise<Market> {
   const [latest, previous] = await Promise.all([getJson('./prices/latest.json'), getJson('./prices/previous.json')]);
-  return { latest, previous };
+  const f = await fetchJson<FundsFile>('./prices/funds.json');
+  const funds = f && typeof f.date === 'string' && f.funds && typeof f.funds === 'object' ? f : null;
+  return { latest, previous, funds };
 }
 
 /** Uses the closing price when it is at least as recent as the price from the user's own statement. */
@@ -28,6 +36,31 @@ export function withPrices(securities: Security[], file: PriceFile | null): Secu
     const p = file.prices[s.isin];
     if (p == null || (s.priceDate && s.priceDate > file.date)) return s;
     return { ...s, price: p, priceDate: file.date };
+  });
+}
+
+/** Fund-specific corrections kept in the repo (src/engine/fund-overrides.json). */
+interface FundOverride { isin: string; taxType: TaxType; listed?: boolean; reason: string; date: ISODate }
+const REPO_OVERRIDES = new Map((overridesFile as FundOverride[]).map((o) => [o.isin, o]));
+
+/**
+ * Tax type for each fund. Precedence: the user's own choice (`user`) > the repo override list (`override`) > AMFI's
+ * category (`amfi`). Shares and funds with no information keep what they have, so a missing file never breaks anything.
+ */
+export function withFunds(securities: Security[], file: FundsFile | null, userOverrides: Record<string, TaxType>): Security[] {
+  return securities.map((s) => {
+    if (s.taxTypeSource === 'share') return s;
+    const amfi = file?.funds[s.isin];
+    let out: Security = s;
+    if (amfi) {
+      const cl = classifyFund(amfi.c, amfi.n);
+      out = { ...out, taxType: cl.taxType, listed: cl.listed, category: amfi.c, taxTypeSource: 'amfi' };
+    }
+    const repo = REPO_OVERRIDES.get(s.isin);
+    if (repo) out = { ...out, taxType: repo.taxType, listed: repo.listed ?? out.listed, taxTypeSource: 'override' };
+    const mine = userOverrides[s.isin];
+    if (mine) out = { ...out, taxType: mine, taxTypeSource: 'user' };
+    return out;
   });
 }
 

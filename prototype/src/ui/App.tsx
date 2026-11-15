@@ -5,7 +5,7 @@ import { FY_2026_27 } from '../engine/rules';
 import { sampleState } from '../sample';
 import { loadState, saveState, type AppState } from '../store';
 import { AppCtx, type Ctx } from './app-context';
-import { addSnapshot, loadMarket, snapshotOf, withPrices, type Market } from './market';
+import { addSnapshot, loadMarket, snapshotOf, withFunds, withPrices, type Market } from './market';
 import { Svg, Icon } from './parts';
 import { Home } from './screens/Home';
 import { MemberScreen } from './screens/Member';
@@ -48,18 +48,19 @@ export function App() {
     timer.current = window.setTimeout(() => setToast(null), 2600);
   }, []);
   const cloud = useCloud(state, setState, toast);
-  const [market, setMarket] = useState<Market>({ latest: null, previous: null });
+  const [market, setMarket] = useState<Market>({ latest: null, previous: null, funds: null });
   useEffect(() => { void loadMarket().then(setMarket); }, []);
 
   // The sample family keeps its own made-up prices; real families are re-priced at the latest close.
   const live = !state.isSample;
+  const securities = useMemo(() => withFunds(state.securities, market.funds, state.taxTypeOverrides), [state.securities, market.funds, state.taxTypeOverrides]);
   const fam = useMemo(
-    () => computeFamily(live ? { ...state, securities: withPrices(state.securities, market.latest) } : state, asOf, FY_2026_27),
-    [state, asOf, market, live],
+    () => computeFamily(live ? { ...state, securities: withPrices(securities, market.latest) } : state, asOf, FY_2026_27),
+    [state, securities, asOf, market, live],
   );
   const famPrev = useMemo(
-    () => (live && market.previous ? computeFamily({ ...state, securities: withPrices(state.securities, market.previous) }, asOf, FY_2026_27) : null),
-    [state, asOf, market, live],
+    () => (live && market.previous ? computeFamily({ ...state, securities: withPrices(securities, market.previous) }, asOf, FY_2026_27) : null),
+    [state, securities, asOf, market, live],
   );
 
   useEffect(() => {
