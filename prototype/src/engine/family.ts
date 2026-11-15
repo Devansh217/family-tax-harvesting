@@ -1,6 +1,7 @@
 import { daysBetween, isLongTerm, longTermFrom } from './dates';
 import { buildLedger, effectiveCost, lotKey, lotTerms, prorate } from './ledger';
 import { giftTransferCost, ltRate, roundTripCost, stRate, type TaxRules } from './rules';
+import { moveId, type MoveDraft } from './records';
 import { canGift } from './relations';
 import { summariseYear, type BusinessIncome, type YearSummary } from './tax';
 import { inRange } from './dates';
@@ -69,7 +70,11 @@ export interface Holding {
  * `gain` moves into tax-free room; `taxAvoided` is that gain at today's rate (paid only on a future sale, and only if
  * that year's gains go past the exemption). For losses and waits it is tax cut this year. `saving` is net of `costs`.
  */
-interface MoveBase { id: string; isin: string; name: string; account: string; qty: Qty; value: Paise; taxAvoided: Paise; costs: Paise; saving: Paise }
+interface MoveBase {
+  id: string; isin: string; name: string; account: string; qty: Qty; value: Paise; taxAvoided: Paise; costs: Paise; saving: Paise;
+  /** One plain-English line per reason, e.g. "Uses ₹40,000 of Asha's ₹1,25,000 tax-free room". */
+  reasons: string[];
+}
 export type Move =
   | (MoveBase & { kind: 'harvest_gain'; memberId: string; gain: Paise })
   | (MoveBase & { kind: 'harvest_loss'; memberId: string; loss: Paise; term: Term })
@@ -232,8 +237,9 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   const ledger = buildLedger(state.txns, state.securities, rules);
   const secs = new Map(state.securities.map((s) => [s.isin, s]));
   const moves: Move[] = [];
-  let n = 0;
-  const id = () => `mv${++n}`;
+  const push = (m: MoveDraft) => moves.push({ ...m, id: moveId(m, rules) } as Move);
+  const nameOf = (memberId: string) => views.find((v) => v.member.id === memberId)?.member.name ?? 'This member';
+  const rupees = (p: Paise) => `₹${Math.round(p / 100).toLocaleString('en-IN')}`;
   const LT = ltRate(rules), ST = stRate(rules);
 
   // Where history is incomplete, trust the broker's booked totals so room and tax are right.
@@ -338,7 +344,8 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
       const costs = roundTripCost(sec, value, rules);
       const taxAvoided = Math.round(r.gain * LT);
       if (taxAvoided - costs < MIN_NET_SAVING) continue;
-      moves.push({ kind: 'harvest_gain', id: id(), memberId: v.member.id, isin: c.h.isin, name: c.h.name, account: c.q.account, qty: r.qty, value, gain: r.gain, taxAvoided, costs, saving: taxAvoided - costs });
+      push({ kind: 'harvest_gain', memberId: v.member.id, isin: c.h.isin, name: c.h.name, account: c.q.account, qty: r.qty, value, gain: r.gain, taxAvoided, costs, saving: taxAvoided - costs,
+        reasons: [`Uses ${rupees(r.gain)} of ${v.member.name}'s ${rupees(rules.ltcgExemption)} tax-free room for this year, which lapses on 31 March`, `Selling and buying back the next day resets the cost, so ${rupees(taxAvoided)} less tax when sold later`] });
       usedQty.set(lotKey(v.member.id, c.h.isin, c.q.account), r.qty);
       room -= r.gain;
     }
@@ -360,7 +367,8 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
           const costs = giftTransferCost(value, rules) + roundTripCost(sec, value, rules);
           const taxAvoided = Math.round(r.gain * LT);
           if (taxAvoided - costs < MIN_NET_SAVING) continue;
-          moves.push({ kind: 'gift', id: id(), fromId: giver.member.id, toId: rec.member.id, isin: h.isin, name: h.name, account: q.account, qty: r.qty, value, gain: r.gain, taxAvoided, costs, saving: taxAvoided - costs });
+          push({ kind: 'gift', fromId: giver.member.id, toId: rec.member.id, isin: h.isin, name: h.name, account: q.account, qty: r.qty, value, gain: r.gain, taxAvoided, costs, saving: taxAvoided - costs,
+            reasons: [`${giver.member.name} has no tax-free room left; ${rec.member.name} has ${rupees(rec.roomAfterPlan)} unused`, `A gift between these relatives is not taxed and is not added back to ${giver.member.name}'s income`, `It becomes ${rec.member.name}'s money for good`] });
           usedQty.set(key, (usedQty.get(key) ?? 0) + r.qty);
           rec.roomAfterPlan -= r.gain;
         }
@@ -400,7 +408,8 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
             const costs = roundTripCost(sec, value, rules);
             const taxAvoided = Math.round(saved);
             if (taxAvoided - costs >= MIN_NET_SAVING) {
-              moves.push({ kind: 'harvest_loss', id: id(), memberId: v.member.id, isin: h.isin, name: h.name, account, qty, value, loss: lossTotal, term, taxAvoided, costs, saving: taxAvoided - costs });
+              push({ kind: 'harvest_loss', memberId: v.member.id, isin: h.isin, name: h.name, account, qty, value, loss: lossTotal, term, taxAvoided, costs, saving: taxAvoided - costs,
+                reasons: [`Books a ${rupees(lossTotal)} loss against gains ${nameOf(v.member.id)} is already paying tax on this year`] });
             }
           }
         }
@@ -412,7 +421,8 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
         const days = daysBetween(asOf, until);
         if (gain >= MIN_GAIN && days > 0 && days <= WAIT_WINDOW_DAYS) {
           const taxAvoided = Math.round(gain * (ST - LT));
-          moves.push({ kind: 'wait', id: id(), memberId: v.member.id, isin: h.isin, name: h.name, account, qty: front.qty, value: valueOf(sec, front.qty), gain, until, days, taxAvoided, costs: 0, saving: taxAvoided });
+          push({ kind: 'wait', memberId: v.member.id, isin: h.isin, name: h.name, account, qty: front.qty, value: valueOf(sec, front.qty), gain, until, days, taxAvoided, costs: 0, saving: taxAvoided,
+            reasons: [`Turns long-term on ${until}: taxed at 12.5% instead of 20% if sold after that`] });
         }
       }
     }

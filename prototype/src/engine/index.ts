@@ -10,4 +10,5 @@ export * from './ledger';
 export * from './tax';
 export * from './family';
 export * from './relations';
+export * from './records';
 export * from './categories';

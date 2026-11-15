@@ -2,7 +2,7 @@ import { incomeTotal } from '../../engine/rules';
 import { useState } from 'react';
 import { longTermFrom } from '../../engine/dates';
 import type { Paise } from '../../engine/types';
-import { moveKey, useApp } from '../app-context';
+import { useApp } from '../app-context';
 import { dateLabel, inr, possessive, RELATIONS, units } from '../format';
 import { Avatar, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow } from './Plan';
@@ -30,7 +30,7 @@ export function MemberScreen({ id }: { id: string }) {
 
   const { member, year, holdings, plan, planned: plannedSale } = v;
   const planned = fam.moves
-    .filter((m) => !state.done[moveKey(m, fam.rules.label)])
+    .filter((m) => !state.done[m.id])
     .reduce((a, m) => a + ((m.kind === 'harvest_gain' && m.memberId === id) || (m.kind === 'gift' && m.toId === id) ? m.gain : 0), 0);
   const roomTotal = plan.room.free + plan.bonus.free;
   const plannedShown = view === 'plan' ? Math.min(planned, roomTotal) : 0;

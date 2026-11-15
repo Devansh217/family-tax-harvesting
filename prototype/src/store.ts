@@ -1,6 +1,7 @@
 import { classifyByIsin } from './parsers/common';
 import type { PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
+import type { RecommendationRecord } from './engine/records';
 import { FY_2026_27 } from './engine/rules';
 import type { ISODate, Member, Paise, Qty, Security, TaxType, Txn } from './engine/types';
 import type { BrokerSummary, ParsedPrice, ParseResult } from './parsers';
@@ -39,13 +40,15 @@ export interface AppState {
   needSoon: Record<string, boolean>;
   /** ISIN → tax type the person chose for a fund, overriding AMFI's category. */
   taxTypeOverrides: Record<string, TaxType>;
+  /** Every move shown and every status change, append-only (kept 5 years once registered as an adviser). */
+  recommendations: RecommendationRecord[];
 }
 
 // Kept from the working name so data already in people's browsers still loads.
 const KEY = 'fasal-prototype-v1';
 
 export const emptyState = (): AppState => ({
-  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {},
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [],
 });
 
 export function loadState(): AppState | null {
@@ -114,7 +117,7 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
     members: linkFamily((s.members as LegacyMember[]).map(migrateMember)),
     securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
     plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
-    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {},
+    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [],
   };
 }
 

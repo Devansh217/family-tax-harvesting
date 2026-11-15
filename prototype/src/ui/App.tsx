@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { daysBetween, todayISO } from '../engine/dates';
 import { computeFamily } from '../engine/family';
+import { newShownRecords } from '../engine/records';
 import { FY_2026_27 } from '../engine/rules';
 import { sampleState } from '../sample';
 import { loadState, saveState, type AppState } from '../store';
@@ -62,6 +63,13 @@ export function App() {
     () => (live && market.previous ? computeFamily({ ...state, securities: withPrices(securities, market.previous) }, asOf, FY_2026_27) : null),
     [state, securities, asOf, market, live],
   );
+
+  // Record each move the first time it is shown (append-only), for real families only.
+  useEffect(() => {
+    if (!live) return;
+    const fresh = newShownRecords(fam.moves, state.recommendations, new Date().toISOString());
+    if (fresh.length) setState((s) => ({ ...s, recommendations: [...s.recommendations, ...newShownRecords(fam.moves, s.recommendations, fresh[0]!.at)] }));
+  }, [fam.moves, live, state.recommendations]);
 
   useEffect(() => {
     if (!live || !market.latest || state.members.length === 0) return;
