@@ -3,12 +3,11 @@ import { ageOn } from '../../engine/dates';
 import { FY_2026_27, incomeBands } from '../../engine/rules';
 import type { IncomeKind, IncomeSource, ISODate, Member } from '../../engine/types';
 import { RELATIONS } from '../format';
+import { MoneyInput } from '../MoneyInput';
 
 /** Shared by the setup steps and the Family page's member form, so both edit the same fields the same way. */
 interface Props { member: Member; onChange: (m: Member) => void }
 
-const rupees = (p: number) => (p ? String(Math.round(p / 100)) : '');
-const toPaise = (t: string) => Math.max(0, Math.round((Number(t.replace(/[,₹\s]/g, '')) || 0) * 100));
 
 export const isAdult = (m: Member, asOf: ISODate) => m.type !== 'huf' && ageOn(m, asOf) >= 18;
 /** Setup is finished when every adult has a date of birth and income (even "none"). */
@@ -118,8 +117,8 @@ export function IncomeFields({ member: m, onChange }: Props) {
             </select>
           </label>
           <label className="field" htmlFor={`${f}-a${i}`}>{perMonth[i] ? 'Per month (₹)' : 'Per year (₹)'}
-            <input id={`${f}-a${i}`} inputMode="numeric" value={rupees(perMonth[i] ? s.amount / 12 : s.amount)}
-              onChange={(e) => setSources(sources.map((x, j) => (j === i ? { ...x, amount: toPaise(e.target.value) * (perMonth[i] ? 12 : 1), from: 'manual' } : x)))} />
+            <MoneyInput key={perMonth[i] ? 'm' : 'y'} id={`${f}-a${i}`} value={perMonth[i] ? Math.round(s.amount / 12) : s.amount}
+              onValue={(p) => setSources(sources.map((x, j) => (j === i ? { ...x, amount: p * (perMonth[i] ? 12 : 1), from: 'manual' } : x)))} />
           </label>
           <button className="btn sm" type="button" onClick={() => setPerMonth({ ...perMonth, [i]: !perMonth[i] })}>{perMonth[i] ? 'Per year' : 'Per month'}</button>
           <button className="btn sm ghost" type="button" style={{ color: 'var(--tax)' }} onClick={() => setSources(sources.filter((_, j) => j !== i))}>Remove</button>
@@ -138,7 +137,7 @@ export function IncomeFields({ member: m, onChange }: Props) {
       </label>
       {regimeChoice !== 'new' && (
         <label className="field" htmlFor={`${f}-ded`}>Total deductions you claim (80C, health insurance, rent, NPS…), ₹ a year
-          <input id={`${f}-ded`} inputMode="numeric" value={rupees(m.deductions ?? 0)} onChange={(e) => onChange({ ...m, deductions: toPaise(e.target.value) || undefined })} />
+          <MoneyInput id={`${f}-ded`} value={m.deductions ?? 0} onValue={(p) => onChange({ ...m, deductions: p || undefined })} />
         </label>
       )}
       <p className="tiny muted">Salary and pension: before the standard deduction, which the app takes off. Interest: from savings, deposits and bonds. A slab is read at its top end, so tax-free room is never overstated.</p>
@@ -153,10 +152,10 @@ export function LossFields({ member: m, onChange }: Props) {
   return (
     <div className="form-grid">
       <label className="field" htmlFor={`${f}-st`}>Short-term loss carried forward (₹)
-        <input id={`${f}-st`} inputMode="numeric" value={rupees(cl.st)} onChange={(e) => onChange({ ...m, carriedLoss: { ...cl, st: toPaise(e.target.value) } })} />
+        <MoneyInput id={`${f}-st`} value={cl.st} onValue={(p) => onChange({ ...m, carriedLoss: { ...cl, st: p } })} />
       </label>
       <label className="field" htmlFor={`${f}-lt`}>Long-term loss carried forward (₹)
-        <input id={`${f}-lt`} inputMode="numeric" value={rupees(cl.lt)} onChange={(e) => onChange({ ...m, carriedLoss: { ...cl, lt: toPaise(e.target.value) } })} />
+        <MoneyInput id={`${f}-lt`} value={cl.lt} onValue={(p) => onChange({ ...m, carriedLoss: { ...cl, lt: p } })} />
       </label>
     </div>
   );
