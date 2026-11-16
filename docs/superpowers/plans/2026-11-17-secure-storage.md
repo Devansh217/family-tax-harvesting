@@ -44,7 +44,7 @@
 **Interfaces:** Produces the folder `prototype/supabase/functions/_shared/` compiled by `tsc` and tested by Vitest. Files there import each other with explicit `.ts` extensions (Deno needs them) and use only Web APIs (`crypto.subtle`, `TextEncoder`, `atob`/`btoa`), no Deno or Node globals.
 
 - [ ] **Step 1: Write the failing tests.** `secrets.test.ts`: list tracked files with `git ls-files` (run from the repo root), skip `node_modules`, `*.lock`, images; fail if any matches `/sb_secret_[A-Za-z0-9_-]{10,}/` or a JWT whose payload decodes to `"role":"service_role"`. In `boundaries.test.ts` add: no file outside `src/storage/` contains `functions.invoke(`; nothing under `supabase/functions/_shared/` mentions `Deno.` or `process.`.
-- [ ] **Step 2:** `npm test` → the secret test passes on today's repo (it's a guard); add a temporary tracked fixture line `sb_secret_aaaaaaaaaaaaaaa` in a test-only file, confirm it FAILS, remove it.
+- [ ] **Step 2:** `npm test` → the secret test passes on today's repo (it's a guard); add a temporary tracked line made of "sb_secret_" followed by 15 letters in a test-only file, confirm it FAILS, remove it.
 - [ ] **Step 3:** Make the config changes; `npx supabase@2 init` inside `prototype/` (accept defaults, no VS Code settings).
 - [ ] **Step 4:** `npm test && npm run typecheck` → pass.
 - [ ] **Step 5:** Commit: `git commit -am "Tooling for server functions; secret scan"`
