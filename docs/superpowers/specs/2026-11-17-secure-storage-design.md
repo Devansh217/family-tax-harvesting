@@ -1,6 +1,18 @@
 # Secure storage: design
 
-17 Nov 2026 · Status: **approved by the founder, 17 Nov 2026.**
+17 Nov 2026 · Status: **built and tested on branch `secure-storage`; deployed parts live on the Singapore project; not yet merged.**
+
+## Status (17 Nov 2026)
+
+| Item | State |
+|---|---|
+| Build | Plan tasks 1–11 done (`docs/superpowers/plans/2026-11-17-secure-storage.md`); 182 tests, typecheck and build pass |
+| Founder's Part A | Done: email sign-ups off, family key set, migration pushed, `family` and `admin` deployed, backup secret and public key added |
+| Live checks | Anonymous: tables refuse (42501), functions answer 401, `is_admin` refused. Signed in (founder, localhost): family saved and loaded encrypted; admin list after two-factor; a read with reason logged and shown on Account |
+| Review | Fresh whole-branch review: no critical; 3 important fixed with tests first (save loop, browser-save ordering, a failed load overwriting the browser's family); 9 minor deferred |
+| Decisions | `docs/superpowers/plans/2026-11-17-secure-storage-rulings.md` |
+| Left (founder, after merge) | Guide Part B: move the family on the live site, first backup run and restore test, drop `family_data`, check other Pages sites on the origin |
+
 
 Background: `docs/PLANNER-NOTES.md` (decisions, data tiers, security to-do), `docs/superpowers/specs/2026-11-16-architecture-design.md` (approach A: Supabase plus server functions, one engine).
 
