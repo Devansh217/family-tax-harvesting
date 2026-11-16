@@ -18,6 +18,8 @@ export interface Ctx {
   toast: (msg: string) => void;
   indexOf: (memberId: string) => number;
   nameOf: (memberId: string) => string;
+  /** Set while the founder views another family read-only (admin screen). */
+  viewing: { name: string } | null;
 }
 
 export const AppCtx = createContext<Ctx | null>(null);

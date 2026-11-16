@@ -44,23 +44,10 @@ export interface AppState {
   recommendations: RecommendationRecord[];
 }
 
-// Kept from the working name so data already in people's browsers still loads.
-const KEY = 'fasal-prototype-v1';
 
 export const emptyState = (): AppState => ({
   version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [],
 });
-
-export function loadState(): AppState | null {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
-    const s = JSON.parse(raw) as AppState;
-    return normalizeState(s);
-  } catch {
-    return null;
-  }
-}
 
 /** Shapes saved before the member profile and tax-type changes (Nov 2026). */
 type LegacyMember = Member & { otherIncome?: Paise; incomeBand?: string };
@@ -132,15 +119,6 @@ export function parseBackup(text: string): AppState | null {
 
 /** True when the state holds a real family worth keeping, not the sample or an untouched start. */
 export const hasRealData = (s: AppState) => !s.isSample && s.members.length > 0 && (s.txns.length > 0 || s.members.length > 1);
-
-export function saveState(s: AppState): boolean {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(s));
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 export const uid = (p: string) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 

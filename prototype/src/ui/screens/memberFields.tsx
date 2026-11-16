@@ -10,6 +10,14 @@ interface Props { member: Member; onChange: (m: Member) => void }
 
 
 export const isAdult = (m: Member, asOf: ISODate) => m.type !== 'huf' && ageOn(m, asOf) >= 18;
+export const isMinor = (m: Member, asOf: ISODate) => m.type !== 'huf' && ageOn(m, asOf) < 18;
+
+/** The consent tick for a member: a child's needs their parent or guardian (DPDP Act); none for the manager or an HUF. */
+export function consentLabel(m: Member, managerId: string | undefined, asOf: ISODate): string | null {
+  if (!managerId || m.id === managerId || m.type === 'huf') return null;
+  const name = m.name.trim() || 'this member';
+  return isMinor(m, asOf) ? `I'm ${name}'s parent or guardian and agree to their data being included` : `${m.name.trim() || 'They'} agreed to be included`;
+}
 /** Setup is finished when every adult has a date of birth and income (even "none"). */
 export const needsSetup = (members: Member[], asOf: ISODate) => members.some((m) => isAdult(m, asOf) && (!m.dob || m.income === undefined));
 
@@ -79,10 +87,10 @@ export function PersonFields({ member: m, onChange, members, managerId, asOf }: 
         <input type="checkbox" checked={m.resident !== false} onChange={(e) => set({ resident: e.target.checked ? undefined : false })} />Lives in India (resident for tax)
       </label>
       {m.resident === false && <p className="tiny" style={{ color: 'var(--time)' }}>Non-residents are not covered yet: their figures may be wrong, and no gifts to them are suggested.</p>}
-      {managerId && m.id !== managerId && isAdult(m, asOf) && (
+      {managerId && consentLabel(m, managerId, asOf) && (
         <label className="row small" style={{ gap: 6 }}>
           <input type="checkbox" checked={!!m.consent} onChange={(e) => set({ consent: e.target.checked ? { agreedAt: asOf, recordedBy: managerId } : undefined })} />
-          {m.name || 'They'} agreed to be included{m.consent ? ` (${m.consent.agreedAt})` : ''}
+          {consentLabel(m, managerId, asOf)}{m.consent ? ` (${m.consent.agreedAt})` : ''}
         </label>
       )}
     </div>

@@ -5,8 +5,12 @@ import { createClient, type Session } from '@supabase/supabase-js';
  * app: it can only do what the database's row-level security allows, which is each person reading and writing their
  * own rows (see supabase/schema.sql). The secret key never goes in this code.
  */
-export const SUPABASE_URL = 'https://iaesqhisslztykbglcck.supabase.co';
-export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_CNFrds5IHwjo7O5pZ-x7GQ_rcpzng24';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './cloud-config';
+
+export { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL };
+
+/** Beta: Google sign-in only. Supabase's built-in email sender reaches only the project team (secure storage spec §3). */
+export const SHOW_EMAIL_SIGNIN = false;
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },

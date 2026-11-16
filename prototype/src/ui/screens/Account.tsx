@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react';
-import { sendPasswordReset, setNewPassword, signIn, signInWithGoogle, signUp } from '../../cloud';
-import { familyStore, saveProfile } from '../../storage';
+import { useEffect, useState, type FormEvent } from 'react';
+import { sendPasswordReset, setNewPassword, SHOW_EMAIL_SIGNIN, signIn, signInWithGoogle, signUp } from '../../cloud';
+import { deleteAccount, listMyAdminReads, saveProfile } from '../../storage';
 import { useApp } from '../app-context';
 import { Icon, Svg } from '../parts';
 
@@ -10,7 +10,8 @@ const STATUS_TEXT = {
   choose: 'Waiting for you to choose which copy to keep',
   saving: 'Saving…',
   saved: 'All changes saved to your account',
-  error: 'Could not save. Changes are kept in this browser and will retry.',
+  error: 'Could not save. Your changes are kept in this browser; the next change tries again.',
+  signin: 'Your sign-in has ended. Sign in again to keep saving; your family is safe in this browser.',
 } as const;
 
 function GoogleButton({ onError }: { onError: (m: string) => void }) {
@@ -65,13 +66,15 @@ function SignedOut() {
   return (
     <div className="grid-2">
       <section className="sheet pad stack">
-        <div className="seg-ctl" role="group" aria-label="Sign in or create an account">
+        {SHOW_EMAIL_SIGNIN && <div className="seg-ctl" role="group" aria-label="Sign in or create an account">
           <button type="button" aria-pressed={mode === 'in'} onClick={() => { setMode('in'); setError(null); setInfo(null); }}>Sign in</button>
           <button type="button" aria-pressed={mode === 'up'} onClick={() => { setMode('up'); setError(null); setInfo(null); }}>Create account</button>
-        </div>
+        </div>}
         <GoogleButton onError={setError} />
-        <p className="tiny muted" style={{ textAlign: 'center' }}>or with email</p>
-        <form className="stack" onSubmit={submit} noValidate>
+        {!SHOW_EMAIL_SIGNIN && error && <p className="small bad" role="alert">{error}</p>}
+        {!SHOW_EMAIL_SIGNIN && <p className="tiny muted">During the beta, sign in with a Google account.</p>}
+        {SHOW_EMAIL_SIGNIN && <p className="tiny muted" style={{ textAlign: 'center' }}>or with email</p>}
+        {SHOW_EMAIL_SIGNIN && <form className="stack" onSubmit={submit} noValidate>
           {mode === 'up' && (
             <div className="form-grid">
               <label className="field" htmlFor="acc-first">First name<input id="acc-first" autoComplete="given-name" value={first} onChange={(e) => setFirst(e.target.value)} required /></label>
@@ -86,13 +89,13 @@ function SignedOut() {
           {info && <p className="small good" role="status">{info}</p>}
           <button className="btn primary block" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'up' ? 'Create account' : 'Sign in'}</button>
           {mode === 'in' && <button className="btn ghost" type="button" onClick={reset}>Forgot password?</button>}
-        </form>
+        </form>}
       </section>
       <aside className="stack">
         <h2>Why sign in</h2>
         <p className="small muted">Your family is saved to your account, so you can open it on your phone and laptop and it survives clearing the browser. Each day&rsquo;s closing-price history is kept with it.</p>
         <div className="note">
-          <strong style={{ color: 'var(--ink)' }}>Only you can read it.</strong> Every saved row is locked to your login. Your data is never used for ads, never sold or shared, and never used for any unlawful purpose.
+          <strong style={{ color: 'var(--ink)' }}>Encrypted, and every look is logged.</strong> Your family is encrypted before it is stored. If the app&rsquo;s maker ever opens it to fix a problem, you see when and why on this page. Your data is never used for ads, never sold or shared.
         </div>
         <p className="small muted">You can keep using Harvesting without an account. Everything then stays in this browser only.</p>
       </aside>
@@ -115,6 +118,23 @@ function NewPassword() {
       {error && <p className="small bad" role="alert">{error}</p>}
       <button className="btn primary" type="submit">Save password</button>
     </form>
+  );
+}
+
+/** Every time the app's maker opened this family through the logged admin function. */
+function AdminReads() {
+  const [rows, setRows] = useState<Array<{ at: string; reason: string }> | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { listMyAdminReads().then(setRows, () => setFailed(true)); }, []);
+  return (
+    <div className="sheet pad stack">
+      <h2>Who has looked at your data</h2>
+      {failed ? <p className="small muted">Could not load the list. Try again later.</p>
+        : rows == null ? <p className="small muted">Loading…</p>
+        : rows.length === 0 ? <p className="small muted">Nobody has opened your family.</p>
+        : <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{rows.map((r) => <li key={r.at + r.reason}>{new Date(r.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}: {r.reason}</li>)}</ul>}
+      <p className="tiny muted">Only the app&rsquo;s maker can open a family, with two-factor sign-in and a written reason, and every time is listed here.</p>
+    </div>
   );
 }
 
@@ -152,20 +172,21 @@ function SignedIn() {
           </div>
           <p className="tiny muted">Signing out removes your family from this browser. It stays in your account.</p>
         </div>
+        <AdminReads />
         <div className="sheet pad stack">
           {confirmDelete ? (
             <>
-              <p className="small">Delete your saved family from your account? This browser keeps its copy until you sign out. This cannot be undone.</p>
+              <p className="small">Delete your account and everything in it: your family, the log of who opened it and your name. This cannot be undone.</p>
               <div className="row">
                 <button className="btn danger" type="button" onClick={async () => {
-                  try { await familyStore.remove(user.id); toast('Saved family deleted from your account'); setConfirmDelete(false); await cloud.signOutAndClear(); }
+                  try { await deleteAccount(user.id); setConfirmDelete(false); await cloud.signOutAndClear(); toast('Your account and data are deleted'); }
                   catch (err) { toast((err as Error).message); }
-                }}>Delete</button>
+                }}>Delete everything</button>
                 <button className="btn" type="button" onClick={() => setConfirmDelete(false)}>Keep</button>
               </div>
             </>
           ) : (
-            <button className="btn danger" type="button" onClick={() => setConfirmDelete(true)}>Delete my saved data</button>
+            <button className="btn danger" type="button" onClick={() => setConfirmDelete(true)}>Delete my account and data</button>
           )}
         </div>
       </aside>

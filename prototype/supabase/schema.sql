@@ -1,3 +1,5 @@
+-- Harvesting: database setup for the OLD project only (plain family_data). Superseded by supabase/migrations/,
+-- which the new Mumbai project uses (encrypted families, server functions). Kept until the old project is deleted.
 -- Harvesting: database setup for login and saving a family's data to their account.
 -- Run once in the Supabase dashboard: SQL Editor → New query → paste this whole file → Run.
 -- Safe to run again: every statement checks before creating.

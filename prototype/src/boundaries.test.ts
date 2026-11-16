@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -76,4 +76,17 @@ describe('module boundaries', () => {
     });
     expect(bad).toEqual([]);
   });
+
+  it('only storage calls server functions', () => {
+    const bad = all.filter((f) => !inDir(f.path, 'storage') && /functions\.invoke\(/.test(f.text)).map((f) => f.path);
+    expect(bad).toEqual([]);
+  });
+
+  it('shared server-function code uses only web APIs', () => {
+    const dir = join(SRC, '..', 'supabase', 'functions', '_shared');
+    const shared = existsSync(dir) ? files(dir).map((p) => ({ path: p, text: readFileSync(p, 'utf8') })) : [];
+    expect(shared.length).toBeGreaterThan(0);
+    expect(shared.filter((f) => /\bDeno\.|\bprocess\./.test(f.text)).map((f) => f.path)).toEqual([]);
+  });
 });
+
