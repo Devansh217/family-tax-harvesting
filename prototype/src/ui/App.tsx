@@ -12,7 +12,10 @@ import { Svg, Icon } from './parts';
 import { Home } from './screens/Home';
 import { MemberScreen } from './screens/Member';
 import { Plan } from './screens/Plan';
+import { Admin } from './screens/Admin';
 import { Compare } from './screens/Compare';
+import { isAdmin } from '../storage/admin';
+import { viewedContext } from './viewing';
 import { Setup } from './screens/Setup';
 import { Simulate } from './screens/Simulate';
 import { Family } from './screens/Family';
@@ -97,13 +100,19 @@ function Main({ initial }: { initial: AppState }) {
     setState((s) => ({ ...s, history: addSnapshot(s.history, snap) }));
   }, [fam, market.latest, live, state.history, state.members.length]);
 
-  const ctx: Ctx = {
-    state, fam, famPrev, market, cloud, asOf, toast,
+  const [viewed, setViewed] = useState<{ state: AppState; name: string } | null>(null);
+  const [admin, setAdmin] = useState(false);
+  useEffect(() => { if (cloud.session) void isAdmin().then(setAdmin); else { setAdmin(false); setViewed(null); } }, [cloud.session]);
+
+  const own: Ctx = {
+    state, fam, famPrev, market, cloud, asOf, toast, viewing: null,
     update: (fn) => setState((s) => fn(s)),
     go: (r) => { location.hash = r; },
     indexOf: (id) => Math.max(0, state.members.findIndex((m) => m.id === id)),
     nameOf: (id) => state.members.find((m) => m.id === id)?.name ?? 'Unknown',
   };
+  // While viewing another family, every screen shows theirs read-only; sync above keeps using the founder's own state.
+  const ctx = viewed ? viewedContext(own, viewed.state, viewed.name) : own;
 
   const tab = route.startsWith('member-') ? 'home' : route;
   const days = daysBetween(asOf, FY_2026_27.end);
@@ -113,6 +122,7 @@ function Main({ initial }: { initial: AppState }) {
   else if (route === 'simulate') screen = <Simulate />;
   else if (route === 'compare') screen = <Compare />;
   else if (route === 'setup') screen = <Setup />;
+  else if (route === 'admin') screen = <Admin onView={(s, name) => { setViewed({ state: s, name }); location.hash = 'home'; }} />;
   else if (route === 'family') screen = <Family />;
   else if (route === 'import') screen = <Import />;
   else if (route === 'about') screen = <About />;
@@ -131,6 +141,7 @@ function Main({ initial }: { initial: AppState }) {
               {TABS.map((t) => (
                 <a key={t.route} href={`#${t.route}`} aria-current={tab === t.route ? 'page' : undefined}>{t.label}</a>
               ))}
+              {admin && <a href="#admin" aria-current={tab === 'admin' ? 'page' : undefined}>Admin</a>}
             </nav>
             <span className="spacer" />
             <a className="privacy-note" href="#about" style={{ textDecoration: 'none' }}><Svg size={14}>{Icon.lock}</Svg>{cloud.session ? 'Saved to your account' : 'Your files stay in this browser'}</a>
@@ -142,6 +153,12 @@ function Main({ initial }: { initial: AppState }) {
         <main>
           {saveFailed && (
             <div className="banner warn" role="status">This browser is not saving data (private window or storage blocked). Changes will be lost when you close the tab.</div>
+          )}
+          {viewed && (
+            <div className="banner warn" role="status">
+              <span className="grow">Viewing {viewed.name}&rsquo;s family, read-only. Nothing you do here is saved.</span>
+              <button className="btn sm" type="button" onClick={() => { setViewed(null); location.hash = 'admin'; }}>Close</button>
+            </div>
           )}
           <ChooseCopy />
           {screen}
