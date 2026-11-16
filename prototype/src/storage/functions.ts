@@ -13,8 +13,14 @@ export const supabaseInvoke: Invoke = async (name, opts) => {
   return { data: null, error: { status, message: error.message } };
 };
 
+/** The stored sign-in has ended (expired or revoked); the person has to sign in again. */
+export class SignInRequired extends Error {
+  constructor() { super('Your sign-in has ended. Sign in again to keep saving; your family is safe in this browser.'); }
+}
+
 const fail = (e: { status?: number; message: string }): never => {
-  throw new Error(e.status === 401 ? 'Sign in again to save your family.' : friendly(e.message));
+  if (e.status === 401) throw new SignInRequired();
+  throw new Error(friendly(e.message));
 };
 
 /**

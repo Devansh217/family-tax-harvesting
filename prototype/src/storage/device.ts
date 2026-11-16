@@ -51,7 +51,7 @@ export async function loadLocal(ks: KeyStore = indexedDbKeyStore): Promise<LoadR
       await saveLocal(state, ks);
       return { state, status: 'ok' };
     }
-    const key = await ks.get();
+    const key = (await keys.get(ks)) ?? (await ks.get());
     if (!key) return { state: null, status: 'unreadable' };
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(parsed.iv!), additionalData: AAD }, key, fromB64(parsed.ct!));
     const state = normalizeState(JSON.parse(new TextDecoder().decode(plain)) as AppState);
@@ -61,14 +61,30 @@ export async function loadLocal(ks: KeyStore = indexedDbKeyStore): Promise<LoadR
   }
 }
 
-/** Encrypts and saves the family in this browser; false when storage is blocked (private window). */
-export async function saveLocal(s: AppState, ks: KeyStore = indexedDbKeyStore): Promise<boolean> {
+/** One key per store, created once even when several saves start together (a second key would orphan the first copy). */
+const keys = new WeakMap<KeyStore, Promise<CryptoKey>>();
+function deviceKey(ks: KeyStore): Promise<CryptoKey> {
+  let p = keys.get(ks);
+  if (!p) {
+    p = (async () => {
+      const found = await ks.get();
+      if (found) return found;
+      const k = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+      await ks.put(k);
+      return k;
+    })();
+    p.catch(() => keys.delete(ks));
+    keys.set(ks, p);
+  }
+  return p;
+}
+
+/** Saves run one at a time and only the newest waiting family is written, so an older save never lands last. */
+const queues = new WeakMap<KeyStore, { running: Promise<void> | null; latest: AppState | null; waiters: Array<(ok: boolean) => void> }>();
+
+async function writeOnce(s: AppState, ks: KeyStore): Promise<boolean> {
   try {
-    let key = await ks.get();
-    if (!key) {
-      key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-      await ks.put(key);
-    }
+    const key = await deviceKey(ks);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: AAD }, key, new TextEncoder().encode(JSON.stringify(s)));
     localStorage.setItem(LOCAL_KEY, JSON.stringify({ v: 1, kid: 'device', iv: toB64(iv), ct: toB64(new Uint8Array(ct)) }));
@@ -76,6 +92,27 @@ export async function saveLocal(s: AppState, ks: KeyStore = indexedDbKeyStore): 
   } catch {
     return false;
   }
+}
+
+/** Encrypts and saves the family in this browser; false when storage is blocked (private window). */
+export function saveLocal(s: AppState, ks: KeyStore = indexedDbKeyStore): Promise<boolean> {
+  let q = queues.get(ks);
+  if (!q) { q = { running: null, latest: null, waiters: [] }; queues.set(ks, q); }
+  const queue = q;
+  queue.latest = s;
+  const done = new Promise<boolean>((resolve) => queue.waiters.push(resolve));
+  if (!queue.running) {
+    queue.running = (async () => {
+      while (queue.latest) {
+        const next = queue.latest, waiting = queue.waiters.splice(0);
+        queue.latest = null;
+        const ok = await writeOnce(next, ks);
+        waiting.forEach((w) => w(ok));
+      }
+      queue.running = null;
+    })();
+  }
+  return done;
 }
 
 /** What to show first: the saved family; else, for someone signed in, an empty family (their account copy loads next); else the sample. */

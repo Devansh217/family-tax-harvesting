@@ -4,7 +4,9 @@ import { familyStore, loadProfile, saveProfile, type CloudFamily, type Profile }
 import { sampleState } from '../sample';
 import { hasRealData, normalizeState, type AppState } from '../store';
 
-export type SyncStatus = 'signed-out' | 'loading' | 'choose' | 'saving' | 'saved' | 'error';
+import { afterConflict, failureKind, shouldSave, type SyncStatus } from './syncPolicy';
+
+export type { SyncStatus };
 
 export interface Cloud {
   ready: boolean;
@@ -40,6 +42,10 @@ export function useCloud(state: AppState, setState: Dispatch<SetStateAction<AppS
   const version = useRef<number | null>(null);
   const loadedFor = useRef<string | null>(null);
   const lastSaved = useRef('');
+  // The account copy loaded (or was found empty) for this sign-in; until then nothing is saved.
+  const loaded = useRef(false);
+  // The family whose save just failed: not retried until it changes (no retry loop).
+  const failedJson = useRef<string | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
   const uid = session?.user.id ?? null;
@@ -60,11 +66,24 @@ export function useCloud(state: AppState, setState: Dispatch<SetStateAction<AppS
     setState(s);
   }, [setState]);
 
+  /** An ended sign-in: stop, sign out on this device only (the family stays in this browser), ask to sign in again. */
+  const onFailure = useCallback(async (e: unknown) => {
+    if (failureKind(e) === 'signin') {
+      setStatus('signin');
+      toast((e as Error).message);
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+      return;
+    }
+    setStatus('error');
+    toast((e as Error).message);
+  }, [toast]);
+
   // Load profile and family when someone signs in.
   useEffect(() => {
     if (!uid) {
       loadedFor.current = null;
       version.current = null;
+      loaded.current = false;
       setProfileState(null);
       setPending(null);
       setStatus('signed-out');
@@ -75,8 +94,8 @@ export function useCloud(state: AppState, setState: Dispatch<SetStateAction<AppS
     setStatus('loading');
     void (async () => {
       try {
-        const [loaded, cloud] = await Promise.all([loadProfile(uid), familyStore.load(uid)]);
-        let p = loaded;
+        const [profileRow, cloud] = await Promise.all([loadProfile(uid), familyStore.load(uid)]);
+        let p = profileRow;
         // Fill a missing name from the login (Google shares it) and keep it on the profile.
         if (p && (!p.first_name || !p.last_name) && session?.user) {
           const fromLogin = namesFromLogin(session.user.user_metadata);
@@ -99,30 +118,35 @@ export function useCloud(state: AppState, setState: Dispatch<SetStateAction<AppS
         } else {
           version.current = null;
         }
+        loaded.current = true;
         // Greet the owner by name instead of "You".
         if (p?.first_name) {
           setState((s) => ({ ...s, members: s.members.map((m) => (m.relation === 'self' && m.name === 'You' ? { ...m, name: p.first_name } : m)) }));
         }
         setStatus('saved');
       } catch (e) {
-        setStatus('error');
-        toast((e as Error).message);
+        await onFailure(e);
       }
     })();
-  }, [uid, applyAccountCopy, setState, toast]);
+  }, [uid, applyAccountCopy, setState, toast, onFailure]);
 
   // Save changes to the account, a moment after the last edit.
   useEffect(() => {
-    if (!uid || status === 'loading' || status === 'choose' || status === 'signed-out' || state.isSample) return;
     const json = JSON.stringify(state);
-    if (json === lastSaved.current) return;
+    if (!shouldSave({ uid, status, isSample: state.isSample, loaded: loaded.current, json, lastSaved: lastSaved.current, failedJson: failedJson.current })) return;
     setStatus('saving');
     const t = window.setTimeout(async () => {
       try {
-        const r = await familyStore.save(uid, state, version.current);
+        const r = await familyStore.save(uid!, state, version.current);
         if (r === 'conflict') {
-          const cloud = await familyStore.load(uid);
+          const cloud = await familyStore.load(uid!);
           if (cloud) {
+            if (afterConflict(version.current, stateRef.current, cloud.state) === 'choose') {
+              version.current = cloud.version;
+              setPending(cloud);
+              setStatus('choose');
+              return;
+            }
             version.current = cloud.version;
             applyAccountCopy(cloud.state);
             toast('Loaded newer changes saved from another device');
@@ -131,14 +155,15 @@ export function useCloud(state: AppState, setState: Dispatch<SetStateAction<AppS
           version.current = r;
           lastSaved.current = json;
         }
+        failedJson.current = null;
         setStatus('saved');
       } catch (e) {
-        setStatus('error');
-        toast((e as Error).message);
+        failedJson.current = json;
+        await onFailure(e);
       }
     }, 1200);
     return () => window.clearTimeout(t);
-  }, [state, uid, status, applyAccountCopy, toast]);
+  }, [state, uid, status, applyAccountCopy, toast, onFailure]);
 
   return {
     ready, session, profile, status, pending, recovering,
@@ -148,6 +173,7 @@ export function useCloud(state: AppState, setState: Dispatch<SetStateAction<AppS
       if (!pending) return;
       applyAccountCopy(pending.state);
       setPending(null);
+      loaded.current = true;
       setStatus('saved');
     },
     keepThisBrowser: () => {
@@ -155,6 +181,8 @@ export function useCloud(state: AppState, setState: Dispatch<SetStateAction<AppS
       version.current = pending.version;
       lastSaved.current = '';
       setPending(null);
+      loaded.current = true;
+      failedJson.current = null;
       setStatus('saved');
     },
     signOutAndClear: async () => {

@@ -10,7 +10,8 @@ const STATUS_TEXT = {
   choose: 'Waiting for you to choose which copy to keep',
   saving: 'Saving…',
   saved: 'All changes saved to your account',
-  error: 'Could not save. Changes are kept in this browser and will retry.',
+  error: 'Could not save. Your changes are kept in this browser; the next change tries again.',
+  signin: 'Your sign-in has ended. Sign in again to keep saving; your family is safe in this browser.',
 } as const;
 
 function GoogleButton({ onError }: { onError: (m: string) => void }) {

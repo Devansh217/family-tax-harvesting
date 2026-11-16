@@ -54,4 +54,15 @@ describe('the family saved in this browser', () => {
     expect(key?.extractable).toBe(false);
     expect((await loadLocal(indexedDbKeyStore)).status).toBe('ok');
   });
+
+  it('review: saves made in quick succession keep the last one, and the first saves create one key', async () => {
+    let puts = 0;
+    const base = memoryKeyStore();
+    const ks = { get: base.get, put: async (k: CryptoKey) => { puts++; await new Promise((r) => setTimeout(r, 5)); await base.put(k); } };
+    const states = [1, 2, 3, 4, 5].map((n) => ({ ...family(), members: [{ ...family().members[0]!, name: `V${n}` }] }));
+    await Promise.all(states.map((s) => saveLocal(s, ks)));
+    expect(puts).toBe(1);
+    expect((await loadLocal(ks)).state?.members[0]?.name).toBe('V5');
+  });
 });
+
