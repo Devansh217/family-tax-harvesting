@@ -1,6 +1,6 @@
 # Secure storage: design
 
-17 Nov 2026 · Status: **draft, for the founder's approval.**
+17 Nov 2026 · Status: **approved by the founder, 17 Nov 2026.**
 
 Background: `docs/PLANNER-NOTES.md` (decisions, data tiers, security to-do), `docs/superpowers/specs/2026-11-16-architecture-design.md` (approach A: Supabase plus server functions, one engine).
 
