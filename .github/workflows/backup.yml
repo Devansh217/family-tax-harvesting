@@ -1,0 +1,55 @@
+name: Nightly encrypted backup
+
+# Supabase's free plan has no backups, so this job dumps the database every night, encrypts it with age to the
+# public key in prototype/backup-recipient.txt, and keeps it as an artifact for 30 days. The private key exists only
+# offline with the founder, so the artifact is unreadable to anyone else, even though this repo is public; the
+# families inside are encrypted a second time with the family key. Running nightly also keeps the free project awake.
+# Spec: docs/superpowers/specs/2026-11-17-secure-storage-design.md §5.6. Restore test: npm run restore-test (local).
+
+on:
+  schedule:
+    - cron: '30 21 * * *' # 03:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: prototype/backup-recipient.txt
+          sparse-checkout-cone-mode: false
+      - name: Tools
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17 age > /dev/null
+      - name: Dump, pack and encrypt
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          umask 077
+          work="$RUNNER_TEMP/backup"; mkdir -p "$work"; cd "$work"
+          /usr/lib/postgresql/17/bin/pg_dump "$SUPABASE_DB_URL" --schema=public --no-owner --no-privileges -Fc -f public.dump
+          /usr/lib/postgresql/17/bin/psql "$SUPABASE_DB_URL" -qc "\copy (select id, email from auth.users) to users.csv csv header"
+          tar czf backup.tgz public.dump users.csv
+          age -r "$(tr -d '[:space:]' < "$GITHUB_WORKSPACE/prototype/backup-recipient.txt")" -o "backup-$(date -u +%F).tgz.age" backup.tgz
+          rm -f public.dump users.csv backup.tgz
+          ls -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backup
+          path: ${{ runner.temp }}/backup/*.tgz.age
+          retention-days: 30
+          if-no-files-found: error

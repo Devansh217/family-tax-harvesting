@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "check:private": "vite-node scripts/check-private.ts",
     "build:engine": "vite-node scripts/build-engine.ts",
-    "supabase": "npx --yes supabase@2"
+    "supabase": "npx --yes supabase@2",
+    "restore-test": "vite-node scripts/restore-test.ts"
   },
   "dependencies": {
     "@fontsource/bricolage-grotesque": "^5.3.0",
