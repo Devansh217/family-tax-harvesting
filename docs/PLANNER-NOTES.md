@@ -137,7 +137,7 @@ Before the beta (data is readable on the server, so these are required):
 - [ ] Encrypt the family data saved in the browser (it is plain text in `localStorage` today).
 - [ ] Lock the page to our own scripts (Content Security Policy); host the fonts ourselves instead of loading Google Fonts.
 - [ ] Turn on two-factor sign-in (passkey or authenticator app).
-- [ ] Check the Supabase project's region; move to Mumbai (`ap-south-1`) before the public launch.
+- [x] Region checked: Singapore (`ap-southeast-1`); kept for the beta (17 Nov 2026). Recheck SEBI record rules before the public launch.
 - [ ] Limit who has admin access to the Supabase project and keep the secret key out of the code and repo.
 - [ ] Delete an account and all its data within a day of the request.
 - [ ] Consent per family member, and parental consent for children's data, under India's data protection law.

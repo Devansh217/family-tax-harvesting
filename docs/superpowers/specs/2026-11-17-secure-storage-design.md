@@ -21,7 +21,7 @@ Before any beta invite, the copy of a family kept on the server must be safe eno
 4. Nightly encrypted backups, with a restore tested once before invites and monthly after.
 5. The copy kept in the browser is encrypted too.
 6. Account and data deletion in one step.
-7. A new project in Mumbai; the founder's family moved over.
+7. The existing project (Singapore, `ap-southeast-1`) upgraded in place; the founder's family moved from `family_data` into `families`.
 8. Smaller hardening: two-factor sign-in for the admin, the page limited to its own scripts, fonts hosted with the site, the secret key never in the repo, consent for children's data.
 9. A minimal admin screen for the founder: enrol two-factor, list families (metadata only), read one with a reason.
 10. Google-only sign-in for the beta: the email-and-password forms are hidden (the code stays for later).
@@ -36,7 +36,7 @@ Before any beta invite, the copy of a family kept on the server must be safe eno
 - Anything that needs a paid plan. The founder has no budget (17 Nov 2026); everything runs on Supabase Free and GitHub's free tier.
 - Any path that lets the founder read a family without a log entry, short of deliberately extracting the key.
 - Statements, PDF passwords, full PAN or portal logins reaching the server (unchanged rule).
-- Losing a family's data in the move to the new project.
+- Losing a family's data in the move into the encrypted table.
 
 ## 3. Constraints
 
@@ -67,7 +67,7 @@ public.admin_reads       id · family_user_id · admin_user_id · reason text ·
 public.admins            user_id pk (who may call admin-read; one row: the founder)
 ```
 
-`family_data` (today's table) is not carried over to the new project.
+`family_data` (today's plain table) is dropped once the founder's family is in `families` (5.5).
 
 **The envelope** (what `families.envelope` holds):
 
@@ -109,20 +109,22 @@ public.admins            user_id pk (who may call admin-read; one row: the found
 - Loading becomes asynchronous: the app shows a short "Opening your family…" state until the browser copy is decrypted (today `loadState` is synchronous).
 - What it protects: data read off the disk, synced browser profiles and casual inspection. It does not protect against a script running inside the page; that is what 5.7 is for.
 
-### 5.5 New project and moving over
+### 5.5 Upgrading the existing project and moving over
 
-1. The founder creates a project on the Free plan in **Mumbai (`ap-south-1`)** in his organisation, turns on Google sign-in (adds the new callback URL in Google Cloud), and sets function secrets. A step-by-step guide is part of the build (the founder does the dashboard and Google console steps; nothing needs a password typed by Claude).
+**Region (decided by the founder, 17 Nov 2026):** keep the existing project `iaesqhisslztykbglcck` in **Singapore (`ap-southeast-1`)** for the beta. India's DPDP Act does not require data to stay in India; whether SEBI adviser record rules do is rechecked before the public launch. Reusing it means no new project, no new Google sign-in setup and no change to the app's project URL or Content Security Policy.
+
+1. The founder turns off email sign-ups, generates the family and backup keys, and sets function secrets. A step-by-step guide is part of the build (`docs/guides/secure-storage-setup.md`; nothing needs a password typed by Claude).
 2. Schema and functions are deployed with the Supabase CLI from `prototype/supabase/`.
-3. The app's project URL and publishable key point at the new project; deploy.
+3. The app (already pointing at this project) is deployed with the new storage code, after the migration and functions are live.
 4. The founder signs in on the live site with Google. His browser still holds his family, the new account is empty, so the existing "keep this browser" flow uploads it, encrypted.
-5. The old project's data is deleted and the project removed once the founder confirms his family is on the new project. (Before that, the guide shows the `family_data` row count as a last check; the founder confirmed on 17 Nov 2026 that only his family is there.)
+5. Once the founder confirms his family loads from `families`, the plain `family_data` table is dropped. (Before that, the guide shows its row count as a last check; the founder confirmed on 17 Nov 2026 that only his family is there.)
 
 ### 5.6 Backups
 
-- **Nightly** GitHub Actions workflow (`.github/workflows/backup.yml`, free on a public repo): `pg_dump` of the new project's `public` schema through the IPv4 session pooler connection string (Actions secret), compressed, encrypted with [`age`](https://age-encryption.org) to a public key committed in the repo, uploaded as an artifact kept 30 days.
+- **Nightly** GitHub Actions workflow (`.github/workflows/backup.yml`, free on a public repo): `pg_dump` of the project's `public` schema through the IPv4 session pooler connection string (Actions secret), compressed, encrypted with [`age`](https://age-encryption.org) to a public key committed in the repo, uploaded as an artifact kept 30 days.
 - The `age` private key exists only offline with the founder. A downloaded artifact is unreadable without it, and the families inside are encrypted a second time (5.1).
 - The nightly job also keeps the free project from pausing.
-- **Restore test:** a local script the founder runs on his own machine (`npm run restore-test`), so the `age` private key and the family keys never go to GitHub. It downloads the latest artifact, decrypts it, restores it into a throwaway schema `restore_test` in the **new** project (so the data never leaves Mumbai and no second project is needed), checks that the families row count matches and that one envelope decrypts with the family key from the founder's password manager, then drops the schema. Run once before invites, then monthly (a calendar reminder, not code).
+- **Restore test:** a local script the founder runs on his own machine (`npm run restore-test`), so the `age` private key and the family keys never go to GitHub. It downloads the latest artifact, decrypts it, reads the decrypted backup locally (`pg_restore --list`, then the `families` rows) without writing to any database, checks that the families row count matches and that one envelope decrypts with the family key from the founder's password manager, then drops the schema. Run once before invites, then monthly (a calendar reminder, not code).
 - **Re-linking after a total loss:** the nightly job also exports `auth.users(id, email)` into the same `age`-encrypted file, so after a lost project the founder can match restored families to people who sign in again. No plain email table is kept in the database.
 
 ### 5.7 Smaller hardening
@@ -144,7 +146,7 @@ public.admins            user_id pk (who may call admin-read; one row: the found
 | Encrypt the browser copy | 5.4 |
 | CSP and self-hosted fonts | 5.7 |
 | Two-factor sign-in | 5.7 (admin required; Google's for families) |
-| Mumbai region | 5.5 |
+| Mumbai region | **Kept Singapore** for the beta (founder, 17 Nov 2026); recheck before the public launch (5.5) |
 | Limit admin access, secret key out of repo | 5.7 |
 | Delete account within a day | 5.2 `DELETE` (immediate) |
 | Consent incl. children | 5.3 |
@@ -166,7 +168,7 @@ public.admins            user_id pk (who may call admin-read; one row: the found
 - The account holder's name (`profiles`) and sign-in email stay readable on the server; only family data is encrypted.
 - Account deletion is immediate rather than "within a day".
 - Backup artifacts kept 30 days (GitHub allows up to 90).
-- The restore test runs on the founder's machine into a throwaway schema in the new project, so backup and family keys never go to GitHub and data never leaves Mumbai.
+- The restore test runs on the founder's machine and reads the backup locally, so backup and family keys never go to GitHub.
 - A minimal admin screen with two-factor enrolment and a family list is part of this build.
 - Google-only sign-in for the beta; email and password hidden, not removed.
 - `/v0.1/` is taken off the live site because it shares the origin.
@@ -175,4 +177,5 @@ public.admins            user_id pk (who may call admin-read; one row: the found
 
 ## 9. Answered by the founder
 
-- **Only the founder has a saved family on the old project (17 Nov 2026).** The move is his browser re-uploading his family to the new project (5.5); the guide still shows the row count before the old project is deleted, as a last check.
+- **Only the founder has a saved family in `family_data` (17 Nov 2026).** The move is his browser re-uploading his family into `families` (5.5); the guide shows the row count before `family_data` is dropped, as a last check.
+- **Region: keep Singapore for the beta (17 Nov 2026).** The existing project is upgraded in place (5.5).

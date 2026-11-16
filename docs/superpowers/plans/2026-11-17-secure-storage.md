@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Every family on the server is encrypted with a key the database doesn't hold, reached only through server functions that log admin reads; backups run nightly and encrypted; the browser copy is encrypted; the app moves to a new Mumbai project, all on free tiers.
+**Goal:** Every family on the server is encrypted with a key the database doesn't hold, reached only through server functions that log admin reads; backups run nightly and encrypted; the browser copy is encrypted; the existing project (Singapore, kept for the beta by the founder on 17 Nov 2026) is upgraded in place, all on free tiers.
 
 **Architecture:** Two Supabase Edge Functions (`family`, `admin`) hold all family access. Their logic lives in pure TypeScript under `prototype/supabase/functions/_shared/` with injected database and auth dependencies, so Vitest tests it without Deno or a database; the Deno entry files only wire Supabase clients and secrets. The app swaps `familyStore` to call the functions (the `FamilyStore` interface from the foundation stays), encrypts its `localStorage` copy with a non-extractable WebCrypto key, and gains an admin screen. A GitHub Actions job backs up nightly with `age`.
 
@@ -204,7 +204,7 @@
 - Modify: `prototype/src/cloud.ts` (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` of the new project), `prototype/index.html` (CSP `connect-src` project ref), `prototype/backup-recipient.txt`, `docs/PLANNER-NOTES.md` (security to-do ticked per the spec's section 6)
 
 **Guide steps (the founder does each; Claude never types a password, key or code):**
-1. Create a Free-plan project in **Mumbai (ap-south-1)**; note its ref, URL and publishable key.
+1. *(Changed 17 Nov 2026: the founder keeps the existing Singapore project `iaesqhisslztykbglcck`, so no new project, no new Google client and no change to `cloud-config.ts` or the CSP. The guide in `docs/guides/secure-storage-setup.md` is the source of truth for these steps.)*
 2. Google sign-in: add the new callback `https://<ref>.supabase.co/auth/v1/callback` to the Google OAuth client; enable Google in Authentication → Providers; set Site URL and redirect URLs to the Pages URL and `http://localhost:5199`.
 3. Generate keys on his machine: `openssl rand -base64 32` (family key `k1`) and `age-keygen` (backup key); save both in his password manager; paste the `age` public key into `prototype/backup-recipient.txt`.
 4. `npx supabase@2 login`, `npx supabase@2 link --project-ref <ref>`, `npx supabase@2 db push`, `npx supabase@2 secrets set FAMILY_KEYS='{"k1":"…"}' FAMILY_KEY_CURRENT=k1`, `npx supabase@2 functions deploy family admin`.
@@ -218,7 +218,7 @@
 
 - [ ] **Step 1:** Write the guide (each step: where to click or what to run, and how to tell it worked).
 - [ ] **Step 2:** After the founder completes steps 1–5, update `cloud.ts`, the CSP and `backup-recipient.txt`; `npm test && npm run build`.
-- [ ] **Step 3:** Commit: `git commit -am "Point the app at the new Mumbai project; setup guide"`
+- [ ] **Step 3:** Commit: `git commit -am "Backup recipient and setup guide"`
 
 ### Task 11: Whole-branch check
 
