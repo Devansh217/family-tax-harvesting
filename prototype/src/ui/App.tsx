@@ -3,8 +3,9 @@ import { daysBetween, todayISO } from '../engine/dates';
 import { computeFamily } from '../engine/family';
 import { newShownRecords } from '../engine/records';
 import { FY_2026_27 } from '../engine/rules';
-import { sampleState } from '../sample';
-import { loadState, saveState, type AppState } from '../store';
+import type { AppState } from '../store';
+import { initialFamily, loadLocal, saveLocal } from '../storage/device';
+import { supabase } from '../cloud';
 import { AppCtx, type Ctx } from './app-context';
 import { addSnapshot, loadMarket, snapshotOf, withFunds, withPrices, type Market } from './market';
 import { Svg, Icon } from './parts';
@@ -31,15 +32,29 @@ const TABS = [
 
 const readRoute = () => (location.hash.replace(/^#/, '') || 'home');
 
+/** Opens the family saved in this browser (it is encrypted, so this is asynchronous), then shows the app. */
 export function App() {
-  const [state, setState] = useState<AppState>(() => loadState() ?? sampleState());
+  const [initial, setInitial] = useState<AppState | null>(null);
+  useEffect(() => {
+    void Promise.all([loadLocal(), supabase.auth.getSession()]).then(([local, { data }]) => setInitial(initialFamily(local, !!data.session)));
+  }, []);
+  if (!initial) {
+    return (
+      <div className="shell"><main><p className="muted" role="status" style={{ marginTop: 48, textAlign: 'center' }}>Opening your family…</p></main></div>
+    );
+  }
+  return <Main initial={initial} />;
+}
+
+function Main({ initial }: { initial: AppState }) {
+  const [state, setState] = useState<AppState>(initial);
   const [route, setRoute] = useState(readRoute);
   const [toastMsg, setToast] = useState<string | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const timer = useRef<number>();
   const asOf = todayISO();
 
-  useEffect(() => setSaveFailed(!saveState(state)), [state]);
+  useEffect(() => { void saveLocal(state).then((ok) => setSaveFailed(!ok)); }, [state]);
   useEffect(() => {
     const on = () => { setRoute(readRoute()); window.scrollTo({ top: 0 }); };
     window.addEventListener('hashchange', on);
