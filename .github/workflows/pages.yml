@@ -39,11 +39,11 @@ jobs:
           curl -sfL "${{ steps.pages.outputs.base_url }}/prices/latest.json" -o "$px/prev-latest.json" || true
           curl -sfL "${{ steps.pages.outputs.base_url }}/prices/previous.json" -o "$px/prev-previous.json" || true
           npx vite-node scripts/build-prices.ts "$px" dist
-      # Prototype at the site root; the original single-file v0.1 stays at /v0.1/
+      # The app at the site root. The old single-file v0.1 is no longer published: it shared this origin with the
+      # encrypted browser copy and had no Content Security Policy (secure storage spec §5.7). Its source stays in the repo.
       - run: |
-          mkdir -p ../_site/v0.1
+          mkdir -p ../_site
           cp -r dist/. ../_site/
-          cp ../index.html ../_site/v0.1/index.html
       - uses: actions/upload-pages-artifact@v3
   deploy:
     needs: build
