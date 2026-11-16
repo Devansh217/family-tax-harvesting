@@ -1,6 +1,4 @@
 import { friendly, supabase } from '../cloud';
-import type { AppState } from '../store';
-import type { CloudFamily, FamilyStore } from './index';
 
 export interface Profile { first_name: string; last_name: string }
 
@@ -15,35 +13,9 @@ export async function saveProfile(userId: string, p: Profile) {
   if (error) throw new Error(friendly(error.message));
 }
 
-/** Families in the `family_data` table: one row per account, readable only by its owner (row-level security). */
-export const supabaseFamilyStore: FamilyStore = {
-  async load(userId) {
-    const { data, error } = await supabase.from('family_data').select('state, version').eq('user_id', userId).maybeSingle();
-    if (error) throw new Error(friendly(error.message));
-    return data as CloudFamily | null;
-  },
-
-  async save(userId: string, state: AppState, knownVersion: number | null) {
-    if (knownVersion == null) {
-      const { error } = await supabase.from('family_data').insert({ user_id: userId, state, version: 1 });
-      if (error) {
-        if (error.code === '23505') return 'conflict';
-        throw new Error(friendly(error.message));
-      }
-      return 1;
-    }
-    const { data, error } = await supabase
-      .from('family_data')
-      .update({ state, version: knownVersion + 1 })
-      .eq('user_id', userId)
-      .eq('version', knownVersion)
-      .select('version');
-    if (error) throw new Error(friendly(error.message));
-    return data && data.length ? (data[0] as { version: number }).version : 'conflict';
-  },
-
-  async remove(userId) {
-    const { error } = await supabase.from('family_data').delete().eq('user_id', userId);
-    if (error) throw new Error(friendly(error.message));
-  },
-};
+/** When the founder opened this family through the logged admin function (row-level security: own rows only). */
+export async function listMyAdminReads(): Promise<Array<{ at: string; reason: string }>> {
+  const { data, error } = await supabase.from('admin_reads').select('at, reason').order('at', { ascending: false });
+  if (error) throw new Error(friendly(error.message));
+  return (data ?? []) as Array<{ at: string; reason: string }>;
+}

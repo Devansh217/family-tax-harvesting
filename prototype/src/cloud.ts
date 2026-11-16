@@ -8,6 +8,9 @@ import { createClient, type Session } from '@supabase/supabase-js';
 export const SUPABASE_URL = 'https://iaesqhisslztykbglcck.supabase.co';
 export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_CNFrds5IHwjo7O5pZ-x7GQ_rcpzng24';
 
+/** Beta: Google sign-in only. Supabase's built-in email sender reaches only the project team (secure storage spec §3). */
+export const SHOW_EMAIL_SIGNIN = false;
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 });
