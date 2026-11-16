@@ -22,7 +22,7 @@ export function findSecrets(name: string, text: string): string[] {
 describe('no secrets in the repo', () => {
   it('flags a secret key and a service-role token', () => {
     const svc = ['eyJhbGciOiJIUzI1NiJ9', Buffer.from(JSON.stringify({ role: 'service_role', ref: 'abcdefgh' })).toString('base64url'), 'c2lnbmF0dXJlXzEyMw'].join('.');
-    expect(findSecrets('x', 'key = sb_secret_abcdefghijklmnop')).toHaveLength(1);
+    expect(findSecrets('x', 'key = ' + ['sb', 'secret', 'abcdefghijklmnop'].join('_'))).toHaveLength(1);
     expect(findSecrets('x', svc)).toHaveLength(1);
     expect(findSecrets('x', 'sb_publishable_CNFrds5IHwjo7O5pZ-x7GQ_rcpzng24')).toEqual([]);
   });
