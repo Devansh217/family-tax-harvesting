@@ -115,7 +115,7 @@ public.admins            user_id pk (who may call admin-read; one row: the found
 2. Schema and functions are deployed with the Supabase CLI from `prototype/supabase/`.
 3. The app's project URL and publishable key point at the new project; deploy.
 4. The founder signs in on the live site with Google. His browser still holds his family, the new account is empty, so the existing "keep this browser" flow uploads it, encrypted.
-5. The old project's data is deleted and the project removed once the founder confirms his family is on the new project. (Before that, the guide has him check that `family_data` holds only his row; see section 9.)
+5. The old project's data is deleted and the project removed once the founder confirms his family is on the new project. (Before that, the guide shows the `family_data` row count as a last check; the founder confirmed on 17 Nov 2026 that only his family is there.)
 
 ### 5.6 Backups
 
@@ -173,6 +173,6 @@ public.admins            user_id pk (who may call admin-read; one row: the found
 
 *Left to the builder:* exact function file layout under `prototype/supabase/functions/`; how the guide for the founder's dashboard steps is written (a short Markdown checklist or the `wizard` skill); font subsetting; CSP details needed by Vite's build output.
 
-## 9. Open with the founder
+## 9. Answered by the founder
 
-- Does anyone besides the founder have a saved family in the old project's `family_data`? If yes, the move needs a server-side copy of their rows (decrypt-free, since they are plain today), matched by email, instead of relying on each browser.
+- **Only the founder has a saved family on the old project (17 Nov 2026).** The move is his browser re-uploading his family to the new project (5.5); the guide still shows the row count before the old project is deleted, as a last check.
