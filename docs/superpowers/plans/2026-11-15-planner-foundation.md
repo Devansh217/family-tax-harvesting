@@ -1,6 +1,6 @@
 # Planner Foundation Implementation Plan
 
-**Status (16 Nov 2026): ready; building.** Checked against all ten research notes and the founder's 15–16 Nov decisions. Changes from that check: Task 0 (architecture), the ₹12 L-aware harvest room in Task 5, small-savings rates with a date and EPF in Task 9, and the gift-to-parent warning in Task 9. Everything else in the research belongs to the beta and full-planner projects.
+**Status (16 Nov 2026): done, merged (PR #1) and live.** See the status table in the spec. Checked against all ten research notes and the founder's 15–16 Nov decisions. Changes from that check: Task 0 (architecture), the ₹12 L-aware harvest room in Task 5, small-savings rates with a date and EPF in Task 9, and the gift-to-parent warning in Task 9. Everything else in the research belongs to the beta and full-planner projects.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
