@@ -77,11 +77,11 @@ function Main({ initial }: { initial: AppState }) {
   const live = !state.isSample;
   const securities = useMemo(() => withFunds(state.securities, market.funds, state.taxTypeOverrides), [state.securities, market.funds, state.taxTypeOverrides]);
   const fam = useMemo(
-    () => computeFamily(live ? { ...state, securities: withPrices(securities, market.latest) } : state, asOf, FY_2026_27),
+    () => computeFamily(live ? { ...state, securities: withPrices(securities, market.latest), funds: market.funds?.funds } : state, asOf, FY_2026_27),
     [state, securities, asOf, market, live],
   );
   const famPrev = useMemo(
-    () => (live && market.previous ? computeFamily({ ...state, securities: withPrices(securities, market.previous) }, asOf, FY_2026_27) : null),
+    () => (live && market.previous ? computeFamily({ ...state, securities: withPrices(securities, market.previous), funds: market.funds?.funds }, asOf, FY_2026_27) : null),
     [state, securities, asOf, market, live],
   );
 

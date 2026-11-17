@@ -258,3 +258,64 @@ describe('ELSS lock-in and the move floor', () => {
     expect(small.moves.filter((x) => x.kind === 'harvest_gain')).toHaveLength(0);
   });
 });
+
+describe('switch regular plans to direct', () => {
+  const fundsOf = (over: Partial<Security>[]): Security[] => over.map((o, i) => ({ isin: `INF${i}`, name: `F${i}`, taxType: 'equity' as const, listed: false, category: 'Equity Scheme - Large Cap Fund', ...o }));
+
+  it('switch takes room first: the regular fund switches inside the room, the direct fund gets the rest', () => {
+    const securities = fundsOf([
+      { isin: 'INFREG', name: 'Reg Fund - Regular Plan - Growth', plan: 'regular', option: 'growth', price: rs(180) },
+      { isin: 'INFDIR', name: 'Dir Fund - Direct Plan - Growth', plan: 'direct', option: 'growth', price: rs(190) },
+    ]);
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities,
+      txns: [buy('a', 'INFREG', '2023-01-01', 1000, 100), buy('a', 'INFDIR', '2023-01-01', 1000, 100)], // ₹80,000 and ₹90,000 gains
+    }, ASOF, R);
+    const sw = fam.moves.find((x) => x.kind === 'switch_direct')!;
+    expect(sw).toMatchObject({ kind: 'switch_direct', memberId: 'a', isin: 'INFREG', when: 'now', gain: rs(80_000), tax: 0 });
+    expect(sw.feeSavedPerYear).toBe(Math.round(rs(1000 * 180) * 1.0 / 100));
+    const hg = fam.moves.filter((x) => x.kind === 'harvest_gain');
+    expect(hg).toHaveLength(1);
+    expect(hg[0]).toMatchObject({ isin: 'INFDIR', gain: rs(45_000) });
+    expect(fam.moves.some((x) => x.kind === 'harvest_gain' && x.isin === 'INFREG')).toBe(false);
+  });
+
+  it('finds the direct twin from the funds file and says so when there is none', () => {
+    const securities = fundsOf([{ isin: 'INFREG', name: 'Reg Fund - Regular Plan - Growth', plan: 'regular', option: 'growth', price: rs(180) }]);
+    const state = { members: [person('a', 'self')], securities, txns: [buy('a', 'INFREG', '2023-01-01', 1000, 100)] };
+    const without = computeFamily(state, ASOF, R).moves.find((x) => x.kind === 'switch_direct')!;
+    expect(without).toMatchObject({ toIsin: undefined });
+    expect(without.reasons.join(' ')).toMatch(/Find the direct plan of this fund at the fund house/);
+    const withTwin = computeFamily({ ...state, funds: { INFDIRX: { n: 'Reg Fund - Direct Plan - Growth', c: 'Equity Scheme - Large Cap Fund' } } }, ASOF, R)
+      .moves.find((x) => x.kind === 'switch_direct')!;
+    expect(withTwin.toIsin).toBe('INFDIRX');
+    expect(withTwin.reasons.join(' ')).toMatch(/Check the exit load in your fund statement before selling/);
+  });
+
+  it('beyond the room: waits for long-term, replacing the generic wait move', () => {
+    const securities = fundsOf([{ isin: 'INFREG', name: 'Reg Fund - Regular Plan - Growth', plan: 'regular', option: 'growth', price: rs(180) }]);
+    const fam = computeFamily({ members: [person('a', 'self')], securities, txns: [buy('a', 'INFREG', '2025-12-01', 1000, 100)] }, ASOF, R);
+    const sw = fam.moves.filter((x) => x.kind === 'switch_direct');
+    expect(sw).toHaveLength(1);
+    expect(sw[0]).toMatchObject({ when: 'wait', until: '2026-12-02' });
+    expect(fam.moves.some((x) => x.kind === 'wait')).toBe(false);
+  });
+
+  it('skips a switch worth less than ₹1,000 a year; never switches ELSS', () => {
+    const small = fundsOf([{ isin: 'INFREG', name: 'Reg Fund - Regular Plan - Growth', plan: 'regular', price: rs(150) }]);
+    expect(computeFamily({ members: [person('a', 'self')], securities: small, txns: [buy('a', 'INFREG', '2023-01-01', 10, 100)] }, ASOF, R)
+      .moves.some((x) => x.kind === 'switch_direct')).toBe(false);
+    const elss = fundsOf([{ isin: 'INFREG', name: 'E - Regular Plan - Growth', plan: 'regular', category: 'Equity Scheme - ELSS', price: rs(180) }]);
+    expect(computeFamily({ members: [person('a', 'self')], securities: elss, txns: [buy('a', 'INFREG', '2023-01-01', 1000, 100)] }, ASOF, R)
+      .moves.some((x) => x.kind === 'switch_direct')).toBe(false);
+  });
+
+  it('move id is stable across recomputes', () => {
+    const securities = fundsOf([{ isin: 'INFREG', name: 'Reg Fund - Regular Plan - Growth', plan: 'regular', price: rs(180) }]);
+    const state = { members: [person('a', 'self')], securities, txns: [buy('a', 'INFREG', '2023-01-01', 1000, 100)] };
+    const a = computeFamily(state, ASOF, R).moves.find((x) => x.kind === 'switch_direct')!;
+    const b = computeFamily({ ...state, securities: securities.map((s) => ({ ...s, price: rs(185) })) }, ASOF, R).moves.find((x) => x.kind === 'switch_direct')!;
+    expect(a.id).toBe(b.id);
+    expect(a.id).toMatch(/\|switch_direct\|a\|INFREG\|/);
+  });
+});

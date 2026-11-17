@@ -10,6 +10,7 @@ export const movesNotDone = (moves: Move[], done: Record<string, boolean>) => mo
 
 const KIND_ORDER: Array<{ kind: Move['kind']; title: string; blurb: string }> = [
   { kind: 'harvest_gain', title: 'Sell and buy back', blurb: 'Books long-term gain inside the member’s tax-free room and resets the cost higher, so that gain is never taxed. Buy back on the next trading day; mutual funds take 1–2 days to pay out. Bought-back units count as short-term for a year, so skip money you need within 12 months.' },
+  { kind: 'switch_direct', title: 'Switch to direct', blurb: 'Moves money from the regular plan, which pays a distributor commission, to the direct plan of the same fund. The fee saving is an estimate by fund type.' },
   { kind: 'gift', title: 'Gift, then sell', blurb: 'The shares, and the money from selling them, belong to the person receiving them. Only gift what you mean to give. Cost and holding period carry over, and a gift deed records it.' },
   { kind: 'harvest_loss', title: 'Book losses', blurb: 'Sell holdings at a loss to cut tax on gains already booked this year. You can buy them back afterwards.' },
   { kind: 'wait', title: 'Wait', blurb: 'These turn long-term soon. Selling before then is taxed at 20% instead of 12.5%.' },
@@ -30,6 +31,10 @@ function describe(m: Move, nameOf: (id: string) => string, bonusOf: (id: string)
       };
     case 'harvest_loss':
       return { who: m.memberId, title: `Sell ${u} ${unitWord} of ${m.name} at a loss`, sub: `${nameOf(m.memberId)} · offsets ${inr(m.loss)} of ${m.term === 'st' ? 'short' : 'long'}-term gains${where}` };
+    case 'switch_direct': {
+      const when = m.when === 'now' ? 'now' : m.when === 'wait' && m.until ? `wait until ${dateLabel(m.until, false)}` : 'next tax year';
+      return { who: m.memberId, title: `Switch ${u} ${unitWord} of ${m.name} to the direct plan`, sub: `${nameOf(m.memberId)} · ${when}${where}` };
+    }
     case 'wait':
       return { who: m.memberId, title: `Hold ${m.name} until ${dateLabel(m.until, false)}`, sub: `${nameOf(m.memberId)} · turns long-term in ${m.days} days${where}` };
   }
@@ -41,6 +46,7 @@ export function MoveRow({ move }: { move: Move }) {
   const d = describe(move, nameOf, (id) => fam.members.find((v) => v.member.id === id)?.year.bonus.free ?? 0);
   const who = state.members.find((m) => m.id === d.who);
   const later = isLaterBenefit(move);
+  const switching = move.kind === 'switch_direct';
   const gain = move.kind === 'harvest_gain' || move.kind === 'gift' ? move.gain : 0;
   return (
     <div className={`move ${done ? 'done' : ''}`}>
@@ -60,14 +66,16 @@ export function MoveRow({ move }: { move: Move }) {
           <span>{d.sub}</span>
         </p>
         <p className="tiny muted">
-          {later
+          {move.kind === 'switch_direct'
+            ? `${move.tax > 0 ? `Tax now: ${inr(move.tax)}` : 'No tax now'} · saves about ${inr(move.feeSavedPerYear)} a year in fees (estimate)${move.toIsin ? '' : ' · find the direct plan at the fund house'}`
+            : later
             ? `Avoids ${inr(move.taxAvoided)} of tax on a future sale · costs about ${inr(move.costs)}`
             : move.costs > 0 ? `${inr(move.taxAvoided)} less tax · costs about ${inr(move.costs)}` : `Tax drops from 20% to 12.5% on this gain`}
         </p>
       </div>
       <span className="stack" style={{ gap: 0, alignItems: 'flex-end', flex: 'none' }}>
-        <span className={`fig ${done ? 'good' : ''}`} style={{ fontSize: 14 }}>{inr(later ? gain : move.saving)}</span>
-        <span className="tiny muted">{later ? 'made tax-free' : 'less tax now'}</span>
+        <span className={`fig ${done ? 'good' : ''}`} style={{ fontSize: 14 }}>{inr(move.kind === 'switch_direct' ? move.feeSavedPerYear : later ? gain : move.saving)}</span>
+        <span className="tiny muted">{switching ? 'less in fees a year' : later ? 'made tax-free' : 'less tax now'}</span>
       </span>
     </div>
   );
@@ -87,7 +95,7 @@ export function Plan() {
   const isDone = (m: Move) => !!state.done[m.id];
   const gainOf = (m: Move) => (m.kind === 'harvest_gain' || m.kind === 'gift' ? m.gain : 0);
   const later = fam.moves.filter(isLaterBenefit);
-  const now = fam.moves.filter((m) => !isLaterBenefit(m));
+  const now = fam.moves.filter((m) => !isLaterBenefit(m) && m.kind !== 'switch_direct');
   const gainTotal = later.reduce((a, m) => a + gainOf(m), 0);
   const gainDone = later.filter(isDone).reduce((a, m) => a + gainOf(m), 0);
   const nowTotal = now.reduce((a, m) => a + m.saving, 0);
@@ -126,7 +134,7 @@ export function Plan() {
       {KIND_ORDER.map(({ kind, title, blurb }) => {
         const list = fam.moves.filter((m) => m.kind === kind);
         if (list.length === 0) return null;
-        const total = isLaterBenefit(list[0]!) ? `${inr(list.reduce((a, m) => a + gainOf(m), 0))} tax-free` : `${inr(list.reduce((a, m) => a + m.saving, 0))} less tax`;
+        const total = kind === 'switch_direct' ? `${inr(list.reduce((a, m) => a + (m.kind === 'switch_direct' ? m.feeSavedPerYear : 0), 0))} a year in fees` : isLaterBenefit(list[0]!) ? `${inr(list.reduce((a, m) => a + gainOf(m), 0))} tax-free` : `${inr(list.reduce((a, m) => a + m.saving, 0))} less tax`;
         return (
           <section key={kind} className="stack">
             <div className="row-between"><h2>{title}</h2><span className="fig small muted">{total}</span></div>

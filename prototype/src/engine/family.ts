@@ -1,7 +1,10 @@
 import { isElss } from './categories';
 import { addMonths, daysBetween, isLongTerm, longTermFrom } from './dates';
 import { buildLedger, effectiveCost, lotKey, lotTerms, prorate } from './ledger';
-import { giftTransferCost, ltRate, roundTripCost, stRate, type TaxRules } from './rules';
+import { terGapFor } from './data/ter-gap';
+import { directTwin, type FundsMap } from './directTwin';
+import { giftTransferCost, ltRate, roundTripCost, slabRate, stRate, type TaxRules } from './rules';
+import { switchDecision } from './switch';
 import { moveId, type MoveDraft } from './records';
 import { canGift } from './relations';
 import { longTermMonthsFor, lotTaxType, summariseYear, type BusinessIncome, type YearSummary } from './tax';
@@ -22,6 +25,8 @@ export interface FamilyState {
   needSoon?: Record<string, boolean>;
   /** Broker tax P&L totals. Where the engine's own gains for that account and period differ, the broker's are used. */
   brokerSummaries?: Array<{ memberId: string; account: string; summary: BrokerTotals }>;
+  /** Nightly funds.json (ISIN → name and category), used to find the direct twin of a regular plan. */
+  funds?: FundsMap;
 }
 
 export interface BrokerTotals {
@@ -82,7 +87,11 @@ export type Move =
   | (MoveBase & { kind: 'harvest_gain'; memberId: string; gain: Paise })
   | (MoveBase & { kind: 'harvest_loss'; memberId: string; loss: Paise; term: Term })
   | (MoveBase & { kind: 'wait'; memberId: string; gain: Paise; until: ISODate; days: number })
-  | (MoveBase & { kind: 'gift'; fromId: string; toId: string; gain: Paise });
+  | (MoveBase & { kind: 'gift'; fromId: string; toId: string; gain: Paise })
+  | (MoveBase & {
+    kind: 'switch_direct'; memberId: string; toIsin?: string; gain: Paise; tax: Paise; feeSavedPerYear: Paise;
+    when: 'now' | 'wait' | 'next_year'; until?: ISODate; buyOn?: ISODate;
+  });
 
 export const isLaterBenefit = (m: Move) => m.kind === 'harvest_gain' || m.kind === 'gift';
 
@@ -344,13 +353,52 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   const needSoon = (memberId: string, isin: string) => !!state.needSoon?.[`${memberId}|${isin}`];
 
   const usedQty = new Map<string, Qty>();
+  const isRegular = (sec: Security) => sec.plan === 'regular' && !isElss(sec.category);
+  const feeSaved = (sec: Security, value: Paise): Paise => Math.round((value * terGapFor(sec.category, sec.name)) / 100);
+  const switchWaits = new Set<string>();
+  // Switching sells and buys again, so ELSS (a fresh three-year lock) is left out; the caller has checked isRegular.
+  const pushSwitch = (member: Member, sec: Security, account: string, qty: Qty, value: Paise, gain: Paise, tax: Paise, fee: Paise, taxAvoided: Paise, when: 'now' | 'wait' | 'next_year', until: ISODate | undefined, why: string[]) => {
+    const toIsin = state.funds ? directTwin(sec, state.funds) : undefined;
+    if (when === 'wait') switchWaits.add(`${member.id}|${sec.isin}|${account}`);
+    push({
+      kind: 'switch_direct', memberId: member.id, isin: sec.isin, name: sec.name, account, qty, value, gain, tax, feeSavedPerYear: fee, when, toIsin,
+      ...(until ? { until } : {}), taxAvoided, costs: 0, saving: taxAvoided + fee,
+      reasons: [
+        `Moves to the direct plan of the same fund: saves about ${rupees(fee)} a year in fees (estimate)`,
+        ...why,
+        ...(toIsin ? [] : ['Find the direct plan of this fund at the fund house']),
+        'Check the exit load in your fund statement before selling',
+      ],
+    });
+  };
 
   // 1. Each member fills their own room from their own long-term lots, biggest gains first.
   for (const v of views) {
     let room = v.roomAfterPlan;
+    // Regular-plan lots inside the room switch to direct first: the same room also stops a fee.
+    const switched = new Set<string>();
+    const regular = v.holdings
+      .filter((h) => h.taxType === 'equity' && h.price != null && isRegular(secs.get(h.isin)!) && !needSoon(v.member.id, h.isin))
+      .flatMap((h) => queues(ledger, v.member.id, h.isin).map((q) => ({ h, q, ...harvestableQty(q.lots, secs.get(h.isin)!, asOf, rules, room, 0) })))
+      .sort((a, b) => b.gain - a.gain);
+    for (const c of regular) {
+      if (room < MIN_GAIN) break;
+      const sec = secs.get(c.h.isin)!;
+      const r = harvestableQty(c.q.lots, sec, asOf, rules, room, 0);
+      if (r.gain < MIN_GAIN) continue;
+      const value = valueOf(sec, r.qty);
+      const taxAvoided = Math.round(r.gain * LT);
+      const fee = feeSaved(sec, value);
+      if (taxAvoided + fee < MIN_NET_SAVING) continue;
+      pushSwitch(v.member, sec, c.q.account, r.qty, value, r.gain, 0, fee, taxAvoided, 'now', undefined,
+        [`Uses ${rupees(r.gain)} of ${v.member.name}'s ${rupees(rules.ltcgExemption)} tax-free room, which lapses on 31 March`]);
+      usedQty.set(lotKey(v.member.id, c.h.isin, c.q.account), r.qty);
+      switched.add(`${c.h.isin}|${c.q.account}`);
+      room -= r.gain;
+    }
     const cands = v.holdings
       .filter((h) => h.taxType === 'equity' && h.price != null && !needSoon(v.member.id, h.isin))
-      .flatMap((h) => queues(ledger, v.member.id, h.isin).map((q) => ({ h, q, ...harvestableQty(q.lots, secs.get(h.isin)!, asOf, rules, room, 0) })))
+      .flatMap((h) => queues(ledger, v.member.id, h.isin).filter((q) => !switched.has(`${h.isin}|${q.account}`)).map((q) => ({ h, q, ...harvestableQty(q.lots, secs.get(h.isin)!, asOf, rules, room, 0) })))
       .sort((a, b) => b.gain - a.gain);
     for (const c of cands) {
       if (room < MIN_GAIN) break;
@@ -365,6 +413,50 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
         reasons: [`Uses ${rupees(r.gain)} of ${v.member.name}'s ${rupees(rules.ltcgExemption)} tax-free room for this year, which lapses on 31 March`, `Selling and buying back the next day resets the cost, so ${rupees(taxAvoided)} less tax when sold later`] });
       usedQty.set(lotKey(v.member.id, c.h.isin, c.q.account), r.qty);
       room -= r.gain;
+    }
+
+    // Regular-plan units beyond the room: switch now (paying tax), wait, or next tax year.
+    const slabNow = (slabRate(v.member, rules) ?? 0.3) * (1 + rules.cess);
+    for (const h of v.holdings) {
+      const sec = secs.get(h.isin)!;
+      if (h.price == null || !isRegular(sec) || needSoon(v.member.id, h.isin) || (sec.taxType !== 'equity' && sec.taxType !== 'slab')) continue;
+      for (const { account, lots } of queues(ledger, v.member.id, h.isin)) {
+        if (switched.has(`${h.isin}|${account}`)) continue;
+        let skip = usedQty.get(lotKey(v.member.id, h.isin, account)) ?? 0;
+        let qty = 0, gain = 0, allLt = true, longTermOn = '', newest = '';
+        for (const lot of lots) {
+          let avail = lot.qty;
+          if (skip > 0) { const t = Math.min(avail, skip); avail -= t; skip -= t; if (avail === 0) continue; }
+          if (!isCertain(lot, sec, rules)) break;
+          const view = { date: lot.date, qty: avail, cost: avail === lot.qty ? lot.cost : prorate(lot.cost, avail, lot.qty) };
+          qty += avail;
+          gain += lotGain(view, avail, sec, rules);
+          if (!isLongTerm(lot.date, asOf, rules.longTermMonths)) { allLt = false; const on = longTermFrom(lot.date, rules.longTermMonths); if (on > longTermOn) longTermOn = on; }
+          if (lot.date > newest) newest = lot.date;
+        }
+        if (qty === 0) continue;
+        const equity = sec.taxType === 'equity';
+        const loadFree = newest ? addMonths(newest, 12) : asOf;
+        const under12m = equity && asOf < loadFree;
+        const value = valueOf(sec, qty);
+        const gap = terGapFor(sec.category, sec.name);
+        const d = switchDecision({
+          value, gain, term: allLt ? 'lt' : 'st', monthsToLongTerm: allLt ? 0 : Math.ceil(daysBetween(asOf, longTermOn) / 30.4375),
+          equityUnitsUnder12m: under12m, taxType: sec.taxType, freeRoom: room, slabRate: slabNow, gap,
+        });
+        const fee = feeSaved(sec, value);
+        const inRoom = d.when === 'now' && equity && allLt ? Math.max(0, Math.min(gain, room)) : 0;
+        const taxAvoided = Math.round(inRoom * LT);
+        if (taxAvoided + fee < MIN_NET_SAVING) continue;
+        const until = d.when === 'wait' ? (under12m && loadFree > longTermOn ? loadFree : longTermOn) : undefined;
+        const why = d.when === 'now'
+          ? (d.taxNow === 0 ? [`Uses ${rupees(gain)} of ${v.member.name}'s tax-free room`] : [`Tax now: ${rupees(d.taxNow)}`])
+          : d.when === 'wait'
+            ? [`Waiting until ${until} avoids short-term tax and an exit load`]
+            : [`Better done next tax year, inside the new tax-free room, than paying ${rupees(d.taxNow)} of tax now`];
+        pushSwitch(v.member, sec, account, qty, value, gain, d.when === 'now' ? d.taxNow : 0, fee, taxAvoided, d.when, until, why);
+        room -= inRoom;
+      }
     }
     v.roomAfterPlan = room;
   }
@@ -433,6 +525,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
         }
 
         const front = lots[0];
+        if (switchWaits.has(`${v.member.id}|${h.isin}|${account}`)) continue;
         if (!front || !isCertain(front, sec, rules) || isLongTerm(front.date, asOf, rules.longTermMonths)) continue;
         const gain = lotGain(front, front.qty, sec, rules);
         const until = longTermFrom(front.date, rules.longTermMonths);
@@ -459,7 +552,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
       plannedGain: sum((v) => v.planned.gain),
       taxFreeGains: later.reduce((a, m) => a + (m.kind === 'harvest_gain' || m.kind === 'gift' ? m.gain : 0), 0),
       laterSaving: later.reduce((a, m) => a + m.saving, 0),
-      nowSaving: now.reduce((a, m) => a + m.saving, 0),
+      nowSaving: now.filter((m) => m.kind !== 'switch_direct').reduce((a, m) => a + m.saving, 0),
       costs: moves.reduce((a, m) => a + m.costs, 0),
       uncertainLots: sum((v) => v.holdings.reduce((a, h) => a + h.uncertainLots, 0)),
     },

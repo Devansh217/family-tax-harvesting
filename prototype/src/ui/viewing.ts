@@ -11,7 +11,7 @@ import { withFunds, withPrices } from './market';
  */
 export function viewedContext(base: Ctx, viewed: AppState, name: string): Ctx {
   const securities = withPrices(withFunds(viewed.securities, base.market.funds, viewed.taxTypeOverrides ?? {}), base.market.latest);
-  const fam = computeFamily({ ...viewed, securities }, base.asOf, FY_2026_27);
+  const fam = computeFamily({ ...viewed, securities, funds: base.market.funds?.funds }, base.asOf, FY_2026_27);
   return {
     ...base,
     state: viewed,
