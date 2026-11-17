@@ -30,3 +30,12 @@ const sameFamily = (a: AppState, b: AppState) =>
 export function afterConflict(knownVersion: number | null, local: AppState, cloud: AppState): 'choose' | 'apply' {
   return knownVersion == null && hasRealData(local) && !sameFamily(local, cloud) ? 'choose' : 'apply';
 }
+
+/**
+ * What signing out does. Not invited means nothing was ever saved to the account, so the browser copy is the only
+ * copy and stays; otherwise the account holds the family and this browser lets go of it.
+ */
+export const signOutPlan = (status: SyncStatus): { clearLocal: boolean; message: string } =>
+  status === 'not_invited'
+    ? { clearLocal: false, message: 'Signed out. Your family is still in this browser.' }
+    : { clearLocal: true, message: 'Signed out. This browser no longer holds your family; it is safe in your account.' };

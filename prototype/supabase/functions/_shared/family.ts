@@ -15,6 +15,10 @@ export interface FamilyDb {
 
 export interface Reply { status: number; json?: unknown }
 
+/** The sign-in's email for the invite check: lower-cased, and only if the account has confirmed it. */
+export const verifiedEmail = (u: { email?: string | null; email_confirmed_at?: string | null }): string =>
+  u.email && u.email_confirmed_at ? u.email.trim().toLowerCase() : '';
+
 export const MAX_BODY = 5 * 1024 * 1024;
 
 const isFamily = (s: unknown): s is { version: 1 } =>

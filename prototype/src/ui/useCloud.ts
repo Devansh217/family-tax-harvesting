@@ -4,7 +4,7 @@ import { familyStore, loadProfile, saveProfile, type CloudFamily, type Profile }
 import { sampleState } from '../sample';
 import { hasRealData, normalizeState, type AppState } from '../store';
 
-import { afterConflict, failureKind, shouldSave, type SyncStatus } from './syncPolicy';
+import { afterConflict, failureKind, shouldSave, signOutPlan, type SyncStatus } from './syncPolicy';
 
 export type { SyncStatus };
 
@@ -187,10 +187,12 @@ export function useCloud(state: AppState, setState: Dispatch<SetStateAction<AppS
       setStatus('saved');
     },
     signOutAndClear: async () => {
-      await signOut();
+      const plan = signOutPlan(status);
+      if (plan.clearLocal) await signOut();
+      else await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
       lastSaved.current = '';
-      setState(sampleState());
-      toast('Signed out. This browser no longer holds your family; it is safe in your account.');
+      if (plan.clearLocal) setState(sampleState());
+      toast(plan.message);
     },
   };
 }

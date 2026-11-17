@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { toB64 } from './base64.ts';
 import { familyAad, importKeyRing, openJson, type Envelope, type KeyRing } from './envelope.ts';
-import { handleFamily, type FamilyDb } from './family.ts';
+import { handleFamily, verifiedEmail, type FamilyDb } from './family.ts';
 
 /** In-memory stand-in for the families table, with the same compare-and-set behaviour as the SQL. */
 const invited = new Set<string>(['dev@x.in']);
@@ -75,8 +75,9 @@ describe('family function', () => {
 
   it('refuses GET and PUT for someone not invited, without touching the family', async () => {
     const reads: string[] = [];
-    const spy = { ...mem.db, get: async (u: string) => { reads.push(u); return null; }, insert: async () => { reads.push('insert'); return true; } };
-    const go = (method: string, email: string | undefined) => handleFamily({ method, userId: 'u1', email, body: JSON.stringify({ state: state(1), knownVersion: null }) }, { db: spy, ring });
+    const spy = { ...mem.db, get: async (u: string) => { reads.push(u); return null; }, insert: async () => { reads.push('insert'); return true; }, updateIf: async () => { reads.push('updateIf'); return true; }, removeAll: async () => { reads.push('removeAll'); } };
+    const go = (method: string, email: string | undefined, knownVersion: number | null = null) => handleFamily({ method, userId: 'u1', email, body: JSON.stringify({ state: state(1), knownVersion }) }, { db: spy, ring });
+    expect((await go('PUT', 'out@x.in', 2)).status).toBe(403);
     for (const m of ['GET', 'PUT']) expect(await go(m, 'out@x.in')).toEqual({ status: 403, json: { error: 'not_invited' } });
     expect(await go('GET', undefined)).toEqual({ status: 403, json: { error: 'not_invited' } });
     expect(reads).toEqual([]);
@@ -90,5 +91,12 @@ describe('family function', () => {
   it('deleting the account is always allowed, even if not invited', async () => {
     expect(await call('DELETE', undefined, 'out@x.in')).toEqual({ status: 204 });
     expect(await call('DELETE', undefined, '')).toEqual({ status: 204 });
+  });
+
+  it('only a confirmed email counts', () => {
+    expect(verifiedEmail({ email: 'A@x.in', email_confirmed_at: '2026-11-17T00:00:00Z' })).toBe('a@x.in');
+    expect(verifiedEmail({ email: 'a@x.in', email_confirmed_at: null })).toBe('');
+    expect(verifiedEmail({ email: 'a@x.in' })).toBe('');
+    expect(verifiedEmail({ email_confirmed_at: '2026-11-17' })).toBe('');
   });
 });

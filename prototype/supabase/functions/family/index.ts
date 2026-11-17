@@ -2,7 +2,7 @@
 // wires the Supabase clients and secrets. Deploy: npx supabase@2 functions deploy family
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { importKeyRing, type Envelope, type KeyRing } from '../_shared/envelope.ts';
-import { handleFamily, type FamilyDb } from '../_shared/family.ts';
+import { handleFamily, verifiedEmail, type FamilyDb } from '../_shared/family.ts';
 import { corsHeaders, toResponse } from '../_shared/http.ts';
 
 const url = Deno.env.get('SUPABASE_URL')!;
@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
   if (!data.user) return toResponse({ status: 401, json: { error: 'sign_in' } }, origin);
   try {
     const body = req.method === 'PUT' ? await req.text() : undefined;
-    return toResponse(await handleFamily({ method: req.method, userId: data.user.id, email: (data.user.email ?? '').toLowerCase(), body }, { db, ring: await keyRing() }), origin);
+    return toResponse(await handleFamily({ method: req.method, userId: data.user.id, email: verifiedEmail(data.user), body }, { db, ring: await keyRing() }), origin);
   } catch (e) {
     console.error('family', req.method, (e as Error).message);
     return toResponse({ status: 500, json: { error: 'server' } }, origin);
