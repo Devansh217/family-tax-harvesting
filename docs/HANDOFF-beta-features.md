@@ -16,9 +16,9 @@ Repo `/Users/devansh/Documents/family-tax-harvesting`, branch **`beta-features`*
 ## Where it stands
 - **M1 (Tasks 1–7) complete and reviewed**, commits `0fe95c0..e01ff81`. Milestone review found 2 critical + 5 important cross-task bugs; all fixed and re-reviewed.
 - **M2:** Task 8 complete (`421b416`), Task 9 complete (`4ffae23`).
-- **Task 10 (email schedule and wording) was dispatched at base `4ffae23` when this session ended.** On resume: run `git log --oneline 4ffae23..HEAD`. If a commit touching `supabase/functions/_shared/seasonEmail.ts` exists, read `.superpowers/sdd/2026-11-17-beta-features/task-10-report.md`, then package and review it. If not, re-dispatch Task 10. Its two rulings are at the end of the ledger.
+- **Task 10 (email schedule and wording) is implemented at `a1db832` but NOT yet reviewed.** On resume: base `4ffae23`, head `a1db832`; read `.superpowers/sdd/2026-11-17-beta-features/task-10-report.md`, package with `review-package PLAN 4ffae23 a1db832`, and run the task review. Note for Task 11: `renderEmail` takes a 6th argument `lastSafe` that the alerts caller must pass.
 - **Remaining:** Task 11 (alerts function + Brevo email + cron), Task 12 (admin season numbers), M2 milestone review (opus, whole range `e01ff81..HEAD`; triage deferred minors, including the Task 8 privacy one), then M3 Task 13 (capital gains schedule) and the final whole-branch review (opus), then `superpowers:finishing-a-development-branch`.
-- Tests: 290 passing at `4ffae23`; typecheck and build clean.
+- Tests: 303 passing at `a1db832`; typecheck and build clean.
 
 ## Owed by the founder (don't nag; mention once at the end)
 - Fill `prototype/src/engine/data/holidays-2027.ts` from NSE's 2027 holiday circular (mid-Dec 2026) and set `published: true`, plus the Task 2 Step 5 test. Gate for "season-ready" by 10 Jan.
