@@ -128,7 +128,7 @@ New move kind: `switch_direct { memberId, isin, toIsin?, qty, value, gain, tax, 
 After an import, each move shown or dated is matched against new sale transactions: same member, same ISIN, units within ±5% of the move's **latest sizing** (or of the `in_plan` snapshot, whichever is closer), sale within 10 days of the chosen date (from 1 Feb if none was picked). A match writes a `detected_done` record. For a switch, a purchase of the direct ISIN is also looked for; if found, both steps are done. The Plan screen shows "Done, seen in your statement". The family's own "Mark done" stays and writes `done`; only `detected_done` counts toward the success measure.
 
 **Which statements confirm what:**
-- Mutual funds: the CAMS/KFintech detailed CAS. Fund houses often record a regular-to-direct switch as "Switch Out" / "Switch In" lines. The CAS parser (`src/parsers/cas.ts`) doesn't read these today; it must, as a sale and a purchase on the same date, with tests from a real CAS line.
+- Mutual funds: the CAMS/KFintech detailed CAS. Fund houses often record a regular-to-direct switch as "Switch Out" / "Switch In" lines. The CAS parser (`src/parsers/cas.ts`) classifies every transaction line by the sign of its units, so these already read as a sale and a purchase; a test pins it.
 - Shares and ETFs: only the broker's tradebook or tax P&L (the NSDL/CDSL CAS has holdings, no transactions). Onboarding and the fresh-statement email say so: "For shares, import your broker's tradebook."
 
 ## 6. Invites
@@ -142,7 +142,7 @@ After an import, each move shown or dated is matched against new sale transactio
 
 **Consent:** one switch on the Account screen, **"Harvest season help"**, off until the manager turns it on, stored in the family document (`AppState.alerts = { seasonHelp: boolean }`). Its text: "From 1 Feb to 31 Mar, our server reads your family once a week to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below." The onboarding checklist suggests it, and the founder asks beta families to turn it on. *Claude's call:* one switch for both, off by default, because both are the server reading the family, and the secure storage design promised every server read is shown to the family.
 
-**Every automatic read is logged.** Each time the `alerts` function decrypts a family it writes a row to `season_log (family_user_id, kind, on_date)`, kind one of `season_check`, `email_start`, `email_weekly`, `email_deadline`. The Account page lists them under "Automatic season checks", beside the founder's reads. Families with the switch off are never decrypted by `alerts`.
+**Every automatic read is logged.** Each time the `alerts` function decrypts a family it writes a row to `season_log (family_user_id, kind, on_date)`, kind one of `season_check`, `email_start`, `email_weekly`, `email_deadline`. The Account page lists them under "Automatic season checks", beside the founder's reads. Families with the switch off are never decrypted by `alerts`: the `family` function copies the switch to a plain `families.season_help` column on each save, and `alerts` filters on it before decrypting.
 
 **Freshness:** the server reads what was last saved. Every email says "Based on what you last saved on <date>" (from `families.updated_at`). If that is over 30 days old, the weekly email carries only the fresh-statement line, no room figure.
 
@@ -213,5 +213,5 @@ On each Sunday run from 1 Feb to the first Sunday of April, the `alerts` functio
 | 14 | One "Harvest season help" switch covers emails and beta totals; every automatic read logged for the family | Keeps the secure-storage promise that every server read is shown | Families who leave it off are missing from the totals |
 | 15 | "Usable room" = room the member can actually use (room and harvestable gain, whichever is smaller), recomputed weekly | A member with no gains to harvest shouldn't count as a miss | The 60% target means less if families hold little equity |
 | 16 | Dated moves are re-sized at today's prices and hold their room first; calendar shows no units | Stale units could go past the room and cost tax | Families must open the app on the day |
-| 17 | Shares are confirmed only from broker tradebooks; the CAS parser learns "Switch In/Out" | Demat CAS has no transactions; fund houses record switches that way | Families who don't import tradebooks show as unconfirmed |
+| 17 | Shares are confirmed only from broker tradebooks; fund "Switch In/Out" lines count as purchase and sale (already parsed; a test pins it) | Demat CAS has no transactions; fund houses record switches that way | Families who don't import tradebooks show as unconfirmed |
 | 18 | Emails say what date the data is from; over 30 days old, only the "import fresh statements" line | The server reads the last save, not the browser | — |
