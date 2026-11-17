@@ -141,7 +141,7 @@ function CalendarButton() {
     const a = document.createElement('a');
     a.href = url; a.download = 'harvesting-2026-27.ics';
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
   return <p><button className="btn" type="button" onClick={download}>Add to my calendar</button></p>;
 }

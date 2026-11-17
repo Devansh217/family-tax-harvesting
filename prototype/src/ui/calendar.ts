@@ -3,7 +3,7 @@ import type { ISODate } from '../engine/types';
 
 export interface IcsInput { moves: Move[]; nameOf: (id: string) => string; lastSafeDay: ISODate | null; yearEnd: ISODate }
 
-const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 const compact = (d: ISODate) => d.replace(/-/g, '');
 
 /** Fold at 75 octets (RFC 5545), never splitting a character. */

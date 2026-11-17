@@ -64,12 +64,18 @@ describe('buildIcs', () => {
   });
   it('escapes commas and semicolons and folds long lines', () => {
     const s = buildIcs(input([{ ...gain, name: 'A, B; C Fund with a really very long name that will need to be folded across lines' } as Move]));
-    expect(s).toContain('A\\, B\; C Fund');
+    expect(s).toContain('A\\, B\\; C Fund');
     for (const line of s.split('\r\n')) expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
   });
   it('titles the year-end events', () => {
     const s = buildIcs(input([]));
     expect(s).toContain('SUMMARY:Harvesting: last safe day to sell this tax year');
     expect(s).toContain('SUMMARY:Harvesting: tax year ends today');
+  });
+  it('folds non-ASCII names without splitting characters and unfolds to the original', () => {
+    const name = 'Fund ₹₹₹ ' + 'é₹'.repeat(40);
+    const s = buildIcs(input([{ ...gain, name } as Move]));
+    for (const line of s.split('\r\n')) expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
+    expect(unfold(s)).toContain(`Asha: sell and buy back ${name}.`);
   });
 });
