@@ -98,6 +98,7 @@ export function MoveRow({ move }: { move: Move }) {
           {who && <Avatar member={who} index={indexOf(who.id)} size="sm" />}
           <span>{d.sub}</span>
         </p>
+        {!move.noRoom && (
         <p className="tiny muted">
           {move.kind === 'switch_direct'
             ? `${move.tax > 0 ? `Tax now: ${inr(move.tax)}` : 'No tax now'} · saves about ${inr(move.feeSavedPerYear)} a year in fees (estimate)${move.toIsin ? '' : ' · find the direct plan at the fund house'} · check the exit load in your fund statement before selling`
@@ -105,15 +106,16 @@ export function MoveRow({ move }: { move: Move }) {
             ? `Avoids ${inr(move.taxAvoided)} of tax on a future sale · costs about ${inr(move.costs)}`
             : move.costs > 0 ? `${inr(move.taxAvoided)} less tax · costs about ${inr(move.costs)}` : `Tax drops from 20% to 12.5% on this gain`}
         </p>
+        )}
         {move.noRoom && <p className="tiny" style={{ color: 'var(--time)' }}>{move.reasons[0]}</p>}
-        {move.date && !move.noRoom && <p className="tiny">{`Sell on ${dateLabel(move.date)}`}{move.buyOn && ` · ${move.kind === 'switch_direct' ? 'Buy the direct plan' : 'Buy back'} on ${dateLabel(move.buyOn)}`}</p>}
+        {move.date && !move.noRoom && <p className="tiny">{`${move.kind === 'gift' ? 'Gift and sell' : 'Sell'} on ${dateLabel(move.date)}`}{move.buyOn && ` · ${move.kind === 'switch_direct' ? 'Buy the direct plan' : 'Buy back'} on ${dateLabel(move.buyOn)}`}</p>}
         {move.date && !move.noRoom && <p className="tiny muted">Units for today&rsquo;s prices; check again on the day</p>}
         {!done && isDatable(move) && <DatePicker move={move} />}
       </div>
-      <span className="stack" style={{ gap: 0, alignItems: 'flex-end', flex: 'none' }}>
+      {!move.noRoom && <span className="stack" style={{ gap: 0, alignItems: 'flex-end', flex: 'none' }}>
         <span className={`fig ${done ? 'good' : ''}`} style={{ fontSize: 14 }}>{inr(move.kind === 'switch_direct' ? move.feeSavedPerYear : later ? gain : move.saving)}</span>
         <span className="tiny muted">{switching ? 'less in fees a year' : later ? 'made tax-free' : 'less tax now'}</span>
-      </span>
+      </span>}
     </div>
   );
 }
@@ -136,7 +138,8 @@ export function Plan() {
   const gainDone = later.filter(isDone).reduce((a, m) => a + gainOf(m), 0);
   const nowTotal = now.reduce((a, m) => a + m.saving, 0);
   const nowDone = now.filter(isDone).reduce((a, m) => a + m.saving, 0);
-  const doneCount = fam.moves.filter(isDone).length;
+  const live = fam.moves.filter((m) => !m.noRoom);
+  const doneCount = live.filter(isDone).length;
 
   return (
     <>
@@ -150,7 +153,7 @@ export function Plan() {
         <span className="meter" aria-hidden="true"><span className="seg-free" style={{ width: `${gainTotal ? (gainDone / gainTotal) * 100 : 0}%` }} /></span>
         {nowTotal > 0 && <p className="small"><strong className="fig">{inr(nowDone)}</strong> cut from this year&rsquo;s tax <span className="muted">of {inr(nowTotal)} possible</span></p>}
         <p className="small muted" style={{ maxWidth: '72ch' }}>
-          Gains made tax-free stop being taxed later, when you sell. That is worth up to {inr(fam.totals.laterSaving)} after costs, but only in a year your gains would go past the {inr(fam.rules.ltcgExemption)} exemption. {doneCount} of {fam.moves.length} moves done.
+          Gains made tax-free stop being taxed later, when you sell. That is worth up to {inr(fam.totals.laterSaving)} after costs, but only in a year your gains would go past the {inr(fam.rules.ltcgExemption)} exemption. {doneCount} of {live.length} moves done.
         </p>
         <p className="note" style={{ maxWidth: '72ch' }}>
           <strong style={{ color: 'var(--ink)' }}>Not a recommendation to buy or sell.</strong> Each move shows the tax effect of an action on holdings you already own. Whether to act is your decision; check large moves with a CA. <a href="#about">How to read this</a>

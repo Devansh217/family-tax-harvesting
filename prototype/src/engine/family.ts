@@ -439,45 +439,60 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
     let room = v.roomAfterPlan;
     // Regular-plan lots inside the room switch to direct first: the same room also stops a fee.
     const switched = new Set<string>();
-    const regular = v.holdings
-      .filter((h) => h.taxType === 'equity' && h.price != null && isRegular(secs.get(h.isin)!) && !needSoon(v.member.id, h.isin))
-      .flatMap((h) => queues(ledger, v.member.id, h.isin).map((q) => ({ h, q, ...harvestableQty(q.lots, secs.get(h.isin)!, asOf, rules, room, 0) })))
-      .sort((a, b) => dateCmp(dated.get(idFor('switch_direct', v.member.id, a.h.isin, a.q.account)), dated.get(idFor('switch_direct', v.member.id, b.h.isin, b.q.account))) || b.gain - a.gain);
-    for (const c of regular) {
-      const isDated = dated.has(idFor('switch_direct', v.member.id, c.h.isin, c.q.account));
-      if (room < MIN_GAIN && !isDated) continue;
-      const sec = secs.get(c.h.isin)!;
-      const r = harvestableQty(c.q.lots, sec, asOf, rules, room, 0);
-      if (isDated ? r.qty === 0 : r.gain < MIN_GAIN) continue;
+    type Q = { account: string; lots: Lot[] };
+    const takenKey = (isin: string, account: string) => lotKey(v.member.id, isin, account);
+    const trySwitch = (h: Holding, q: Q) => {
+      const id = idFor('switch_direct', v.member.id, h.isin, q.account);
+      const isDated = dated.has(id);
+      if (made.has(id) || (room < MIN_GAIN && !isDated)) return;
+      const sec = secs.get(h.isin)!;
+      const r = harvestableQty(q.lots, sec, asOf, rules, room, usedQty.get(takenKey(h.isin, q.account)) ?? 0);
+      if (isDated ? r.qty === 0 : r.gain < MIN_GAIN) return;
       const value = valueOf(sec, r.qty);
       const taxAvoided = Math.round(r.gain * LT);
       const fee = feeSaved(sec, value);
-      if (!isDated && taxAvoided + fee < MIN_NET_SAVING) continue;
-      pushSwitch(v.member, sec, c.q.account, r.qty, value, r.gain, 0, fee, taxAvoided, 'now', undefined,
+      if (!isDated && taxAvoided + fee < MIN_NET_SAVING) return;
+      pushSwitch(v.member, sec, q.account, r.qty, value, r.gain, 0, fee, taxAvoided, 'now', undefined,
         [`Uses ${rupees(r.gain)} of ${v.member.name}'s ${rupees(rules.ltcgExemption)} tax-free room, which lapses on 31 March`]);
-      usedQty.set(lotKey(v.member.id, c.h.isin, c.q.account), r.qty);
-      switched.add(`${c.h.isin}|${c.q.account}`);
+      usedQty.set(takenKey(h.isin, q.account), (usedQty.get(takenKey(h.isin, q.account)) ?? 0) + r.qty);
+      switched.add(`${h.isin}|${q.account}`);
       room -= r.gain;
-    }
-    const cands = v.holdings
-      .filter((h) => h.taxType === 'equity' && h.price != null && !needSoon(v.member.id, h.isin))
-      .flatMap((h) => queues(ledger, v.member.id, h.isin).filter((q) => !switched.has(`${h.isin}|${q.account}`)).map((q) => ({ h, q, ...harvestableQty(q.lots, secs.get(h.isin)!, asOf, rules, room, 0) })))
-      .sort((a, b) => dateCmp(dated.get(idFor('harvest_gain', v.member.id, a.h.isin, a.q.account)), dated.get(idFor('harvest_gain', v.member.id, b.h.isin, b.q.account))) || b.gain - a.gain);
-    for (const c of cands) {
-      const isDated = dated.has(idFor('harvest_gain', v.member.id, c.h.isin, c.q.account));
-      if (room < MIN_GAIN && !isDated) continue;
-      const sec = secs.get(c.h.isin)!;
-      const r = harvestableQty(c.q.lots, sec, asOf, rules, room, 0);
-      if (isDated ? r.qty === 0 : r.gain < MIN_GAIN) continue;
+    };
+    const tryHarvest = (h: Holding, q: Q) => {
+      const id = idFor('harvest_gain', v.member.id, h.isin, q.account);
+      const isDated = dated.has(id);
+      if (made.has(id) || switched.has(`${h.isin}|${q.account}`) || (room < MIN_GAIN && !isDated)) return;
+      const sec = secs.get(h.isin)!;
+      const r = harvestableQty(q.lots, sec, asOf, rules, room, usedQty.get(takenKey(h.isin, q.account)) ?? 0);
+      if (isDated ? r.qty === 0 : r.gain < MIN_GAIN) return;
       const value = valueOf(sec, r.qty);
       const costs = roundTripCost(sec, value, rules);
       const taxAvoided = Math.round(r.gain * LT);
-      if (!isDated && taxAvoided - costs < MIN_NET_SAVING) continue;
-      push({ kind: 'harvest_gain', memberId: v.member.id, isin: c.h.isin, name: c.h.name, account: c.q.account, qty: r.qty, value, gain: r.gain, taxAvoided, costs, saving: taxAvoided - costs,
+      if (!isDated && taxAvoided - costs < MIN_NET_SAVING) return;
+      push({ kind: 'harvest_gain', memberId: v.member.id, isin: h.isin, name: h.name, account: q.account, qty: r.qty, value, gain: r.gain, taxAvoided, costs, saving: taxAvoided - costs,
         reasons: [`Uses ${rupees(r.gain)} of ${v.member.name}'s ${rupees(rules.ltcgExemption)} tax-free room for this year, which lapses on 31 March`, `Selling and buying back the next day resets the cost, so ${rupees(taxAvoided)} less tax when sold later`] });
-      usedQty.set(lotKey(v.member.id, c.h.isin, c.q.account), r.qty);
+      usedQty.set(takenKey(h.isin, q.account), (usedQty.get(takenKey(h.isin, q.account)) ?? 0) + r.qty);
       room -= r.gain;
-    }
+    };
+    const regularQs = v.holdings
+      .filter((h) => h.taxType === 'equity' && h.price != null && isRegular(secs.get(h.isin)!) && !needSoon(v.member.id, h.isin))
+      .flatMap((h) => queues(ledger, v.member.id, h.isin).map((q) => ({ h, q })));
+    const harvestQs = v.holdings
+      .filter((h) => h.taxType === 'equity' && h.price != null && !needSoon(v.member.id, h.isin))
+      .flatMap((h) => queues(ledger, v.member.id, h.isin).map((q) => ({ h, q })));
+    // Dated moves first, whichever kind, in date order: they hold their room before any undated one.
+    const datedPass = [
+      ...regularQs.map((c) => ({ ...c, kind: 'switch_direct' as const })),
+      ...harvestQs.map((c) => ({ ...c, kind: 'harvest_gain' as const })),
+    ].map((c) => ({ ...c, date: dated.get(idFor(c.kind, v.member.id, c.h.isin, c.q.account)) })).filter((c) => c.date)
+      .sort((a, b) => a.date!.localeCompare(b.date!));
+    for (const c of datedPass) (c.kind === 'switch_direct' ? trySwitch : tryHarvest)(c.h, c.q);
+    const biggest = (kind: 'switch_direct' | 'harvest_gain', list: Array<{ h: Holding; q: Q }>) => list
+      .filter((c) => !dated.has(idFor(kind, v.member.id, c.h.isin, c.q.account)))
+      .map((c) => ({ ...c, gain: harvestableQty(c.q.lots, secs.get(c.h.isin)!, asOf, rules, room, usedQty.get(takenKey(c.h.isin, c.q.account)) ?? 0).gain }))
+      .sort((x, y) => y.gain - x.gain);
+    for (const c of biggest('switch_direct', regularQs)) trySwitch(c.h, c.q);
+    for (const c of biggest('harvest_gain', harvestQs)) tryHarvest(c.h, c.q);
 
     // Regular-plan units beyond the room: switch now (paying tax), wait, or next tax year.
     const slabNow = (slabRate(v.member, rules) ?? 0.3) * (1 + rules.cess);
@@ -609,7 +624,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
     const [first, toId] = p.kind === 'gift' ? p.who.split('>') : [p.who, undefined];
     const h = views.find((v) => v.member.id === first)?.holdings.find((x) => x.isin === p.isin && x.accounts.includes(p.account));
     if (!h || (p.kind === 'gift' && !views.some((v) => v.member.id === toId))) continue;
-    const base = { isin: p.isin, name: h.name, account: p.account, qty: 0, value: 0, taxAvoided: 0, costs: 0, saving: 0, reasons: ['No room left for this move'], noRoom: true };
+    const base = { isin: p.isin, name: h.name, account: p.account, qty: 0, value: 0, taxAvoided: 0, costs: 0, saving: 0, reasons: [p.kind === 'harvest_loss' ? 'Nothing left to do for this move' : 'No room left for this move'], noRoom: true };
     if (p.kind === 'gift') push({ ...base, kind: 'gift', fromId: first!, toId: toId!, gain: 0 });
     else if (p.kind === 'harvest_loss') push({ ...base, kind: 'harvest_loss', memberId: first!, loss: 0, term: 'st' });
     else if (p.kind === 'switch_direct') push({ ...base, kind: 'switch_direct', memberId: first!, gain: 0, tax: 0, feeSavedPerYear: 0, when: 'now' });

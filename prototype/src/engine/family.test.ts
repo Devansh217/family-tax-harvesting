@@ -420,4 +420,28 @@ describe('dated moves hold their room', () => {
     }, ASOF, R);
     expect(fam.moves.map((m) => m.isin)).toEqual(['X']);
   });
+
+  it('never uses the same units twice: a dated gift and the giver\'s own harvest fit within the holding', () => {
+    const members = [person('a', 'self'), person('p', 'parent', { age: 64 })];
+    const fam = computeFamily({
+      members, securities: [two[0]!], txns: [buy('a', 'X', '2020-01-01', 130, 1000)],
+      datedMoves: [{ moveId: `${R.label}|gift|a>p|X|`, date: '2026-12-10' }],
+    }, ASOF, R);
+    const used = fam.moves.filter((m) => m.isin === 'X' && (m.kind === 'gift' || m.kind === 'harvest_gain')).reduce((a, m) => a + m.qty, 0);
+    expect(fam.moves.find((m) => m.kind === 'gift')!.qty).toBe(q(125));
+    expect(used).toBeLessThanOrEqual(q(130));
+  });
+
+  it('a dated harvest beats an undated in-room switch for the same room', () => {
+    const securities = [
+      { isin: 'INFR', name: 'Reg Fund', taxType: 'equity' as const, listed: false, price: rs(2000), plan: 'regular' as const, category: 'Flexi Cap' },
+      two[1]!,
+    ];
+    const txns = [buy('a', 'INFR', '2023-01-01', 100, 1000), buy('a', 'Y', '2023-01-01', 200, 1000)]; // switch ₹1 L, Y ₹60,000
+    const members = [person('a', 'self')];
+    const plain = computeFamily({ members, securities, txns }, ASOF, R);
+    expect(plain.moves.find((m) => m.kind === 'switch_direct' && m.when === 'now')).toBeDefined();
+    const fam = computeFamily({ members, securities, txns, datedMoves: [{ moveId: idOf('harvest_gain', 'a', 'Y'), date: '2026-12-04' }] }, ASOF, R);
+    expect(fam.moves.find((m) => m.kind === 'harvest_gain' && m.isin === 'Y')).toMatchObject({ gain: rs(60_000), date: '2026-12-04' });
+  });
 });
