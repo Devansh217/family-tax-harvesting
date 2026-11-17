@@ -11,6 +11,7 @@ const STATUS_TEXT = {
   saving: 'Saving…',
   saved: 'All changes saved to your account',
   error: 'Could not save. Your changes are kept in this browser; the next change tries again.',
+  not_invited: 'This beta is invite-only for now.',
   signin: 'Your sign-in has ended. Sign in again to keep saving; your family is safe in this browser.',
 } as const;
 

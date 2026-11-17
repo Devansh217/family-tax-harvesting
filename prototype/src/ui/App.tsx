@@ -6,7 +6,7 @@ import { FY_2026_27 } from '../engine/rules';
 import type { AppState } from '../store';
 import { initialFamily, loadLocal, saveLocal } from '../storage/device';
 import { supabase } from '../cloud';
-import { AppCtx, type Ctx } from './app-context';
+import { AppCtx, useApp, type Ctx } from './app-context';
 import { addSnapshot, loadMarket, snapshotOf, withFunds, withPrices, type Market } from './market';
 import { Svg, Icon } from './parts';
 import { Home } from './screens/Home';
@@ -47,6 +47,17 @@ export function App() {
     );
   }
   return <Main initial={initial} />;
+}
+
+function InviteOnly() {
+  const { cloud } = useApp();
+  return (
+    <section className="sheet pad stack" style={{ maxWidth: 480, margin: '48px auto' }}>
+      <h1>Invite-only beta</h1>
+      <p>This beta is invite-only. Ask the person who invited you.</p>
+      <div className="row"><button className="btn" type="button" onClick={() => void cloud.signOutAndClear()}>Sign out</button></div>
+    </section>
+  );
 }
 
 function Main({ initial }: { initial: AppState }) {
@@ -128,6 +139,8 @@ function Main({ initial }: { initial: AppState }) {
   else if (route === 'about') screen = <About />;
   else if (route === 'account') screen = <Account />;
   else screen = <Home days={days} />;
+  // Signed in but not on the beta list: nothing else loads. The Account page stays reachable (sign out, delete).
+  if (cloud.status === 'not_invited' && route !== 'account') screen = <InviteOnly />;
 
   return (
     <AppCtx.Provider value={ctx}>

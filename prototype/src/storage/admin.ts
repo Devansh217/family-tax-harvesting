@@ -10,13 +10,19 @@ export async function isAdmin(): Promise<boolean> {
 
 export interface FamilyListing { userId: string; email: string; version: number; updatedAt: string }
 
-const call = async (path: 'list' | 'read', method: 'GET' | 'POST', body?: unknown) => {
+const call = async (path: 'list' | 'read' | 'invites', method: 'GET' | 'POST' | 'DELETE', body?: unknown) => {
   const r = await supabaseInvoke(`admin/${path}`, { method, body });
   if (r.error) throw new Error(r.error.status === 403 ? 'Two-factor sign-in needed, or not an admin.' : friendly(r.error.message));
   return r.data;
 };
 
 export const adminList = async (): Promise<FamilyListing[]> => (await call('list', 'GET')) as FamilyListing[];
+
+export interface Invite { email: string; note: string | null; invitedAt: string }
+
+export const invitesList = async (): Promise<Invite[]> => (await call('invites', 'GET')) as Invite[];
+export const invitesAdd = async (email: string, note: string): Promise<void> => { await call('invites', 'POST', { email, note }); };
+export const invitesRemove = async (email: string): Promise<void> => { await call('invites', 'DELETE', { email }); };
 
 /** Opens a family read-only. The server logs the read (with the reason) before decrypting it. */
 export async function adminRead(familyUserId: string, reason: string): Promise<AppState> {

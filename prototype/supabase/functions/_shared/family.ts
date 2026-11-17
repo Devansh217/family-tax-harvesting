@@ -9,6 +9,8 @@ export interface FamilyDb {
   updateIf(userId: string, knownVersion: number, newVersion: number, envelope: Envelope): Promise<boolean>;
   /** The family row, the admin-read log about it, the profile and the sign-in account. */
   removeAll(userId: string): Promise<void>;
+  /** On the beta list, or an admin (so the founder can always reach the admin screen). `email` is lower-case. */
+  isInvited(email: string, userId: string): Promise<boolean>;
 }
 
 export interface Reply { status: number; json?: unknown }
@@ -20,10 +22,15 @@ const isFamily = (s: unknown): s is { version: 1 } =>
 
 /**
  * One user's family: GET loads and decrypts, PUT encrypts and saves only if nobody saved in between, DELETE removes
- * the account and its data. `userId` always comes from the verified sign-in, never from the request body.
+ * the account and its data. GET and PUT also need an invite (403 `not_invited`); the email comes from the verified sign-in. `userId` always comes from the verified sign-in, never from the request body.
  */
-export async function handleFamily(req: { method: string; userId: string; body?: string }, deps: { db: FamilyDb; ring: KeyRing }): Promise<Reply> {
+export async function handleFamily(req: { method: string; userId: string; email?: string; body?: string }, deps: { db: FamilyDb; ring: KeyRing }): Promise<Reply> {
   const { db, ring } = deps;
+  // Deleting an account is always allowed, so a family that is uninvited can still remove everything.
+  if (req.method === 'GET' || req.method === 'PUT') {
+    const email = (req.email ?? '').trim().toLowerCase();
+    if (!email || !(await db.isInvited(email, req.userId))) return { status: 403, json: { error: 'not_invited' } };
+  }
   if (req.method === 'GET') {
     const row = await db.get(req.userId);
     if (!row) return { status: 200, json: null };

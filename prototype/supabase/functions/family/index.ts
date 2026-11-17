@@ -35,6 +35,14 @@ const db: FamilyDb = {
     const { error: e2 } = await service.auth.admin.deleteUser(userId);
     if (e2) throw e2;
   },
+  async isInvited(email, userId) {
+    const { data, error } = await service.from('beta_invites').select('email').eq('email', email).maybeSingle();
+    if (error) throw error;
+    if (data) return true;
+    const { data: admin, error: e2 } = await service.from('admins').select('user_id').eq('user_id', userId).maybeSingle();
+    if (e2) throw e2;
+    return !!admin;
+  },
 };
 
 Deno.serve(async (req) => {
@@ -45,7 +53,7 @@ Deno.serve(async (req) => {
   if (!data.user) return toResponse({ status: 401, json: { error: 'sign_in' } }, origin);
   try {
     const body = req.method === 'PUT' ? await req.text() : undefined;
-    return toResponse(await handleFamily({ method: req.method, userId: data.user.id, body }, { db, ring: await keyRing() }), origin);
+    return toResponse(await handleFamily({ method: req.method, userId: data.user.id, email: (data.user.email ?? '').toLowerCase(), body }, { db, ring: await keyRing() }), origin);
   } catch (e) {
     console.error('family', req.method, (e as Error).message);
     return toResponse({ status: 500, json: { error: 'server' } }, origin);

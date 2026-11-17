@@ -74,6 +74,7 @@ export function useCloud(state: AppState, setState: Dispatch<SetStateAction<AppS
       await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
       return;
     }
+    if (failureKind(e) === 'not_invited') { setStatus('not_invited'); return; }
     setStatus('error');
     toast((e as Error).message);
   }, [toast]);

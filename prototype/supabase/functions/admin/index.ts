@@ -1,4 +1,4 @@
-// The `admin` server function (Deno): GET …/admin/list and POST …/admin/read. Logic in ../_shared/admin.ts.
+// The `admin` server function (Deno): GET …/admin/list, POST …/admin/read, and GET/POST/DELETE …/admin/invites. Logic in ../_shared/admin.ts.
 // Deploy: npx supabase@2 functions deploy admin
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { handleAdmin, type AdminDb } from '../_shared/admin.ts';
@@ -27,6 +27,21 @@ const db: AdminDb = {
     const { error } = await service.from('admin_reads').insert({ family_user_id: row.familyUserId, admin_user_id: row.adminUserId, reason: row.reason });
     if (error) throw error;
   },
+  invites: {
+    async list() {
+      const { data, error } = await service.from('beta_invites').select('email, note, invited_at').order('invited_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map((r) => ({ email: r.email as string, note: (r.note as string | null) ?? null, invitedAt: r.invited_at as string }));
+    },
+    async add(email, note) {
+      const { error } = await service.from('beta_invites').upsert({ email, note }, { onConflict: 'email' });
+      if (error) throw error;
+    },
+    async remove(email) {
+      const { error } = await service.from('beta_invites').delete().eq('email', email);
+      if (error) throw error;
+    },
+  },
   family: {
     async get(userId) {
       const { data, error } = await service.from('families').select('version, envelope').eq('user_id', userId).maybeSingle();
@@ -42,9 +57,10 @@ Deno.serve(async (req) => {
   const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
   const { data } = await service.auth.getUser(token);
   if (!data.user) return toResponse({ status: 401, json: { error: 'sign_in' } }, origin);
-  const path = new URL(req.url).pathname.split('/').pop() === 'read' ? 'read' : 'list';
+  const last = new URL(req.url).pathname.split('/').pop();
+  const path = last === 'read' ? 'read' : last === 'invites' ? 'invites' : 'list';
   try {
-    const body = req.method === 'POST' ? await req.text() : undefined;
+    const body = req.method === 'POST' || req.method === 'DELETE' ? await req.text() : undefined;
     const aal = String(jwtPayload(token).aal ?? 'aal1');
     return toResponse(await handleAdmin({ method: req.method, path, userId: data.user.id, aal, body }, { db, ring: await keyRing() }), origin);
   } catch (e) {
