@@ -3,7 +3,7 @@ import { startOwnFamily } from '../../store';
 import { useApp } from '../app-context';
 import { inr, inrShort } from '../format';
 import { Avatar, Disclaimer, Icon, RoomMeter, Section, Svg } from '../parts';
-import { MoveRow, movesNotDone } from './Plan';
+import { LastSafeDay, MoveRow, movesNotDone } from './Plan';
 import { needsSetup } from './memberFields';
 import { FirstRunNotice } from './About';
 import { SinceClose } from './SinceClose';
@@ -63,6 +63,7 @@ export function Home({ days }: { days: number }) {
         </span>
       </div>
 
+      <LastSafeDay />
       <div className="grid-2">
         <section className="hero" aria-labelledby="room-h">
           <h2 id="room-h" className="hero-line">

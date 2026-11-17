@@ -4,6 +4,7 @@ import { statusRecord } from '../../engine/records';
 import { dateLabel, inr, inrShort, units } from '../format';
 import { Avatar, Disclaimer, Svg, Icon } from '../parts';
 import { SampleBanner } from './Home';
+import { NSE_HOLIDAYS_2027, lastSafeDay } from '../../engine/season';
 
 export const movesNotDone = (moves: Move[], done: Record<string, boolean>) => moves.filter((m) => !done[m.id]);
 
@@ -72,6 +73,15 @@ export function MoveRow({ move }: { move: Move }) {
   );
 }
 
+/** "Last safe day to sell this year", from 1 February; nothing until the holiday list for the year end is published. */
+export function LastSafeDay() {
+  const { fam, asOf } = useApp();
+  if (asOf < `${fam.rules.end.slice(0, 4)}-02-01` || asOf > fam.rules.end) return null;
+  const day = fam.rules.end.startsWith('2027') ? lastSafeDay(fam.rules.end, NSE_HOLIDAYS_2027) : null;
+  if (!day) return null;
+  return <p className="small">Last safe day to sell this year: <strong>{dateLabel(day)}</strong></p>;
+}
+
 export function Plan() {
   const { fam, state } = useApp();
   const isDone = (m: Move) => !!state.done[m.id];
@@ -92,6 +102,7 @@ export function Plan() {
         <p style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 600, letterSpacing: '-0.01em' }}>
           <span className="fig good">{inr(gainDone)}</span> of gains made tax-free <span className="muted" style={{ fontWeight: 500 }}>of {inr(gainTotal)} possible</span>
         </p>
+        <LastSafeDay />
         <span className="meter" aria-hidden="true"><span className="seg-free" style={{ width: `${gainTotal ? (gainDone / gainTotal) * 100 : 0}%` }} /></span>
         {nowTotal > 0 && <p className="small"><strong className="fig">{inr(nowDone)}</strong> cut from this year&rsquo;s tax <span className="muted">of {inr(nowTotal)} possible</span></p>}
         <p className="small muted" style={{ maxWidth: '72ch' }}>
