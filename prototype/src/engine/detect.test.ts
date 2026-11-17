@@ -12,7 +12,7 @@ const gift = (): Move => ({ ...base, id: 'g1', kind: 'gift', fromId: 'a', toId: 
 let n = 0;
 const txn = (over: Partial<Txn> = {}): Txn => ({ id: `t${++n}`, memberId: 'a', isin: 'INF1', date: '2027-02-05', side: 'sell', qty: 100, amount: 1, source: 'x', ...over } as Txn);
 const run = (moves: Move[], newTxns: Txn[], o: { records?: RecommendationRecord[]; dated?: { moveId: string; date: string }[] } = {}) =>
-  detectDone({ moves, records: o.records ?? [], datedMoves: o.dated ?? [], newTxns, seasonStart: '2027-02-01' });
+  detectDone({ moves, records: o.records ?? [], datedMoves: o.dated ?? [], newTxns, seasonStart: '2027-02-01', seasonEnd: '2027-03-31' });
 const dated = [{ moveId: 'h1', date: '2027-02-10' }];
 
 describe('detectDone', () => {
@@ -29,13 +29,17 @@ describe('detectDone', () => {
     const rec = [datedRecord(harvest({ qty: 200 }), '2027-02-10', 't')];
     expect(run([harvest({ qty: 100 })], [txn({ date: '2027-02-14', qty: 198 })], { dated, records: rec })).toHaveLength(1);
   });
-  it('rejects a sale 12 days after, or before the date', () => {
-    expect(run([harvest()], [txn({ date: '2027-02-22' })], { dated })).toEqual([]);
-    expect(run([harvest()], [txn({ date: '2027-02-09' })], { dated })).toEqual([]);
+  it('dated window: 3 days before to 10 days after the picked day, both edges in', () => {
+    expect(run([harvest()], [txn({ date: '2027-02-07' })], { dated })).toHaveLength(1);
+    expect(run([harvest()], [txn({ date: '2027-02-06' })], { dated })).toEqual([]);
+    expect(run([harvest()], [txn({ date: '2027-02-20' })], { dated })).toHaveLength(1);
+    expect(run([harvest()], [txn({ date: '2027-02-21' })], { dated })).toEqual([]);
   });
-  it('uses seasonStart when no date was picked', () => {
-    expect(run([harvest()], [txn({ date: '2027-02-03' })])).toHaveLength(1);
-    expect(run([harvest()], [txn({ date: '2027-01-30' })])).toEqual([]);
+  it('undated window: the whole season, 1 Feb to the end of the tax year, both edges in', () => {
+    expect(run([harvest()], [txn({ date: '2027-02-01' })])).toHaveLength(1);
+    expect(run([harvest()], [txn({ date: '2027-01-31' })])).toEqual([]);
+    expect(run([harvest()], [txn({ date: '2027-03-31' })])).toHaveLength(1);
+    expect(run([harvest()], [txn({ date: '2027-04-01' })])).toEqual([]);
   });
   it('needs the same member and ISIN, and a sell', () => {
     expect(run([harvest()], [txn({ memberId: 'b' })])).toEqual([]);
@@ -50,7 +54,7 @@ describe('detectDone', () => {
     const m = sw({ toIsin: 'INF2' });
     expect(run([m], [txn()])).toEqual([]);
     expect(run([m], [txn(), txn({ side: 'buy', isin: 'INF2' })])).toHaveLength(1);
-    expect(run([m], [txn(), txn({ side: 'buy', isin: 'INF2', date: '2027-02-20' })])).toEqual([]);
+    expect(run([m], [txn(), txn({ side: 'buy', isin: 'INF2', date: '2027-04-02' })])).toEqual([]);
   });
   it('switch without toIsin counts on the sell alone', () => {
     expect(run([sw()], [txn()])).toHaveLength(1);

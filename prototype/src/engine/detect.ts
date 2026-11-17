@@ -5,6 +5,8 @@ import type { TaxRules } from './rules';
 import type { ISODate, Txn } from './types';
 
 const WINDOW_DAYS = 10;
+/** A family often trades a day or two before the day they picked. */
+const EARLY_DAYS = 3;
 const TOLERANCE = 0.05;
 
 /** 1 Feb of the calendar year in which the tax year ends: when harvest season starts. */
@@ -25,10 +27,13 @@ function expected(m: Move): { seller: string; buy?: { memberId: string; isin: st
 /**
  * Moves the family was shown (sized as they last saw them) that the new statement's transactions confirm. A sale of
  * the same security by the right person, units within 5% of the latest sizing or of the day-picked snapshot, within 10
- * days from the picked day (or the start of the season). Each transaction confirms at most one move.
+ * days after (or 3 before) the picked day; with no picked day, any time in the season (1 Feb to the end of the tax
+ * year). Both edges count. Each transaction confirms at most one move.
  */
 export function detectDone(input: {
   moves: Move[]; records: RecommendationRecord[]; datedMoves: DatedMove[]; newTxns: Txn[]; seasonStart: ISODate;
+  /** The last day of the tax year: the last day a sale can confirm a move with no picked day. */
+  seasonEnd: ISODate;
   /** When the records are written (the engine keeps no clock); defaults to the latest new transaction's day. */
   at?: string;
 }): RecommendationRecord[] {
@@ -40,8 +45,9 @@ export function detectDone(input: {
     if (already.has(m.id) || m.noRoom || m.qty <= 0) continue;
     const want = expected(m);
     if (!want) continue;
-    const anchor = input.datedMoves.find((d) => d.moveId === m.id)?.date ?? input.seasonStart;
-    const end = addDays(anchor, WINDOW_DAYS);
+    const picked = input.datedMoves.find((d) => d.moveId === m.id)?.date;
+    const anchor = picked ? addDays(picked, -EARLY_DAYS) : input.seasonStart;
+    const end = picked ? addDays(picked, WINDOW_DAYS) : input.seasonEnd;
     const snapshot = [...input.records].reverse().find((r) => r.moveId === m.id && r.event === 'in_plan')?.move.qty;
     const inWindow = (t: Txn) => !used.has(t.id) && t.date >= anchor && t.date <= end;
     const sale = input.newTxns.find((t) => inWindow(t) && t.side === 'sell' && t.memberId === want.seller && t.isin === m.isin
