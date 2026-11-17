@@ -2,7 +2,7 @@ import type { AppState } from '../store';
 import { signOut } from '../cloud';
 import { functionsFamilyStore } from './functions';
 
-export { listMyAdminReads, loadProfile, saveProfile, type Profile } from './supabase';
+export { listMyAdminReads, loadSeasonLog, loadProfile, saveProfile, type Profile } from './supabase';
 
 /** A family as saved to an account, with the version used to detect a save from another device. */
 export interface CloudFamily { state: AppState; version: number }

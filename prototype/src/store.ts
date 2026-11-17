@@ -44,11 +44,13 @@ export interface AppState {
   recommendations: RecommendationRecord[];
   /** Moves the family picked a day for; sized first on every recompute so they hold their room. */
   datedMoves: DatedMove[];
+  /** Harvest season help: the server may read this family weekly, 1 Feb to 31 Mar, to email what is left to do. Off until switched on. */
+  alerts?: { seasonHelp: boolean };
 }
 
 
 export const emptyState = (): AppState => ({
-  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [], datedMoves: [],
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [], datedMoves: [], alerts: { seasonHelp: false },
 });
 
 /** Shapes saved before the member profile and tax-type changes (Nov 2026). */
@@ -107,6 +109,7 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
     securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
     plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
     brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [], datedMoves: s.datedMoves ?? [],
+    alerts: { seasonHelp: s.alerts?.seasonHelp === true },
   };
 }
 

@@ -13,3 +13,7 @@ Until you finish these steps, nobody (including you) can load or save a family o
 7. **Check it worked.** Sign in as someone not on the list (or ask a family member): they should see the invite-only message, and an invited person should load normally.
 
 Every invite and removal is written to the admin log against your own account.
+
+## Harvest season help (added later)
+
+Push the new migration (`npx supabase@2 db push`, adds `season_log`, `season_stats` and the `families.season_help` column) and redeploy `family` (`npx supabase@2 functions deploy family`) from `prototype/`.

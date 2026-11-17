@@ -6,12 +6,14 @@ import { handleFamily, verifiedEmail, type FamilyDb } from './family.ts';
 /** In-memory stand-in for the families table, with the same compare-and-set behaviour as the SQL. */
 const invited = new Set<string>(['dev@x.in']);
 const asked: Array<[string, string]> = [];
+const seasonSeen: boolean[] = [];
 function memoryDb() {
   const rows = new Map<string, { version: number; envelope: Envelope }>();
   const db: FamilyDb = {
     get: async (u) => rows.get(u) ?? null,
-    insert: async (u, envelope) => (rows.has(u) ? false : (rows.set(u, { version: 1, envelope }), true)),
-    updateIf: async (u, known, next, envelope) => {
+    insert: async (u, envelope, seasonHelp) => { seasonSeen.push(seasonHelp); return rows.has(u) ? false : (rows.set(u, { version: 1, envelope }), true); },
+    updateIf: async (u, known, next, envelope, seasonHelp) => {
+      seasonSeen.push(seasonHelp);
       const r = rows.get(u);
       if (!r || r.version !== known) return false;
       rows.set(u, { version: next, envelope });
@@ -30,7 +32,18 @@ const call = (method: string, body?: unknown, email: string = 'dev@x.in') => han
 beforeEach(async () => {
   ring = await importKeyRing(JSON.stringify({ k1: toB64(crypto.getRandomValues(new Uint8Array(32))) }), 'k1');
   mem = memoryDb();
-  invited.clear(); invited.add('dev@x.in'); asked.length = 0;
+  invited.clear(); invited.add('dev@x.in'); asked.length = 0; seasonSeen.length = 0;
+});
+
+describe('family function: harvest season help flag', () => {
+  it('passes the switch to the db on insert and update, false when absent or not exactly true', async () => {
+    await call('PUT', { state: { ...state(1), alerts: { seasonHelp: true } }, knownVersion: null });
+    await call('PUT', { state: { ...state(2), alerts: { seasonHelp: false } }, knownVersion: 1 });
+    await call('PUT', { state: state(3), knownVersion: 2 });
+    await call('PUT', { state: { ...state(4), alerts: { seasonHelp: 'true' } }, knownVersion: 3 });
+    await call('PUT', { state: { ...state(5), alerts: { seasonHelp: true } }, knownVersion: 4 });
+    expect(seasonSeen).toEqual([true, false, false, false, true]);
+  });
 });
 
 describe('family function', () => {

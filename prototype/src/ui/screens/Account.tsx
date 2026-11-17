@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { sendPasswordReset, setNewPassword, SHOW_EMAIL_SIGNIN, signIn, signInWithGoogle, signUp } from '../../cloud';
-import { deleteAccount, listMyAdminReads, saveProfile } from '../../storage';
+import { deleteAccount, listMyAdminReads, loadSeasonLog, saveProfile } from '../../storage';
 import { useApp } from '../app-context';
 import { Icon, Svg } from '../parts';
 
@@ -139,6 +139,40 @@ function AdminReads() {
   );
 }
 
+/** The consent wording, verbatim from the spec. */
+const SEASON_CONSENT = "From 1 Feb to 31 Mar, our server reads your family once a week to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below.";
+
+const SEASON_KIND: Record<string, string> = {
+  season_check: 'Read your family',
+  email_start: 'Emailed: season has started',
+  email_weekly: 'Emailed: weekly summary',
+  email_deadline: 'Emailed: deadline reminder',
+};
+
+/** The harvest-season switch, with the consent text, and every automatic read listed under it. */
+function SeasonHelp() {
+  const { state, update } = useApp();
+  const [rows, setRows] = useState<Array<{ on_date: string; kind: string }> | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { loadSeasonLog().then(setRows, () => setFailed(true)); }, []);
+  const on = state.alerts?.seasonHelp === true;
+  return (
+    <div className="sheet pad stack">
+      <h2>Harvest season help</h2>
+      <label className="row" style={{ gap: 8 }}>
+        <input type="checkbox" checked={on} onChange={(e) => update((s) => ({ ...s, alerts: { seasonHelp: e.target.checked } }))} />
+        Turn on harvest season help
+      </label>
+      <p className="small">{SEASON_CONSENT}</p>
+      <h3>Automatic season checks</h3>
+      {failed ? <p className="small muted">Could not load the list. Try again later.</p>
+        : rows == null ? <p className="small muted">Loading…</p>
+        : rows.length === 0 ? <p className="small muted">No automatic checks yet.</p>
+        : <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{rows.map((r) => <li key={r.on_date + r.kind}>{r.on_date}: {SEASON_KIND[r.kind] ?? r.kind}</li>)}</ul>}
+    </div>
+  );
+}
+
 function SignedIn() {
   const { cloud, toast } = useApp();
   const user = cloud.session!.user;
@@ -174,6 +208,7 @@ function SignedIn() {
           <p className="tiny muted">Signing out removes your family from this browser. It stays in your account.</p>
         </div>
         <AdminReads />
+        <SeasonHelp />
         <div className="sheet pad stack">
           {confirmDelete ? (
             <>

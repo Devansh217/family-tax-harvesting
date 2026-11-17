@@ -19,3 +19,10 @@ export async function listMyAdminReads(): Promise<Array<{ at: string; reason: st
   if (error) throw new Error(friendly(error.message));
   return (data ?? []) as Array<{ at: string; reason: string }>;
 }
+
+/** Every automatic read of this family by the server's season check (row-level security: own rows only). */
+export async function loadSeasonLog(): Promise<{ on_date: string; kind: string }[]> {
+  const { data, error } = await supabase.from('season_log').select('on_date, kind').order('on_date', { ascending: false });
+  if (error) throw new Error(friendly(error.message));
+  return (data ?? []) as { on_date: string; kind: string }[];
+}

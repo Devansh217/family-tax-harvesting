@@ -3,10 +3,11 @@ import { familyAad, openJson, sealJson, type Envelope, type KeyRing } from './en
 /** The families table as the function needs it. The real one is in family/index.ts; tests use an in-memory one. */
 export interface FamilyDb {
   get(userId: string): Promise<{ version: number; envelope: Envelope } | null>;
+  /** `seasonHelp` is the family's harvest-season switch, kept in the clear so the weekly check can skip families that are off without decrypting them. */
   /** Inserts version 1; false when a row already exists. */
-  insert(userId: string, envelope: Envelope): Promise<boolean>;
+  insert(userId: string, envelope: Envelope, seasonHelp: boolean): Promise<boolean>;
   /** Writes only if the stored version is still `knownVersion`; false if another save got there first. */
-  updateIf(userId: string, knownVersion: number, newVersion: number, envelope: Envelope): Promise<boolean>;
+  updateIf(userId: string, knownVersion: number, newVersion: number, envelope: Envelope, seasonHelp: boolean): Promise<boolean>;
   /** The family row, the admin-read log about it, the profile and the sign-in account. */
   removeAll(userId: string): Promise<void>;
   /** On the beta list, or an admin (so the founder can always reach the admin screen). `email` is lower-case. */
@@ -46,9 +47,10 @@ export async function handleFamily(req: { method: string; userId: string; email?
     try { body = JSON.parse(req.body ?? ''); } catch { return { status: 400, json: { error: 'bad_json' } }; }
     const known = body.knownVersion;
     if (!isFamily(body.state) || !(known === null || (Number.isInteger(known) && (known as number) > 0))) return { status: 400, json: { error: 'bad_family' } };
+    const seasonHelp = (body.state as { alerts?: { seasonHelp?: unknown } }).alerts?.seasonHelp === true;
     const next = known === null ? 1 : (known as number) + 1;
     const envelope = await sealJson(body.state, ring, familyAad(req.userId, next));
-    const ok = known === null ? await db.insert(req.userId, envelope) : await db.updateIf(req.userId, known as number, next, envelope);
+    const ok = known === null ? await db.insert(req.userId, envelope, seasonHelp) : await db.updateIf(req.userId, known as number, next, envelope, seasonHelp);
     return ok ? { status: 200, json: { version: next } } : { status: 409, json: { conflict: true } };
   }
   if (req.method === 'DELETE') {

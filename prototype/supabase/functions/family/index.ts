@@ -16,14 +16,14 @@ const db: FamilyDb = {
     if (error) throw error;
     return data as { version: number; envelope: Envelope } | null;
   },
-  async insert(userId, envelope) {
-    const { error } = await service.from('families').insert({ user_id: userId, version: 1, envelope });
+  async insert(userId, envelope, seasonHelp) {
+    const { error } = await service.from('families').insert({ user_id: userId, version: 1, envelope, season_help: seasonHelp });
     if (error?.code === '23505') return false;
     if (error) throw error;
     return true;
   },
-  async updateIf(userId, knownVersion, newVersion, envelope) {
-    const { data, error } = await service.from('families').update({ version: newVersion, envelope })
+  async updateIf(userId, knownVersion, newVersion, envelope, seasonHelp) {
+    const { data, error } = await service.from('families').update({ version: newVersion, envelope, season_help: seasonHelp })
       .eq('user_id', userId).eq('version', knownVersion).select('version');
     if (error) throw error;
     return !!data?.length;
