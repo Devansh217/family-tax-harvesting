@@ -490,7 +490,7 @@ describe('M1 review fixes', () => {
     expect(after.members[0]!.year.tax - fam.members[0]!.year.tax).toBe(shown);
   });
 
-  it('I4: a dated move with a done or detected_done record is retired from sizing; undone brings it back', () => {
+  it('I4: only detected_done retires a dated move; a manual done keeps its room; undone brings it back', () => {
     const two = [
       { isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(2000) },
       { isin: 'Y', name: 'Y', taxType: 'equity' as const, listed: true, price: rs(1300) },
@@ -500,11 +500,21 @@ describe('M1 review fixes', () => {
     const datedMoves = [{ moveId: yId, date: '2026-12-04' }];
     const rec = (event: 'done' | 'undone' | 'detected_done', at: string) => ({ moveId: yId, at, event, move: { id: yId } as never });
     const st = { members: [person('a', 'self')], securities: two, txns, datedMoves };
+    const xGain = (f: ReturnType<typeof computeFamily>) => (f.moves.find((m) => m.kind === 'harvest_gain' && m.isin === 'X') as { gain: number }).gain;
     expect(computeFamily(st, ASOF, R).moves.find((m) => m.isin === 'Y')!.date).toBe('2026-12-04');
-    for (const records of [[rec('done', 't1')], [rec('detected_done', 't1')], [rec('done', 't1'), rec('undone', 't2'), rec('detected_done', 't3')]]) {
+    // Manual done: the sale may not be in the statements yet, so Y keeps its room and X stays small.
+    for (const records of [[rec('done', 't1')], [rec('done', 't1'), rec('undone', 't2'), rec('done', 't3')]]) {
+      const fam = computeFamily({ ...st, recommendations: records }, ASOF, R);
+      expect(fam.moves.find((m) => m.isin === 'Y')!.date).toBe('2026-12-04');
+      expect(xGain(fam)).toBe(rs(65_000));
+      const total = fam.moves.filter((m) => m.kind === 'harvest_gain').reduce((a, m) => a + m.gain, 0);
+      expect(total).toBeLessThanOrEqual(rs(1_25_000));
+    }
+    // Detected done: the sale is in the statements, the dated move is retired.
+    for (const records of [[rec('detected_done', 't1')], [rec('done', 't1'), rec('undone', 't2'), rec('detected_done', 't3')]]) {
       const fam = computeFamily({ ...st, recommendations: records }, ASOF, R);
       expect(fam.moves.some((m) => m.date)).toBe(false);
-      expect(fam.moves.find((m) => m.kind === 'harvest_gain' && m.isin === 'X')).toMatchObject({ gain: rs(1_25_000) });
+      expect(xGain(fam)).toBe(rs(1_25_000));
     }
     const back = computeFamily({ ...st, recommendations: [rec('done', 't1'), rec('undone', 't2')] }, ASOF, R);
     expect(back.moves.find((m) => m.isin === 'Y')!.date).toBe('2026-12-04');

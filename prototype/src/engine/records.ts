@@ -32,7 +32,7 @@ export const datedRecord = (move: Move, date: ISODate, at: string): Recommendati
 
 /**
  * Moves the family has done: a `detected_done` record always counts; otherwise the latest `done` / `undone` decides.
- * A done move's picked day is retired (no longer sized first); its records stay.
+ * Only a detected done retires the picked day (see retiredMoveIds); records always stay.
  */
 export function doneStatus(records: RecommendationRecord[]): Map<string, { detected: boolean; record: RecommendationRecord }> {
   const out = new Map<string, { detected: boolean; record: RecommendationRecord }>();
@@ -45,7 +45,12 @@ export function doneStatus(records: RecommendationRecord[]): Map<string, { detec
   return out;
 }
 
-export const retiredMoveIds = (records: RecommendationRecord[]): Set<string> => new Set(doneStatus(records).keys());
+/**
+ * Dated moves retired from sizing: only those an import has confirmed (`detected_done`). A manual `done` may come before
+ * the sale is in the statements, so the move keeps its room priority until then.
+ */
+export const retiredMoveIds = (records: RecommendationRecord[]): Set<string> =>
+  new Set([...doneStatus(records)].filter(([, x]) => x.detected).map(([id]) => id));
 
 /** "Done this season": one row per done move of this tax year, the move as it was when done. */
 export function doneThisSeason(records: RecommendationRecord[], r: Pick<TaxRules, 'label'>): Array<{ move: Move; detected: boolean; at: string }> {
