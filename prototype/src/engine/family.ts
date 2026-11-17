@@ -353,6 +353,8 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   const needSoon = (memberId: string, isin: string) => !!state.needSoon?.[`${memberId}|${isin}`];
 
   const usedQty = new Map<string, Qty>();
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const plainDate = (d: ISODate) => { const [y, m, day] = d.split('-').map(Number) as [number, number, number]; return `${day} ${MON[m - 1]} ${y}`; };
   const isRegular = (sec: Security) => sec.plan === 'regular' && !isElss(sec.category);
   const feeSaved = (sec: Security, value: Paise): Paise => Math.round((value * terGapFor(sec.category, sec.name)) / 100);
   const switchWaits = new Set<string>();
@@ -424,10 +426,20 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
         if (switched.has(`${h.isin}|${account}`)) continue;
         let skip = usedQty.get(lotKey(v.member.id, h.isin, account)) ?? 0;
         let qty = 0, gain = 0, allLt = true, longTermOn = '', newest = '';
+        // Equity: the leading long-term run decides (newer short-term lots wait their turn); only with none is it a wait.
+        let ltRun = false;
+        for (const lot of lots) {
+          if (!isCertain(lot, sec, rules)) break;
+          if (skip >= lot.qty) { skip -= lot.qty; continue; }
+          ltRun = isLongTerm(lot.date, asOf, rules.longTermMonths);
+          break;
+        }
+        skip = usedQty.get(lotKey(v.member.id, h.isin, account)) ?? 0;
         for (const lot of lots) {
           let avail = lot.qty;
           if (skip > 0) { const t = Math.min(avail, skip); avail -= t; skip -= t; if (avail === 0) continue; }
           if (!isCertain(lot, sec, rules)) break;
+          if (sec.taxType === 'equity' && ltRun && !isLongTerm(lot.date, asOf, rules.longTermMonths)) break;
           const view = { date: lot.date, qty: avail, cost: avail === lot.qty ? lot.cost : prorate(lot.cost, avail, lot.qty) };
           qty += avail;
           gain += lotGain(view, avail, sec, rules);
@@ -440,6 +452,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
         const under12m = equity && asOf < loadFree;
         const value = valueOf(sec, qty);
         const gap = terGapFor(sec.category, sec.name);
+        if (gap <= 0.1) continue;
         const d = switchDecision({
           value, gain, term: allLt ? 'lt' : 'st', monthsToLongTerm: allLt ? 0 : Math.ceil(daysBetween(asOf, longTermOn) / 30.4375),
           equityUnitsUnder12m: under12m, taxType: sec.taxType, freeRoom: room, slabRate: slabNow, gap,
@@ -450,9 +463,11 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
         if (taxAvoided + fee < MIN_NET_SAVING) continue;
         const until = d.when === 'wait' ? (under12m && loadFree > longTermOn ? loadFree : longTermOn) : undefined;
         const why = d.when === 'now'
-          ? (d.taxNow === 0 ? [`Uses ${rupees(gain)} of ${v.member.name}'s tax-free room`] : [`Tax now: ${rupees(d.taxNow)}`])
+          ? (d.taxNow > 0 ? [`Tax now: ${rupees(d.taxNow)}`]
+            : equity ? [`Uses ${rupees(gain)} of ${v.member.name}'s tax-free room`]
+              : [`No tax now: ${v.member.name}'s income is below the taxable limit`])
           : d.when === 'wait'
-            ? [`Waiting until ${until} avoids short-term tax and an exit load`]
+            ? [`Waiting until ${plainDate(until!)} avoids short-term tax and an exit load`]
             : [`Better done next tax year, inside the new tax-free room, than paying ${rupees(d.taxNow)} of tax now`];
         pushSwitch(v.member, sec, account, qty, value, gain, d.when === 'now' ? d.taxNow : 0, fee, taxAvoided, d.when, until, why);
         room -= inRoom;

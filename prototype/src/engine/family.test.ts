@@ -319,3 +319,36 @@ describe('switch regular plans to direct', () => {
     expect(a.id).toMatch(/\|switch_direct\|a\|INFREG\|/);
   });
 });
+
+describe('switch fix round 1', () => {
+  const reg = (over: Partial<Security> = {}): Security => ({ isin: 'INFREG', name: 'Reg Fund - Regular Plan - Growth', taxType: 'equity', listed: false, category: 'Equity Scheme - Large Cap Fund', plan: 'regular', price: rs(180), ...over });
+
+  it('SIP holding with no room: switches only the long-term units, not a rolling wait', () => {
+    const txns: Txn[] = [];
+    for (let i = 0; i < 36; i++) txns.push(buy('a', 'INFREG', `${2023 + Math.floor((i + 1) / 12)}-${String(((i + 1) % 12) + 1).padStart(2, '0')}-05`, 100, 100));
+    const member = person('a', 'self', { income: [{ kind: 'other', amount: rs(60_00_000), from: 'manual' }] });
+    const used = { members: [member], securities: [reg()], txns: [...txns, buy('a', 'INFREG', '2020-01-01', 1, 100)] };
+    // another member's-style room use: a big realised gain this year leaves no room
+    const fam = computeFamily({ ...used, txns: [...used.txns, buy('a', 'FILL', '2020-01-01', 100, 100), { id: 'sFILL', memberId: 'a', isin: 'FILL', date: '2026-05-01', side: 'sell', qty: q(100), amount: rs(100 * 5000), source: 'test' }], securities: [reg(), { isin: 'FILL', name: 'Fill', taxType: 'equity', listed: false }] }, ASOF, R);
+    const sw = fam.moves.find((x) => x.kind === 'switch_direct')!;
+    expect(sw).toBeDefined();
+    expect(sw.when).not.toBe('wait');
+    const ltUnits = txns.filter((t) => t.date <= '2025-11-14').reduce((a, t) => a + t.qty, 0) + q(1);
+    expect(sw.qty).toBe(ltUnits);
+  });
+
+  it('slab fund for a nil-tax member says no tax now, not tax-free room', () => {
+    const fund = reg({ taxType: 'slab', category: 'Debt Scheme - Gilt Fund', price: rs(200) });
+    const member = person('a', 'self', { income: [] });
+    const fam = computeFamily({ members: [member], securities: [fund], txns: [buy('a', 'INFREG', '2023-01-01', 5000, 100)] }, ASOF, R);
+    const sw = fam.moves.find((x) => x.kind === 'switch_direct')!;
+    expect(sw.when).toBe('now');
+    expect(sw.reasons.join(' ')).toMatch(/No tax now: a's income is below the taxable limit/);
+    expect(sw.reasons.join(' ')).not.toMatch(/tax-free room/);
+  });
+
+  it('wait date is plain English', () => {
+    const fam = computeFamily({ members: [person('a', 'self')], securities: [reg()], txns: [buy('a', 'INFREG', '2025-12-01', 1000, 100)] }, ASOF, R);
+    expect(fam.moves.find((x) => x.kind === 'switch_direct')!.reasons.join(' ')).toMatch(/Waiting until 2 Dec 2026/);
+  });
+});

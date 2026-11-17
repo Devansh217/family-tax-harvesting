@@ -67,7 +67,7 @@ export function MoveRow({ move }: { move: Move }) {
         </p>
         <p className="tiny muted">
           {move.kind === 'switch_direct'
-            ? `${move.tax > 0 ? `Tax now: ${inr(move.tax)}` : 'No tax now'} · saves about ${inr(move.feeSavedPerYear)} a year in fees (estimate)${move.toIsin ? '' : ' · find the direct plan at the fund house'}`
+            ? `${move.tax > 0 ? `Tax now: ${inr(move.tax)}` : 'No tax now'} · saves about ${inr(move.feeSavedPerYear)} a year in fees (estimate)${move.toIsin ? '' : ' · find the direct plan at the fund house'} · check the exit load in your fund statement before selling`
             : later
             ? `Avoids ${inr(move.taxAvoided)} of tax on a future sale · costs about ${inr(move.costs)}`
             : move.costs > 0 ? `${inr(move.taxAvoided)} less tax · costs about ${inr(move.costs)}` : `Tax drops from 20% to 12.5% on this gain`}
