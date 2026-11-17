@@ -56,7 +56,7 @@ describe('buildIcs', () => {
     expect(mk({ kind: 'switch_direct' })).toContain('Asha: sell the regular plan of Nifty 50 Index Fund. Open');
     expect(mk({ kind: 'switch_direct' })).toContain('Asha: buy the direct plan of Nifty 50 Index Fund.');
     const g = mk({ kind: 'gift', fromId: 'a', toId: 'r' });
-    expect(g).toContain('Asha: gift Nifty 50 Index Fund to Ravi. Open');
+    expect(g).toContain('Asha: gift Nifty 50 Index Fund to Ravi. Ravi: sell it once it arrives. Open');
     expect(g).toContain('Ravi: buy back Nifty 50 Index Fund.');
     const l = mk({ kind: 'harvest_loss' });
     expect(l).toContain('Asha: sell Nifty 50 Index Fund at a loss. Open');
@@ -77,5 +77,9 @@ describe('buildIcs', () => {
     const s = buildIcs(input([{ ...gain, name } as Move]));
     for (const line of s.split('\r\n')) expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
     expect(unfold(s)).toContain(`Asha: sell and buy back ${name}.`);
+  });
+  it('a gift event names the receiver\'s sale too (m4)', () => {
+    const g = { ...base, id: 'g1', kind: 'gift', fromId: 'a', toId: 'r', gain: 1, date: '2027-02-15' } as unknown as Move;
+    expect(unfold(buildIcs(input([g])))).toContain('SUMMARY:Asha: gift Nifty 50 Index Fund to Ravi. Ravi: sell it once it arrives');
   });
 });

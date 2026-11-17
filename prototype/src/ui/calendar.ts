@@ -47,7 +47,7 @@ export function buildIcs({ moves, nameOf, lastSafeDay, yearEnd }: IcsInput, stam
     const taker = m.kind === 'gift' ? nameOf(m.toId) : who;
     const sell = m.kind === 'harvest_gain' ? `${who}: sell and buy back ${m.name}.`
       : m.kind === 'switch_direct' ? `${who}: sell the regular plan of ${m.name}.`
-      : m.kind === 'gift' ? `${who}: gift ${m.name} to ${taker}.`
+      : m.kind === 'gift' ? `${who}: gift ${m.name} to ${taker}. ${taker}: sell it once it arrives.`
       : m.kind === 'harvest_loss' ? `${who}: sell ${m.name} at a loss.`
       : null;
     if (sell === null) continue;

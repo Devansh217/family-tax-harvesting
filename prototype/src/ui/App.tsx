@@ -82,7 +82,9 @@ function Main({ initial }: { initial: AppState }) {
   }, []);
   const cloud = useCloud(state, setState, toast);
   const [market, setMarket] = useState<Market>({ latest: null, previous: null, funds: null });
-  useEffect(() => { void loadMarket().then(setMarket); }, []);
+  // Settled once funds.json has arrived or failed for good (loadMarket never throws; a failure gives nulls).
+  const [marketSettled, setMarketSettled] = useState(false);
+  useEffect(() => { void loadMarket().then((m) => { setMarket(m); setMarketSettled(true); }); }, []);
 
   // The sample family keeps its own made-up prices; real families are re-priced at the latest close.
   const live = !state.isSample;
@@ -96,12 +98,13 @@ function Main({ initial }: { initial: AppState }) {
     [state, securities, asOf, market, live],
   );
 
-  // Record each move the first time it is shown (append-only), for real families only.
+  // Record each move the first time it is shown (append-only), for real families only. Not before the funds file has
+  // settled: until then a fund's category (ELSS lock, direct twin) is unknown and the moves may be wrong.
   useEffect(() => {
-    if (!live) return;
+    if (!live || !marketSettled) return;
     const fresh = newShownRecords(fam.moves, state.recommendations, new Date().toISOString());
     if (fresh.length) setState((s) => ({ ...s, recommendations: [...s.recommendations, ...newShownRecords(fam.moves, s.recommendations, fresh[0]!.at)] }));
-  }, [fam.moves, live, state.recommendations]);
+  }, [fam.moves, live, marketSettled, state.recommendations]);
 
   useEffect(() => {
     if (!live || !market.latest || state.members.length === 0) return;

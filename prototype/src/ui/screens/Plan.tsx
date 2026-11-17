@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { isLaterBenefit, type Move } from '../../engine/family';
+import { isLaterBenefit, taxFreeGainOf, type Move } from '../../engine/family';
 import { useApp } from '../app-context';
 import { datedRecord, statusRecord } from '../../engine/records';
 import { dateLabel, inr, inrShort, units } from '../format';
@@ -7,6 +7,7 @@ import { Avatar, Disclaimer, Svg, Icon } from '../parts';
 import { SampleBanner } from './Home';
 import { NSE_HOLIDAYS_2027, lastSafeDay } from '../../engine/season';
 import { buildIcs } from '../calendar';
+import { datePickerBounds, dateVerb, planView } from '../plan';
 
 export const movesNotDone = (moves: Move[], done: Record<string, boolean>) => moves.filter((m) => !done[m.id]);
 
@@ -18,8 +19,11 @@ const KIND_ORDER: Array<{ kind: Move['kind']; title: string; blurb: string }> = 
   { kind: 'wait', title: 'Wait', blurb: 'These turn long-term soon. Selling before then is taxed at 20% instead of 12.5%.' },
 ];
 
-/** Moves the family can put a day on. A switch beyond the room (wait, next year) has its own timing. */
-const isDatable = (m: Move) => m.kind === 'harvest_gain' || m.kind === 'gift' || m.kind === 'harvest_loss' || (m.kind === 'switch_direct' && m.when === 'now');
+/**
+ * Moves the family can put a day on. A switch beyond the room (wait, next year) has its own timing, and one that costs tax
+ * now is not dated: a picked day holds tax-free room, and a dated switch that would cost tax shows "No room left".
+ */
+const isDatable = (m: Move) => m.kind === 'harvest_gain' || m.kind === 'gift' || m.kind === 'harvest_loss' || (m.kind === 'switch_direct' && m.when === 'now' && m.tax === 0);
 
 /** The last day to sell this year, when the exchange holiday list for the year end is published. */
 const useLastSafeDay = () => {
@@ -29,14 +33,14 @@ const useLastSafeDay = () => {
 
 /** A day picker for one move. Saving keeps the day (replacing an earlier one) and records it; the move is then sized first. */
 function DatePicker({ move }: { move: Move }) {
-  const { update, asOf } = useApp();
-  const max = useLastSafeDay();
+  const { update, asOf, fam } = useApp();
+  const { min, max } = datePickerBounds(asOf, fam.rules.end, useLastSafeDay());
   const [day, setDay] = useState(move.date ?? asOf);
-  const ok = day !== '' && (!max || day <= max);
+  const ok = day !== '' && day >= min && day <= max;
   return (
     <p className="tiny row" style={{ gap: 8, flexWrap: 'wrap' }}>
-      <label>{move.kind === 'switch_direct' ? 'Switch on ' : 'Sell on '}
-        <input type="date" value={day} min={asOf} {...(max ? { max } : {})} onChange={(e) => setDay(e.target.value)} />
+      <label>{`${dateVerb(move.kind)} `}
+        <input type="date" value={day} min={min} max={max} onChange={(e) => setDay(e.target.value)} />
       </label>
       <button
         className="btn" type="button" disabled={!ok || day === move.date}
@@ -76,17 +80,17 @@ function describe(m: Move, nameOf: (id: string) => string, bonusOf: (id: string)
 
 export function MoveRow({ move }: { move: Move }) {
   const { state, update, nameOf, indexOf, fam } = useApp();
-  const done = !!state.done[move.id];
   const seenDone = state.recommendations.some((r) => r.moveId === move.id && r.event === 'detected_done');
+  const done = !!state.done[move.id] || seenDone;
   const d = describe(move, nameOf, (id) => fam.members.find((v) => v.member.id === id)?.year.bonus.free ?? 0);
   const who = state.members.find((m) => m.id === d.who);
   const later = isLaterBenefit(move);
   const switching = move.kind === 'switch_direct';
-  const gain = move.kind === 'harvest_gain' || move.kind === 'gift' ? move.gain : 0;
+  const gain = taxFreeGainOf(move);
   return (
     <div className={`move ${done ? 'done' : ''}`}>
       <button
-        className="check" type="button" aria-pressed={done} aria-label={`${done ? 'Mark not done' : 'Mark done'}: ${d.title}`}
+        className="check" type="button" aria-pressed={done} aria-label={`${done ? 'Mark not done' : 'Mark done'}: ${d.title}`} disabled={seenDone}
         onClick={() => update((s) => ({
           ...s, done: { ...s.done, [move.id]: !done },
           recommendations: [...s.recommendations, statusRecord(move, done ? 'undone' : 'done', new Date().toISOString())],
@@ -149,17 +153,8 @@ function CalendarButton() {
 }
 
 export function Plan() {
-  const { fam, state } = useApp();
-  const isDone = (m: Move) => !!state.done[m.id];
-  const gainOf = (m: Move) => (m.kind === 'harvest_gain' || m.kind === 'gift' ? m.gain : 0);
-  const later = fam.moves.filter(isLaterBenefit);
-  const now = fam.moves.filter((m) => !isLaterBenefit(m) && m.kind !== 'switch_direct');
-  const gainTotal = later.reduce((a, m) => a + gainOf(m), 0);
-  const gainDone = later.filter(isDone).reduce((a, m) => a + gainOf(m), 0);
-  const nowTotal = now.reduce((a, m) => a + m.saving, 0);
-  const nowDone = now.filter(isDone).reduce((a, m) => a + m.saving, 0);
-  const live = fam.moves.filter((m) => !m.noRoom);
-  const doneCount = live.filter(isDone).length;
+  const { fam, state, update, nameOf } = useApp();
+  const { open, done, gainDone, gainTotal, nowDone, nowTotal, doneCount, liveCount } = planView(fam, state.recommendations);
 
   return (
     <>
@@ -174,7 +169,7 @@ export function Plan() {
         <span className="meter" aria-hidden="true"><span className="seg-free" style={{ width: `${gainTotal ? (gainDone / gainTotal) * 100 : 0}%` }} /></span>
         {nowTotal > 0 && <p className="small"><strong className="fig">{inr(nowDone)}</strong> cut from this year&rsquo;s tax <span className="muted">of {inr(nowTotal)} possible</span></p>}
         <p className="small muted" style={{ maxWidth: '72ch' }}>
-          Gains made tax-free stop being taxed later, when you sell. That is worth up to {inr(fam.totals.laterSaving)} after costs, but only in a year your gains would go past the {inr(fam.rules.ltcgExemption)} exemption. {doneCount} of {live.length} moves done.
+          Gains made tax-free stop being taxed later, when you sell. That is worth up to {inr(fam.totals.laterSaving)} after costs, but only in a year your gains would go past the {inr(fam.rules.ltcgExemption)} exemption. {doneCount} of {liveCount} moves done.
         </p>
         <p className="note" style={{ maxWidth: '72ch' }}>
           <strong style={{ color: 'var(--ink)' }}>Not a recommendation to buy or sell.</strong> Each move shows the tax effect of an action on holdings you already own. Whether to act is your decision; check large moves with a CA. <a href="#about">How to read this</a>
@@ -184,7 +179,7 @@ export function Plan() {
         )}
       </header>
 
-      {fam.moves.length === 0 && (
+      {fam.moves.length === 0 && done.length === 0 && (
         <div className="sheet empty">
           <p>Nothing to suggest yet. Moves appear once members have priced long-term holdings with known purchase dates, and free room.</p>
           <a className="btn" href="#import">Import statements</a>
@@ -192,9 +187,9 @@ export function Plan() {
       )}
 
       {KIND_ORDER.map(({ kind, title, blurb }) => {
-        const list = fam.moves.filter((m) => m.kind === kind);
+        const list = open.filter((m) => m.kind === kind);
         if (list.length === 0) return null;
-        const total = kind === 'switch_direct' ? `${inr(list.reduce((a, m) => a + (m.kind === 'switch_direct' ? m.feeSavedPerYear : 0), 0))} a year in fees` : isLaterBenefit(list[0]!) ? `${inr(list.reduce((a, m) => a + gainOf(m), 0))} tax-free` : `${inr(list.reduce((a, m) => a + m.saving, 0))} less tax`;
+        const total = kind === 'switch_direct' ? `${inr(list.reduce((a, m) => a + (m.kind === 'switch_direct' ? m.feeSavedPerYear : 0), 0))} a year in fees` : isLaterBenefit(list[0]!) ? `${inr(list.reduce((a, m) => a + taxFreeGainOf(m), 0))} tax-free` : `${inr(list.reduce((a, m) => a + m.saving, 0))} less tax`;
         return (
           <section key={kind} className="stack">
             <div className="row-between"><h2>{title}</h2><span className="fig small muted">{total}</span></div>
@@ -203,6 +198,31 @@ export function Plan() {
           </section>
         );
       })}
+      {done.length > 0 && (
+        <section className="stack">
+          <div className="row-between"><h2>Done this season</h2><span className="fig small muted">{done.length}</span></div>
+          <div className="sheet">
+            {done.map(({ move, detected, label }) => (
+              <div key={move.id} className="move done">
+                <div className="grow stack" style={{ gap: 4 }}>
+                  <p className="move-title">{describe(move, nameOf, () => 0).title}</p>
+                  <p className="small muted">{move.kind === 'gift' ? `${nameOf(move.fromId)} to ${nameOf(move.toId)}` : nameOf(move.memberId)}</p>
+                  <p className="tiny"><span className="chip room">{label}</span></p>
+                </div>
+                {!detected && (
+                  <button
+                    className="btn" type="button"
+                    onClick={() => update((s) => ({
+                      ...s, done: { ...s.done, [move.id]: false },
+                      recommendations: [...s.recommendations, statusRecord(move, 'undone', new Date().toISOString())],
+                    }))}
+                  >Not done</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       <p className="tiny muted">Harvesting never places trades. Costs are estimates for a discount broker: securities transaction tax, stamp duty, exchange charges and the depository fee. Gift moves assume shares in a demat account; mutual fund units are not suggested for gifting.</p>
       <Disclaimer />
     </>

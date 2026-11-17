@@ -1,11 +1,11 @@
 import { useState, type DragEvent } from 'react';
 import { addMonths } from '../../engine/dates';
-import { detectDone, seasonStartOf } from '../../engine/detect';
 import {
   detectKind, FIELD_LABELS, FIELDS, parseStatementLines, parseTablePreview, PdfPasswordError, previewTable,
   type Field, type Mapping, type ParseResult, type TablePreview,
 } from '../../parsers';
-import { applyImport, guessAccount, removeImport } from '../../store';
+import { guessAccount, removeImport } from '../../store';
+import { importAndDetect } from '../importFlow';
 import { useApp } from '../app-context';
 import { dateLabel, inr, units } from '../format';
 import { Icon, Svg } from '../parts';
@@ -76,12 +76,10 @@ export function Import() {
     if (!r || !member) return;
     // The moves as the family last saw them (before this import changes anything) are what a sale is matched against.
     const seen = fam.moves;
-    update((s) => {
-      const next = applyImport(s, member.id, item.name, r, { openingDate: opening ? openingDate : undefined, account: account.trim() || undefined, checkOnly });
-      const before = new Set(s.txns.map((t) => t.id));
-      const detected = detectDone({ moves: seen, records: s.recommendations, datedMoves: s.datedMoves, newTxns: next.txns.filter((t) => !before.has(t.id)), seasonStart: seasonStartOf(fam.rules), at: new Date().toISOString() });
-      return detected.length ? { ...next, recommendations: [...next.recommendations, ...detected] } : next;
-    });
+    update((s) => importAndDetect(s, {
+      memberId: member.id, fileName: item.name, result: r, seen, rules: fam.rules, at: new Date().toISOString(),
+      opts: { openingDate: opening ? openingDate : undefined, account: account.trim() || undefined, checkOnly },
+    }));
     setItems((xs) => xs.map((x) => (x.id === item.id && (x.status === 'pdf' || x.status === 'table' || x.status === 'statement') ? { ...x, added: true } : x)));
     toast(`Added to ${member.name}`);
   };
