@@ -1,5 +1,5 @@
 import { classifyByIsin } from './parsers/common';
-import type { PlannedSale } from './engine/family';
+import type { DatedMove, PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
 import type { RecommendationRecord } from './engine/records';
 import { FY_2026_27 } from './engine/rules';
@@ -42,11 +42,13 @@ export interface AppState {
   taxTypeOverrides: Record<string, TaxType>;
   /** Every move shown and every status change, append-only (kept 5 years once registered as an adviser). */
   recommendations: RecommendationRecord[];
+  /** Moves the family picked a day for; sized first on every recompute so they hold their room. */
+  datedMoves: DatedMove[];
 }
 
 
 export const emptyState = (): AppState => ({
-  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [],
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [], datedMoves: [],
 });
 
 /** Shapes saved before the member profile and tax-type changes (Nov 2026). */
@@ -104,7 +106,7 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
     members: linkFamily((s.members as LegacyMember[]).map(migrateMember)),
     securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
     plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
-    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [],
+    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [], datedMoves: s.datedMoves ?? [],
   };
 }
 

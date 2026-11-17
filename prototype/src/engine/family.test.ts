@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeFamily, simulateSale } from './family';
+import { NSE_HOLIDAYS_2027, buybackDate } from './season';
 import { FY_2026_27 as R } from './rules';
 import { QTY_SCALE, type Member, type Security, type Txn } from './types';
 
@@ -350,5 +351,73 @@ describe('switch fix round 1', () => {
   it('wait date is plain English', () => {
     const fam = computeFamily({ members: [person('a', 'self')], securities: [reg()], txns: [buy('a', 'INFREG', '2025-12-01', 1000, 100)] }, ASOF, R);
     expect(fam.moves.find((x) => x.kind === 'switch_direct')!.reasons.join(' ')).toMatch(/Waiting until 2 Dec 2026/);
+  });
+});
+
+describe('dated moves hold their room', () => {
+  const idOf = (kind: string, who: string, isin: string) => `${R.label}|${kind}|${who}|${isin}|`;
+  const two = [
+    { isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(2000) },
+    { isin: 'Y', name: 'Y', taxType: 'equity' as const, listed: true, price: rs(1300) },
+  ];
+  const holds = [buy('a', 'X', '2023-01-01', 200, 1000), buy('a', 'Y', '2023-01-01', 200, 1000)]; // X ₹2 L gain, Y ₹60,000 gain
+
+  it('a dated harvest gets its full gain before a bigger undated one', () => {
+    const plain = computeFamily({ members: [person('a', 'self')], securities: two, txns: holds }, ASOF, R);
+    expect(plain.moves.filter((m) => m.kind === 'harvest_gain').map((m) => m.isin)).toEqual(['X']);
+    const dated = computeFamily({ members: [person('a', 'self')], securities: two, txns: holds, datedMoves: [{ moveId: idOf('harvest_gain', 'a', 'Y'), date: '2026-12-04' }] }, ASOF, R);
+    const y = dated.moves.find((m) => m.isin === 'Y')!, x = dated.moves.find((m) => m.isin === 'X')!;
+    expect(y).toMatchObject({ gain: rs(60_000), date: '2026-12-04' });
+    expect(x.kind === 'harvest_gain' && x.gain).toBe(rs(65_000));
+  });
+
+  it('a dated gift keeps the receiver room from the receiver\'s own harvests', () => {
+    const members = [person('a', 'self'), person('p', 'parent', { age: 64 })];
+    const txns = [buy('a', 'X', '2020-01-01', 1000, 1000), { ...buy('p', 'Y', '2023-01-01', 500, 1000), memberId: 'p' }];
+    const plain = computeFamily({ members, securities: two, txns }, ASOF, R);
+    expect(plain.moves.some((m) => m.kind === 'gift')).toBe(false);
+    const dated = computeFamily({ members, securities: two, txns, datedMoves: [{ moveId: `${R.label}|gift|a>p|X|`, date: '2026-12-10' }] }, ASOF, R);
+    expect(dated.moves.find((m) => m.kind === 'gift')).toMatchObject({ qty: q(125), gain: rs(1_25_000), date: '2026-12-10' });
+    expect(dated.moves.some((m) => m.kind === 'harvest_gain' && m.memberId === 'p')).toBe(false);
+  });
+
+  it('re-sizes at today\'s price under the same id, never past the room', () => {
+    const mk = (price: number) => computeFamily({
+      members: [person('a', 'self')], securities: [{ ...two[0]!, price: rs(price) }], txns: [buy('a', 'X', '2023-01-01', 500, 1000)],
+      datedMoves: [{ moveId: idOf('harvest_gain', 'a', 'X'), date: '2026-12-04' }],
+    }, ASOF, R).moves.find((m) => m.kind === 'harvest_gain')!;
+    const at2000 = mk(2000), at2200 = mk(2200);
+    expect(at2200.id).toBe(at2000.id);
+    expect(at2200.qty).toBeLessThan(at2000.qty);
+    expect(at2200.kind === 'harvest_gain' && at2200.gain).toBeLessThanOrEqual(rs(1_25_000));
+  });
+
+  it('keeps a dated move whose room is gone, with no units and no figures', () => {
+    const sold: Txn = { id: 's1', memberId: 'a', isin: 'X', date: '2026-06-01', side: 'sell', qty: q(125), amount: rs(125 * 2000), source: 'test' };
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities: [two[0]!], txns: [buy('a', 'X', '2023-01-01', 500, 1000), sold],
+      datedMoves: [{ moveId: idOf('harvest_gain', 'a', 'X'), date: '2026-12-04' }],
+    }, ASOF, R);
+    const m = fam.moves.find((x) => x.id === idOf('harvest_gain', 'a', 'X'))!;
+    expect(m).toMatchObject({ noRoom: true, qty: 0, gain: 0, saving: 0, date: '2026-12-04' });
+    expect(m.reasons).toEqual(['No room left for this move']);
+    expect(fam.totals.laterSaving).toBe(0);
+  });
+
+  it('buyOn is the next trading day after the picked date', () => {
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities: [two[0]!], txns: [buy('a', 'X', '2023-01-01', 500, 1000)],
+      datedMoves: [{ moveId: idOf('harvest_gain', 'a', 'X'), date: '2026-12-04' }],
+    }, ASOF, R);
+    expect(fam.moves[0]!.buyOn).toBe(buybackDate('2026-12-04', true, NSE_HOLIDAYS_2027.dates));
+    expect(fam.moves[0]!.buyOn).toBe('2026-12-07');
+  });
+
+  it('drops a dated move that matches no holding', () => {
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities: [two[0]!], txns: [buy('a', 'X', '2023-01-01', 500, 1000)],
+      datedMoves: [{ moveId: idOf('harvest_gain', 'a', 'GONE'), date: '2026-12-04' }, { moveId: 'garbage', date: '2026-12-04' }],
+    }, ASOF, R);
+    expect(fam.moves.map((m) => m.isin)).toEqual(['X']);
   });
 });

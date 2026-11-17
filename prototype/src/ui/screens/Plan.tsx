@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { isLaterBenefit, type Move } from '../../engine/family';
 import { useApp } from '../app-context';
-import { statusRecord } from '../../engine/records';
+import { datedRecord, statusRecord } from '../../engine/records';
 import { dateLabel, inr, inrShort, units } from '../format';
 import { Avatar, Disclaimer, Svg, Icon } from '../parts';
 import { SampleBanner } from './Home';
@@ -15,6 +16,38 @@ const KIND_ORDER: Array<{ kind: Move['kind']; title: string; blurb: string }> = 
   { kind: 'harvest_loss', title: 'Book losses', blurb: 'Sell holdings at a loss to cut tax on gains already booked this year. You can buy them back afterwards.' },
   { kind: 'wait', title: 'Wait', blurb: 'These turn long-term soon. Selling before then is taxed at 20% instead of 12.5%.' },
 ];
+
+/** Moves the family can put a day on. A switch beyond the room (wait, next year) has its own timing. */
+const isDatable = (m: Move) => m.kind === 'harvest_gain' || m.kind === 'gift' || m.kind === 'harvest_loss' || (m.kind === 'switch_direct' && m.when === 'now');
+
+/** The last day to sell this year, when the exchange holiday list for the year end is published. */
+const useLastSafeDay = () => {
+  const { fam } = useApp();
+  return fam.rules.end.startsWith('2027') ? lastSafeDay(fam.rules.end, NSE_HOLIDAYS_2027) : null;
+};
+
+/** A day picker for one move. Saving keeps the day (replacing an earlier one) and records it; the move is then sized first. */
+function DatePicker({ move }: { move: Move }) {
+  const { update, asOf } = useApp();
+  const max = useLastSafeDay();
+  const [day, setDay] = useState(move.date ?? asOf);
+  const ok = day !== '' && (!max || day <= max);
+  return (
+    <p className="tiny row" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <label>{move.kind === 'switch_direct' ? 'Switch on ' : 'Sell on '}
+        <input type="date" value={day} min={asOf} {...(max ? { max } : {})} onChange={(e) => setDay(e.target.value)} />
+      </label>
+      <button
+        className="btn" type="button" disabled={!ok || day === move.date}
+        onClick={() => update((s) => ({
+          ...s,
+          datedMoves: [...s.datedMoves.filter((d) => d.moveId !== move.id), { moveId: move.id, date: day }],
+          recommendations: [...s.recommendations, datedRecord(move, day, new Date().toISOString())],
+        }))}
+      >{move.date ? 'Change date' : 'Set date'}</button>
+    </p>
+  );
+}
 
 function describe(m: Move, nameOf: (id: string) => string, bonusOf: (id: string) => number) {
   const u = units(m.qty);
@@ -72,6 +105,10 @@ export function MoveRow({ move }: { move: Move }) {
             ? `Avoids ${inr(move.taxAvoided)} of tax on a future sale · costs about ${inr(move.costs)}`
             : move.costs > 0 ? `${inr(move.taxAvoided)} less tax · costs about ${inr(move.costs)}` : `Tax drops from 20% to 12.5% on this gain`}
         </p>
+        {move.noRoom && <p className="tiny" style={{ color: 'var(--time)' }}>{move.reasons[0]}</p>}
+        {move.date && !move.noRoom && <p className="tiny">{`Sell on ${dateLabel(move.date)}`}{move.buyOn && ` · ${move.kind === 'switch_direct' ? 'Buy the direct plan' : 'Buy back'} on ${dateLabel(move.buyOn)}`}</p>}
+        {move.date && !move.noRoom && <p className="tiny muted">Units for today&rsquo;s prices; check again on the day</p>}
+        {!done && isDatable(move) && <DatePicker move={move} />}
       </div>
       <span className="stack" style={{ gap: 0, alignItems: 'flex-end', flex: 'none' }}>
         <span className={`fig ${done ? 'good' : ''}`} style={{ fontSize: 14 }}>{inr(move.kind === 'switch_direct' ? move.feeSavedPerYear : later ? gain : move.saving)}</span>
@@ -84,9 +121,8 @@ export function MoveRow({ move }: { move: Move }) {
 /** "Last safe day to sell this year", from 1 February; nothing until the holiday list for the year end is published. */
 export function LastSafeDay() {
   const { fam, asOf } = useApp();
-  if (asOf < `${fam.rules.end.slice(0, 4)}-02-01` || asOf > fam.rules.end) return null;
-  const day = fam.rules.end.startsWith('2027') ? lastSafeDay(fam.rules.end, NSE_HOLIDAYS_2027) : null;
-  if (!day) return null;
+  const day = useLastSafeDay();
+  if (asOf < `${fam.rules.end.slice(0, 4)}-02-01` || asOf > fam.rules.end || !day) return null;
   return <p className="small">Last safe day to sell this year: <strong>{dateLabel(day)}</strong></p>;
 }
 
