@@ -72,15 +72,16 @@ export function seasonSummary(
       .filter((r) => (r.event === 'done' || r.event === 'detected_done') && r.at.slice(0, 10) > weekFrom && r.at.slice(0, 10) <= asOf)
       .map((r) => r.moveId),
   );
-  const datedKeys = new Set(state.datedMoves.filter((d) => !retired.has(d.moveId)).map((d) => `${d.moveId}|${d.date}`));
+  const dated = new Set(state.datedMoves.filter((d) => d.moveId.startsWith(prefix) && !retired.has(d.moveId)).map((d) => d.moveId));
+  const thisYear = [...done.values()].filter((x) => x.record.moveId.startsWith(prefix));
   const imports = state.imports.map((i) => i.date).sort();
 
   return {
     roomLeft, usable, used,
     movesWaiting: waiting.length, nextDate: dates[0] ?? null, doneSinceWeek: recent.size,
-    shown: shown.size, dated: datedKeys.size,
-    done: [...done.values()].filter((x) => !x.detected).length,
-    detected: [...done.values()].filter((x) => x.detected).length,
+    shown: shown.size, dated: dated.size,
+    done: thisYear.filter((x) => !x.detected).length,
+    detected: thisYear.filter((x) => x.detected).length,
     lastImport: imports[imports.length - 1] ?? null,
     taxableGainsBooked: view.members.some((v) => v.year.tax > 0),
   };

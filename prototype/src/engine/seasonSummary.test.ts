@@ -115,13 +115,21 @@ describe('seasonSummary: counts', () => {
       statusRecord(b, 'detected_done', '2027-02-08T00:00:00Z'), // exactly 7 days before asOf: outside
       statusRecord(c, 'detected_done', '2027-02-09T00:00:00Z'), // inside
     ];
-    const dated = [{ moveId: a.id, date: '2027-02-20' }, { moveId: b.id, date: '2027-02-20' }, { moveId: c.id, date: '2027-02-21' }, { moveId: c.id, date: '2027-02-22' }];
+    const dated = [{ moveId: a.id, date: '2027-02-20' }, { moveId: a.id, date: '2027-02-24' }, { moveId: b.id, date: '2027-02-20' }, { moveId: c.id, date: '2027-02-21' }, { moveId: c.id, date: '2027-02-22' }];
     const s = seasonSummary(view, { recommendations: recs, datedMoves: dated, imports: [] }, ASOF, START);
     expect(s.shown).toBe(2);
     expect(s.dated).toBe(1); // b and c are retired by a detected done; only a is left
     expect(s.done).toBe(1);
     expect(s.detected).toBe(2);
     expect(s.doneSinceWeek).toBe(2); // a (12 Feb) and c (9 Feb)
+  });
+
+  it('done, detected and dated ignore a previous tax year\'s records', () => {
+    const view = withMoves([mv(`${T}|h|1`), mv('FY 2025-26|h|old')]);
+    const [a, old] = view.moves as [Move, Move];
+    const recs = [statusRecord(old, 'done', '2027-02-12T00:00:00Z'), statusRecord(old, 'detected_done', '2027-02-12T00:00:00Z'), statusRecord(a, 'done', '2027-02-12T00:00:00Z')];
+    const s = seasonSummary(view, { recommendations: recs, datedMoves: [{ moveId: old.id, date: '2027-02-20' }, { moveId: a.id, date: '2027-02-21' }], imports: [] }, ASOF, START);
+    expect(s).toMatchObject({ done: 1, detected: 0, dated: 1 });
   });
 
   it('lastImport is the latest import date, null with none', () => {
