@@ -77,6 +77,7 @@ function describe(m: Move, nameOf: (id: string) => string, bonusOf: (id: string)
 export function MoveRow({ move }: { move: Move }) {
   const { state, update, nameOf, indexOf, fam } = useApp();
   const done = !!state.done[move.id];
+  const seenDone = state.recommendations.some((r) => r.moveId === move.id && r.event === 'detected_done');
   const d = describe(move, nameOf, (id) => fam.members.find((v) => v.member.id === id)?.year.bonus.free ?? 0);
   const who = state.members.find((m) => m.id === d.who);
   const later = isLaterBenefit(move);
@@ -95,6 +96,7 @@ export function MoveRow({ move }: { move: Move }) {
       </button>
       <div className="grow stack" style={{ gap: 4 }}>
         <p className="move-title">{d.title}</p>
+        {seenDone && <p className="tiny"><span className="chip room">Done, seen in your statement</span></p>}
         <p className="small muted row" style={{ gap: 6 }}>
           {who && <Avatar member={who} index={indexOf(who.id)} size="sm" />}
           <span>{d.sub}</span>

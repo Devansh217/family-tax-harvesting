@@ -12,6 +12,7 @@ export * from './tax';
 export * from './family';
 export * from './relations';
 export * from './records';
+export * from './detect';
 export * from './events';
 export * from './planner';
 export * from './marketAssumptions';
