@@ -17,3 +17,4 @@ export * from './events';
 export * from './planner';
 export * from './marketAssumptions';
 export * from './categories';
+export * from './seasonSummary';
