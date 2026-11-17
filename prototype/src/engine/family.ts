@@ -300,13 +300,14 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
       const qs = queues(ledger, member.id, isin);
       const hl: HoldingLot[] = qs.flatMap(({ lots }) => lots.map((l) => {
         const g = priced ? lotGain(l, l.qty, sec, rules) : null;
+        const locked = lockedUntil(l, sec);
         return {
           account: l.account, date: l.date, qty: l.qty, cost: l.cost, value: priced ? valueOf(sec, l.qty) : null, gain: g,
           // Term per lot and type: slab-taxed funds never turn long-term (longTermOn then shows the equity date, unused).
           term: lotTerms(sec, l.date, asOf, rules).term,
           longTermOn: longTermFrom(l.date, longTermMonthsFor(lotTaxType(sec, l.date, rules), sec.listed, rules) ?? rules.longTermMonths),
           certain: isCertain(l, sec, rules),
-          ...(lockedUntil(l, sec) ? { lockedUntil: lockedUntil(l, sec)! } : {}),
+          ...(locked ? { lockedUntil: locked } : {}),
         } satisfies HoldingLot;
       }));
       const sum = (f: (x: HoldingLot) => number) => hl.reduce((a, x) => a + f(x), 0);

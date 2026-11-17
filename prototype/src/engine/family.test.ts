@@ -231,23 +231,25 @@ describe('ELSS lock-in and the move floor', () => {
     expect(fam.members[0]!.holdings[0]!.lots[0]!.lockedUntil).toBe('2028-06-01');
   });
 
-  it('elss is never gifted', () => {
+  it('elss is never gifted, even when listed and a parent has room', () => {
     const fam = computeFamily({
-      members: [person('a', 'self'), person('b', 'spouse', { income: [] })], securities: [elss],
+      members: [person('a', 'self', { income: [{ kind: 'other' as const, amount: rs(20_00_000), from: 'manual' as const }] }), person('p', 'parent', { age: 64, income: [] })],
+      securities: [{ ...elss, listed: true }],
       txns: [buy('a', 'INF1', '2020-06-01', 10000, 100)],
     }, asof, R);
     expect(fam.moves.filter((x) => x.kind === 'gift')).toHaveLength(0);
   });
 
   it('floor: a harvest saving ₹800 is not shown', () => {
-    // ₹1.0 L gain avoids ₹12,500 tax; use a small gain: ₹10,000 gain avoids ₹1,250, less costs ~₹250 = ~₹1,000
+    // ₹10,000 gain avoids ₹1,250 tax; costs are small, so the saving clears ₹1,000 and the move is shown.
     const fam = computeFamily({
       members: [person('a', 'self')],
       securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(1100) }],
-      txns: [buy('a', 'X', '2023-01-01', 100, 1000)], // ₹10,000 gain, avoided ₹1,250, saving ~₹1,200 at best
+      txns: [buy('a', 'X', '2023-01-01', 100, 1000)],
     }, ASOF, R);
     const m = fam.moves.find((x) => x.kind === 'harvest_gain');
-    if (m) expect(m.saving).toBeGreaterThanOrEqual(rs(1000));
+    expect(m).toBeDefined();
+    expect(m!.saving).toBeGreaterThanOrEqual(rs(1000));
     const small = computeFamily({
       members: [person('a', 'self')],
       securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(1080) }],
