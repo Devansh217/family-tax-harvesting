@@ -29,3 +29,27 @@ export const statusRecord = (move: Move, event: RecordEvent, at: string): Recomm
 
 /** The family picked a day for this move: an 'in_plan' record with the date and the move as sized that day. */
 export const datedRecord = (move: Move, date: ISODate, at: string): RecommendationRecord => ({ moveId: move.id, at, event: 'in_plan', date, move });
+
+/**
+ * Moves the family has done: a `detected_done` record always counts; otherwise the latest `done` / `undone` decides.
+ * A done move's picked day is retired (no longer sized first); its records stay.
+ */
+export function doneStatus(records: RecommendationRecord[]): Map<string, { detected: boolean; record: RecommendationRecord }> {
+  const out = new Map<string, { detected: boolean; record: RecommendationRecord }>();
+  for (const r of records) {
+    if (r.event === 'detected_done') out.set(r.moveId, { detected: true, record: r });
+    else if (out.get(r.moveId)?.detected) continue;
+    else if (r.event === 'done') out.set(r.moveId, { detected: false, record: r });
+    else if (r.event === 'undone') out.delete(r.moveId);
+  }
+  return out;
+}
+
+export const retiredMoveIds = (records: RecommendationRecord[]): Set<string> => new Set(doneStatus(records).keys());
+
+/** "Done this season": one row per done move of this tax year, the move as it was when done. */
+export function doneThisSeason(records: RecommendationRecord[], r: Pick<TaxRules, 'label'>): Array<{ move: Move; detected: boolean; at: string }> {
+  return [...doneStatus(records).values()]
+    .filter((x) => x.record.moveId.startsWith(`${r.label}|`))
+    .map((x) => ({ move: x.record.move, detected: x.detected, at: x.record.at }));
+}

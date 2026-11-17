@@ -15,6 +15,8 @@ export interface SwitchInput {
   slabRate: number;
   /** Fee gap, percentage points a year. */
   gap: number;
+  /** Exact tax of switching now, when the caller has worked it out (it then replaces the estimate below). */
+  taxNow?: Paise;
 }
 
 export interface SwitchDecision {
@@ -42,7 +44,7 @@ export function switchDecision(i: SwitchInput): SwitchDecision {
   const gain = Math.max(0, i.gain);
   const longTerm = i.term === 'lt';
   const load = i.equityUnitsUnder12m ? Math.round(i.value * EXIT_LOAD) : 0;
-  const taxNow = Math.round(
+  const taxNow = i.taxNow ?? Math.round(
     equity ? (longTerm ? LT * Math.max(0, gain - Math.max(0, i.freeRoom)) : ST * gain) : i.slabRate * gain,
   );
   const cost = taxNow + load;

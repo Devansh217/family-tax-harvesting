@@ -341,7 +341,8 @@ describe('switch fix round 1', () => {
   it('slab fund for a nil-tax member says no tax now, not tax-free room', () => {
     const fund = reg({ taxType: 'slab', category: 'Debt Scheme - Gilt Fund', price: rs(200) });
     const member = person('a', 'self', { income: [] });
-    const fam = computeFamily({ members: [member], securities: [fund], txns: [buy('a', 'INFREG', '2023-01-01', 5000, 100)] }, ASOF, R);
+    // ₹3 L gain fits the ₹4 L nil band. (₹5 L here was past it: ₹1 L taxed, which the exact tax now shows.)
+    const fam = computeFamily({ members: [member], securities: [fund], txns: [buy('a', 'INFREG', '2023-01-01', 3000, 100)] }, ASOF, R);
     const sw = fam.moves.find((x) => x.kind === 'switch_direct')!;
     expect(sw.when).toBe('now');
     expect(sw.reasons.join(' ')).toMatch(/No tax now: a's income is below the taxable limit/);
@@ -443,5 +444,110 @@ describe('dated moves hold their room', () => {
     expect(plain.moves.find((m) => m.kind === 'switch_direct' && m.when === 'now')).toBeDefined();
     const fam = computeFamily({ members, securities, txns, datedMoves: [{ moveId: idOf('harvest_gain', 'a', 'Y'), date: '2026-12-04' }] }, ASOF, R);
     expect(fam.moves.find((m) => m.kind === 'harvest_gain' && m.isin === 'Y')).toMatchObject({ gain: rs(60_000), date: '2026-12-04' });
+  });
+});
+
+describe('M1 review fixes', () => {
+  const sell = (memberId: string, isin: string, date: string, units: number, priceRs: number): Txn => ({
+    id: `s${++seq}`, memberId, isin, date, side: 'sell', qty: q(units), amount: rs(units * priceRs), source: 'test',
+  });
+  const regEq: Security = { isin: 'INFREG', name: 'Reg Fund - Regular Plan - Growth', taxType: 'equity', listed: false, category: 'Equity Scheme - Large Cap Fund', plan: 'regular', price: rs(2000) };
+  const swId = `${R.label}|switch_direct|a|INFREG|`;
+
+  it('C1: a dated in-room switch whose room is gone shows "No room left", never a big taxed switch on that date', () => {
+    const fill: Security = { isin: 'FILL', name: 'Fill', taxType: 'equity', listed: true, price: rs(2000) };
+    const txns = [buy('a', 'INFREG', '2023-01-01', 2000, 1000), buy('a', 'FILL', '2023-01-01', 125, 1000), sell('a', 'FILL', '2026-06-01', 125, 2000)];
+    const fam = computeFamily({ members: [person('a', 'self')], securities: [regEq, fill], txns, datedMoves: [{ moveId: swId, date: '2027-02-20' }] }, ASOF, R);
+    const mine = fam.moves.filter((m) => m.id === swId);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({ noRoom: true, qty: 0, date: '2027-02-20' });
+  });
+
+  it('C2: a slab switch after harvests that used the nil band shows the real tax', () => {
+    const shares: Security = { isin: 'X', name: 'X Ltd', taxType: 'equity', listed: true, price: rs(2000) };
+    const debt: Security = { isin: 'INFDEBT', name: 'Gilt Fund - Regular Plan - Growth', taxType: 'slab', listed: false, category: 'Debt Scheme - Gilt Fund', plan: 'regular', price: rs(200) };
+    const fam = computeFamily({
+      members: [person('a', 'self', { income: [] })], securities: [shares, debt],
+      txns: [buy('a', 'X', '2023-01-01', 500, 1000), buy('a', 'INFDEBT', '2024-01-01', 3000, 100)], // ₹5 L LT shares, ₹3 L debt
+    }, ASOF, R);
+    expect(fam.moves.find((m) => m.kind === 'harvest_gain')).toMatchObject({ gain: rs(5_00_000) });
+    const sw = fam.moves.find((m) => m.kind === 'switch_direct')!;
+    expect(sw.reasons.join(' ')).not.toMatch(/No tax now/);
+    expect(sw.reasons.join(' ')).toMatch(/₹35,750/);
+  });
+
+  it('C2 cross-check: the tax shown across a member\'s moves equals the tax once they are all done', () => {
+    const shares: Security = { isin: 'X', name: 'X Ltd', taxType: 'equity', listed: true, price: rs(2000) };
+    const debt: Security = { isin: 'INFDEBT', name: 'Gilt Fund - Regular Plan - Growth', taxType: 'slab', listed: false, category: 'Debt Scheme - Gilt Fund', plan: 'regular', price: rs(200) };
+    const base = { members: [person('a', 'self', { income: [] })], securities: [shares, debt], txns: [buy('a', 'X', '2023-01-01', 500, 1000), buy('a', 'INFDEBT', '2024-01-01', 50_000, 194)] };
+    const fam = computeFamily(base, ASOF, R);
+    const sw = fam.moves.find((m) => m.kind === 'switch_direct')!;
+    expect(sw).toMatchObject({ when: 'now' });
+    const shown = fam.moves.reduce((a, m) => a + (m.kind === 'switch_direct' ? m.tax : 0), 0);
+    expect(shown).toBeGreaterThan(0);
+    const doneTxns = fam.moves.filter((m) => m.kind !== 'wait').map((m) => sell('a', m.isin, ASOF, m.qty / QTY_SCALE, (fam.securities.get(m.isin)!.price ?? 0) / 100));
+    const after = computeFamily({ ...base, txns: [...base.txns, ...doneTxns] }, ASOF, R);
+    expect(after.members[0]!.year.tax - fam.members[0]!.year.tax).toBe(shown);
+  });
+
+  it('I4: a dated move with a done or detected_done record is retired from sizing; undone brings it back', () => {
+    const two = [
+      { isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(2000) },
+      { isin: 'Y', name: 'Y', taxType: 'equity' as const, listed: true, price: rs(1300) },
+    ];
+    const txns = [buy('a', 'X', '2023-01-01', 200, 1000), buy('a', 'Y', '2023-01-01', 200, 1000)];
+    const yId = `${R.label}|harvest_gain|a|Y|`;
+    const datedMoves = [{ moveId: yId, date: '2026-12-04' }];
+    const rec = (event: 'done' | 'undone' | 'detected_done', at: string) => ({ moveId: yId, at, event, move: { id: yId } as never });
+    const st = { members: [person('a', 'self')], securities: two, txns, datedMoves };
+    expect(computeFamily(st, ASOF, R).moves.find((m) => m.isin === 'Y')!.date).toBe('2026-12-04');
+    for (const records of [[rec('done', 't1')], [rec('detected_done', 't1')], [rec('done', 't1'), rec('undone', 't2'), rec('detected_done', 't3')]]) {
+      const fam = computeFamily({ ...st, recommendations: records }, ASOF, R);
+      expect(fam.moves.some((m) => m.date)).toBe(false);
+      expect(fam.moves.find((m) => m.kind === 'harvest_gain' && m.isin === 'X')).toMatchObject({ gain: rs(1_25_000) });
+    }
+    const back = computeFamily({ ...st, recommendations: [rec('done', 't1'), rec('undone', 't2')] }, ASOF, R);
+    expect(back.moves.find((m) => m.isin === 'Y')!.date).toBe('2026-12-04');
+  });
+
+  it('I5: no wait move for ELSS units still locked on their long-term date', () => {
+    const elss: Security = { isin: 'INF1', name: 'Tax Saver', taxType: 'equity', listed: false, price: rs(250), category: 'Equity Scheme - ELSS' };
+    const fam = computeFamily({ members: [person('a', 'self')], securities: [elss], txns: [buy('a', 'INF1', '2026-03-20', 1000, 100)] }, '2027-02-10', R);
+    expect(fam.moves.filter((m) => m.kind === 'wait')).toHaveLength(0);
+  });
+
+  it('I6: a fund with no category is treated as ELSS by its name', () => {
+    const named: Security = { isin: 'INF1', name: 'Axis ELSS Tax Saver Fund - Regular Plan - Growth', taxType: 'equity', listed: false, price: rs(200), plan: 'regular' };
+    const fam = computeFamily({ members: [person('a', 'self')], securities: [named], txns: [buy('a', 'INF1', '2025-06-01', 1000, 100)] }, '2027-02-10', R);
+    expect(fam.moves.filter((m) => m.isin === 'INF1')).toHaveLength(0);
+    expect(fam.members[0]!.holdings[0]!.lots[0]!.lockedUntil).toBe('2028-06-01');
+    const saver: Security = { ...named, name: 'Some Tax Saving Fund - Regular Plan - Growth' };
+    expect(computeFamily({ members: [person('a', 'self')], securities: [saver], txns: [buy('a', 'INF1', '2020-06-01', 1000, 100)] }, '2027-02-10', R)
+      .moves.some((m) => m.kind === 'switch_direct')).toBe(false); // unlocked by now, but switching would start a new lock
+  });
+
+  it('I7: gains moved into the room by in-room switches count as made tax-free', () => {
+    const fam = computeFamily({ members: [person('a', 'self')], securities: [{ ...regEq, price: rs(180) }], txns: [buy('a', 'INFREG', '2023-01-01', 1000, 100)] }, ASOF, R);
+    const sw = fam.moves.find((m) => m.kind === 'switch_direct')!;
+    expect(sw).toMatchObject({ when: 'now', gain: rs(80_000), taxFreeGain: rs(80_000) });
+    expect(fam.totals.taxFreeGains).toBe(rs(80_000));
+  });
+
+  it('m1: a lot used by a gift is not also sold at a loss', () => {
+    const z: Security = { isin: 'Z', name: 'Z', taxType: 'equity', listed: true, price: rs(2000) };
+    const s: Security = { isin: 'S', name: 'S', taxType: 'equity', listed: true, price: rs(2000) };
+    const fam = computeFamily({
+      members: [person('a', 'self'), person('p', 'parent', { age: 64 })], securities: [z, s],
+      // a booked ₹2.25 L of long-term gain (₹1 L taxable); Z: a long-term loss lot in front of a long-term gain lot.
+      txns: [buy('a', 'Z', '2023-01-01', 50, 3000), buy('a', 'Z', '2023-06-01', 100, 1000), buy('a', 'S', '2023-05-01', 225, 1000), sell('a', 'S', '2026-07-01', 225, 2000)],
+    }, ASOF, R);
+    expect(fam.moves.some((m) => m.kind === 'gift' && m.isin === 'Z')).toBe(true);
+    const used = fam.moves.filter((m) => m.isin === 'Z' && m.kind !== 'wait').reduce((a, m) => a + m.qty, 0);
+    expect(used).toBeLessThanOrEqual(q(150));
+  });
+
+  it('m5: the wait reason gives a plain date', () => {
+    const fam = computeFamily({ members: [person('a', 'self')], securities: [{ isin: 'H', name: 'H', taxType: 'equity', listed: true, price: rs(1500) }], txns: [buy('a', 'H', '2025-12-06', 100, 1000)] }, ASOF, R);
+    expect(fam.moves.find((x) => x.kind === 'wait')!.reasons[0]).toMatch(/Turns long-term on 7 Dec 2026/);
   });
 });
