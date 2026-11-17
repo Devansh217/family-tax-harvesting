@@ -6,6 +6,7 @@ import { dateLabel, inr, inrShort, units } from '../format';
 import { Avatar, Disclaimer, Svg, Icon } from '../parts';
 import { SampleBanner } from './Home';
 import { NSE_HOLIDAYS_2027, lastSafeDay } from '../../engine/season';
+import { buildIcs } from '../calendar';
 
 export const movesNotDone = (moves: Move[], done: Record<string, boolean>) => moves.filter((m) => !done[m.id]);
 
@@ -128,6 +129,23 @@ export function LastSafeDay() {
   return <p className="small">Last safe day to sell this year: <strong>{dateLabel(day)}</strong></p>;
 }
 
+/** Downloads the dated steps as a calendar file. Shown once at least one move has a day. */
+function CalendarButton() {
+  const { fam, nameOf } = useApp();
+  const safe = useLastSafeDay();
+  if (!fam.moves.some((m) => m.date && !m.noRoom)) return null;
+  const download = () => {
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+    const ics = buildIcs({ moves: fam.moves, nameOf, lastSafeDay: safe, yearEnd: fam.rules.end }, stamp);
+    const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'harvesting-2026-27.ics';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  return <p><button className="btn" type="button" onClick={download}>Add to my calendar</button></p>;
+}
+
 export function Plan() {
   const { fam, state } = useApp();
   const isDone = (m: Move) => !!state.done[m.id];
@@ -150,6 +168,7 @@ export function Plan() {
           <span className="fig good">{inr(gainDone)}</span> of gains made tax-free <span className="muted" style={{ fontWeight: 500 }}>of {inr(gainTotal)} possible</span>
         </p>
         <LastSafeDay />
+        <CalendarButton />
         <span className="meter" aria-hidden="true"><span className="seg-free" style={{ width: `${gainTotal ? (gainDone / gainTotal) * 100 : 0}%` }} /></span>
         {nowTotal > 0 && <p className="small"><strong className="fig">{inr(nowDone)}</strong> cut from this year&rsquo;s tax <span className="muted">of {inr(nowTotal)} possible</span></p>}
         <p className="small muted" style={{ maxWidth: '72ch' }}>
