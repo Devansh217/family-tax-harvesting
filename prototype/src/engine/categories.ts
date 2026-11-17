@@ -48,6 +48,9 @@ const RULES: Array<[RegExp, (name: string) => Classification]> = [
   [/Equity Schemes? -|^ELSS$/i, (n) => (OVERSEAS.test(n) ? c('check', false, 'international') : c('equity', false, 'equity'))],
 ];
 
+/** True for AMFI's ELSS (tax-saver) headings: "ELSS", "Equity Scheme - ELSS", "Equity Schemes - ELSS- Tax Saver Fund". */
+export const isElss = (category?: string): boolean => category != null && /\bELSS\b/i.test(category);
+
 export function classifyFund(category: string, schemeName: string): Classification {
   for (const [re, f] of RULES) if (re.test(category)) return f(schemeName);
   return c('check', false, null);

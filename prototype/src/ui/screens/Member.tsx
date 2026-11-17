@@ -214,6 +214,10 @@ export function MemberScreen({ id }: { id: string }) {
                   return (
                     <tr key={h.isin}>
                       <td><span style={{ fontWeight: 600 }}>{h.name}</span> <TaxTypeChip taxType={h.taxType} /><br /><span className="tiny muted">{h.isin.startsWith('SYM:') ? 'No ISIN' : h.isin} · {h.lots.length} {h.lots.length === 1 ? 'lot' : 'lots'}{h.accounts.filter(Boolean).length > 0 ? ` · ${h.accounts.filter(Boolean).join(', ')}` : ''}</span>
+                        {(() => {
+                          const until = h.lots.map((l) => l.lockedUntil).filter((d): d is string => !!d && d > fam.asOf).sort().pop();
+                          return until ? <><br /><span className="tiny" style={{ color: 'var(--time)' }}>Locked until {dateLabel(until)} (tax-saver fund)</span></> : null;
+                        })()}
                         {h.uncertainLots > 0 && <><br /><span className="tiny" style={{ color: 'var(--time)' }}>{h.uncertainLots} {h.uncertainLots === 1 ? 'lot' : 'lots'} {pre2018 && !sec?.fmv2018 ? 'need the 31 Jan 2018 value' : 'have an estimated date'}; no moves use {h.uncertainLots === 1 ? 'it' : 'them'}</span></>}</td>
                       <td>{units(h.qty)}</td>
                       <td><PriceInput key={`${h.isin}-${sec?.price}`} value={sec?.price} label={`Price of ${h.name}`} onCommit={(p) => setSecurity(h.isin, { price: p })} /></td>

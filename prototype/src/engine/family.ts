@@ -1,4 +1,5 @@
-import { daysBetween, isLongTerm, longTermFrom } from './dates';
+import { isElss } from './categories';
+import { addMonths, daysBetween, isLongTerm, longTermFrom } from './dates';
 import { buildLedger, effectiveCost, lotKey, lotTerms, prorate } from './ledger';
 import { giftTransferCost, ltRate, roundTripCost, stRate, type TaxRules } from './rules';
 import { moveId, type MoveDraft } from './records';
@@ -47,6 +48,8 @@ export interface HoldingLot {
   longTermOn: ISODate;
   /** False when the date or cost was guessed, or the 31 Jan 2018 value is missing. Such lots get no moves. */
   certain: boolean;
+  /** ELSS only: the date the three-year lock-in ends. Shown even after it has passed. */
+  lockedUntil?: ISODate;
 }
 
 export interface Holding {
@@ -126,7 +129,17 @@ export interface FamilyView {
 
 const WAIT_WINDOW_DAYS = 90;
 const MIN_GAIN: Paise = 1_000_00;
-const MIN_NET_SAVING: Paise = 500_00;
+export const MIN_NET_SAVING: Paise = 1_000_00;
+const ELSS_LOCK_YEARS = 3;
+
+/** Date an ELSS lot can first be sold (same calendar date three years on); null for anything else. */
+export function lockedUntil(lot: { date: ISODate }, sec: Pick<Security, 'category'>): ISODate | null {
+  return isElss(sec.category) ? addMonths(lot.date, ELSS_LOCK_YEARS * 12) : null;
+}
+const isLocked = (lot: { date: ISODate }, sec: Pick<Security, 'category'>, asOf: ISODate) => {
+  const until = lockedUntil(lot, sec);
+  return until != null && until > asOf;
+};
 
 /** Smallest tradable step: 0.001 units for mutual funds (INF…), whole shares otherwise. */
 export const unitStep = (sec: Pick<Security, 'isin'>): Qty => (sec.isin.startsWith('INF') ? QTY_SCALE / 1000 : QTY_SCALE);
@@ -213,7 +226,7 @@ function harvestableQty(lots: Lot[], sec: Security, asOf: ISODate, rules: TaxRul
       toSkip -= s;
       if (avail === 0) continue;
     }
-    if (!isLongTerm(lot.date, asOf, rules.longTermMonths) || !isCertain(lot, sec, rules)) break;
+    if (!isLongTerm(lot.date, asOf, rules.longTermMonths) || !isCertain(lot, sec, rules) || isLocked(lot, sec, asOf)) break;
     const view = { date: lot.date, qty: avail, cost: avail === lot.qty ? lot.cost : prorate(lot.cost, avail, lot.qty) };
     const whole = lotGain(view, avail, sec, rules);
     if (whole <= room - gain) {
@@ -293,6 +306,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
           term: lotTerms(sec, l.date, asOf, rules).term,
           longTermOn: longTermFrom(l.date, longTermMonthsFor(lotTaxType(sec, l.date, rules), sec.listed, rules) ?? rules.longTermMonths),
           certain: isCertain(l, sec, rules),
+          ...(lockedUntil(l, sec) ? { lockedUntil: lockedUntil(l, sec)! } : {}),
         } satisfies HoldingLot;
       }));
       const sum = (f: (x: HoldingLot) => number) => hl.reduce((a, x) => a + f(x), 0);
@@ -359,6 +373,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
     for (const h of giver.holdings) {
       if (h.taxType !== 'equity' || !h.listed || h.price == null || needSoon(giver.member.id, h.isin)) continue;
       const sec = secs.get(h.isin)!;
+      if (isElss(sec.category)) continue;
       for (const q of queues(ledger, giver.member.id, h.isin)) {
         const key = lotKey(giver.member.id, h.isin, q.account);
         for (const rec of [...views].sort((a, b) => b.roomAfterPlan - a.roomAfterPlan)) {
@@ -388,7 +403,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
         if (stDue + ltDue > 0) {
           let qty = 0, saved = 0, lossTotal = 0, term: Term = 'st';
           for (const l of lots) {
-            if (!isCertain(l, sec, rules)) break;
+            if (!isCertain(l, sec, rules) || isLocked(l, sec, asOf)) break;
             const g = lotGain(l, l.qty, sec, rules);
             if (g >= 0) break;
             term = isLongTerm(l.date, asOf, rules.longTermMonths) ? 'lt' : 'st';

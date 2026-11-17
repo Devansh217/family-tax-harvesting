@@ -207,3 +207,52 @@ describe('funds to check', () => {
   });
 });
 
+
+describe('ELSS lock-in and the move floor', () => {
+  const elss = { isin: 'INF1', name: 'Tax Saver', taxType: 'equity' as const, listed: false, price: rs(200), category: 'Equity Scheme - ELSS' };
+  const asof = '2027-02-10';
+
+  it('elss partly locked: sells only the lot past its 3 years', () => {
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities: [elss],
+      txns: [buy('a', 'INF1', '2023-06-01', 1000, 160), buy('a', 'INF1', '2025-06-01', 1000, 170)], // gains 40,000 and 30,000
+    }, asof, R);
+    const moves = fam.moves.filter((x) => x.kind === 'harvest_gain');
+    expect(moves).toHaveLength(1);
+    expect(moves[0]).toMatchObject({ qty: q(1000), gain: rs(40_000) });
+  });
+
+  it('elss all locked: no moves and the lot shows when it unlocks', () => {
+    const fam = computeFamily({
+      members: [person('a', 'self'), person('b', 'spouse')], securities: [{ ...elss, price: rs(100) }],
+      txns: [buy('a', 'INF1', '2025-06-01', 1000, 170)], // a loss, would otherwise be harvestable
+    }, asof, R);
+    expect(fam.moves.filter((x) => 'isin' in x && x.isin === 'INF1')).toHaveLength(0);
+    expect(fam.members[0]!.holdings[0]!.lots[0]!.lockedUntil).toBe('2028-06-01');
+  });
+
+  it('elss is never gifted', () => {
+    const fam = computeFamily({
+      members: [person('a', 'self'), person('b', 'spouse', { income: [] })], securities: [elss],
+      txns: [buy('a', 'INF1', '2020-06-01', 10000, 100)],
+    }, asof, R);
+    expect(fam.moves.filter((x) => x.kind === 'gift')).toHaveLength(0);
+  });
+
+  it('floor: a harvest saving ₹800 is not shown', () => {
+    // ₹1.0 L gain avoids ₹12,500 tax; use a small gain: ₹10,000 gain avoids ₹1,250, less costs ~₹250 = ~₹1,000
+    const fam = computeFamily({
+      members: [person('a', 'self')],
+      securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(1100) }],
+      txns: [buy('a', 'X', '2023-01-01', 100, 1000)], // ₹10,000 gain, avoided ₹1,250, saving ~₹1,200 at best
+    }, ASOF, R);
+    const m = fam.moves.find((x) => x.kind === 'harvest_gain');
+    if (m) expect(m.saving).toBeGreaterThanOrEqual(rs(1000));
+    const small = computeFamily({
+      members: [person('a', 'self')],
+      securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(1080) }],
+      txns: [buy('a', 'X', '2023-01-01', 100, 1000)], // ₹8,000 gain: avoids ₹1,000, saves under ₹1,000
+    }, ASOF, R);
+    expect(small.moves.filter((x) => x.kind === 'harvest_gain')).toHaveLength(0);
+  });
+});
