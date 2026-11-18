@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { parseFunds, parsePrices, runAlerts, sampleEmail, secretMatches, type AlertsDb, type AlertsDeps, type SeasonStatsRow } from './alerts.ts';
+import { parseFunds, parsePrices, rehearsalDate, runAlerts, sampleEmail, secretMatches, type AlertsDb, type AlertsDeps, type SeasonStatsRow } from './alerts.ts';
 import { toB64 } from './base64.ts';
 import { familyAad, importKeyRing, sealJson, type Envelope, type KeyRing } from './envelope.ts';
 import { computeFamily, FY_2026_27, lastSafeDay, NSE_HOLIDAYS_2027, seasonSummary, todayISO, withFunds, withPrices, QTY_SCALE } from '../../../src/engine/index';
@@ -20,23 +20,24 @@ const stateOf = (seasonHelp: boolean) => ({
 
 let ring: KeyRing, decrypts: number;
 let marked: string[];
+let sentRows: Set<string>;
 let logs: Set<string>, stats: SeasonStatsRow[], sent: Array<{ to: string; subject: string; text: string }>;
 let fams: Array<{ userId: string; email: string; version: number; envelope: Envelope; updatedAt: string }>;
 let failFor: string | null;
 
 const mkDb = (): AlertsDb => ({
   optedIn: async () => fams,
-  logged: async (u, k, d) => logs.has(`${u}|${k}|${d}`),
+  logged: async (u, k, d) => ({ exists: logs.has(`${u}|${k}|${d}`), sent: sentRows.has(`${u}|${k}|${d}`) }),
   log: async (u, k, d) => { const id = `${u}|${k}|${d}`; if (logs.has(id)) return false; logs.add(id); return true; },
   unlog: async (u, k, d) => { logs.delete(`${u}|${k}|${d}`); },
-  markSent: async (u, k, d) => { marked.push(`${u}|${k}|${d}`); },
+  markSent: async (u, k, d) => { marked.push(`${u}|${k}|${d}`); sentRows.add(`${u}|${k}|${d}`); },
   saveStats: async (row) => { stats.push(row); },
 });
 const deps = (): AlertsDeps => ({
   db: mkDb(), ring, prices, funds: fundsFile, appUrl: 'https://app.example.in/', engine,
   send: async (to, subject, text) => { if (failFor === to) throw new Error('boom'); sent.push({ to, subject, text }); },
 });
-const run = (d: string, x: AlertsDeps) => { decrypts = 0; return runAlerts(d, x); };
+const run = (d: string, x: AlertsDeps, o?: { rehearsal?: boolean }) => { decrypts = 0; return runAlerts(d, x, o); };
 const fam = async (userId: string, seasonHelp = true, email = `${userId}@x.in`) =>
   ({ userId, email, version: 2, envelope: await sealJson(stateOf(seasonHelp), ring, familyAad(userId, 2)), updatedAt: '2027-02-05T04:00:00Z' });
 
@@ -44,7 +45,7 @@ beforeEach(async () => {
   const real = await importKeyRing(JSON.stringify({ k1: key() }), 'k1');
   decrypts = 0;
   ring = { current: real.current, keys: new Proxy(real.keys, { get: (t, p) => { decrypts++; return (t as Record<string | symbol, unknown>)[p]; } }) };
-  marked = []; logs = new Set(); stats = []; sent = []; failFor = null;
+  marked = []; sentRows = new Set(); logs = new Set(); stats = []; sent = []; failFor = null;
   fams = [await fam('f1'), await fam('f2')];
 });
 
@@ -89,25 +90,34 @@ describe('runAlerts', () => {
     expect(r.sent).toBe(0); expect(r.checked).toBe(0); expect(stats).toHaveLength(0);
   });
 
-  it('first Sunday of April: a season_check row per family plus stats, no email; later Sundays nothing', async () => {
-    const r = await run('2027-04-04', deps());
+  it('31 March: a season_check row per family plus final stats, no email; no reads after it', async () => {
+    const r = await run('2027-03-31', deps());
     expect(r).toEqual({ sent: 0, checked: 2, stats: true });
-    expect([...logs].sort()).toEqual(['f1|season_check|2027-04-04', 'f2|season_check|2027-04-04']);
+    expect([...logs].sort()).toEqual(['f1|season_check|2027-03-31', 'f2|season_check|2027-03-31']);
     expect(sent).toHaveLength(0); expect(stats).toHaveLength(1);
-    expect(await run('2027-04-11', deps())).toEqual({ sent: 0, checked: 0, stats: false });
+    for (const d of ['2027-04-01', '2027-04-04', '2027-04-11']) expect(await run(d, deps())).toEqual({ sent: 0, checked: 0, stats: false });
+    expect(decrypts).toBe(0);
   });
 
-  it('a send that throws leaves no log row for that family and the others still go out', async () => {
+  it('a send that throws keeps the row unsent; a retry the same day sends only to that family', async () => {
     failFor = 'f1@x.in';
     const r = await run('2027-02-07', deps());
     expect(r).toEqual({ sent: 1, checked: 2, stats: true });
-    expect([...logs]).toEqual(['f2|email_weekly|2027-02-07']);
-    // a retry sends to the one that failed and nothing else
+    expect([...logs].sort()).toEqual(['f1|email_weekly|2027-02-07', 'f2|email_weekly|2027-02-07']); // every decrypt stays logged
+    expect(marked).toEqual(['f2|email_weekly|2027-02-07']);
     failFor = null;
     const r2 = await run('2027-02-07', deps());
     expect(r2.sent).toBe(1);
     expect(sent.map((s) => s.to).sort()).toEqual(['f1@x.in', 'f2@x.in']);
+    expect(marked).toContain('f1|email_weekly|2027-02-07');
     expect(stats).toHaveLength(1); // the retry does not overwrite the first run's totals
+    expect((await run('2027-02-07', deps())).sent).toBe(0); // and now nothing is left to send
+  });
+
+  it('a rehearsal run logs and sends as normal but writes no season totals', async () => {
+    const r = await run('2027-02-07', deps(), { rehearsal: true });
+    expect(r).toEqual({ sent: 2, checked: 2, stats: false });
+    expect(stats).toHaveLength(0); expect(logs.size).toBe(2);
   });
 
   it('logs before sending, so a clash from a concurrent run sends nothing', async () => {
@@ -207,6 +217,15 @@ describe('market files and the test email', () => {
     expect(m.subject).toMatch(/test/i);
     expect(m.text).toContain('https://app.example.in/');
     expect(m.text).not.toMatch(/₹\d/);
+  });
+});
+
+describe('rehearsalDate', () => {
+  it('accepts a real date from 1 Feb to 31 Mar of the rules year and nothing else', () => {
+    expect(rehearsalDate('2027-02-07', '2027-03-31')).toBe('2027-02-07');
+    expect(rehearsalDate('2027-02-01', '2027-03-31')).toBe('2027-02-01');
+    expect(rehearsalDate('2027-03-31', '2027-03-31')).toBe('2027-03-31');
+    for (const bad of ['2027-01-31', '2027-04-01', '2026-02-07', '2027-02-30', '07-02-2027', 'x', '', null]) expect(rehearsalDate(bad, '2027-03-31')).toBeNull();
   });
 });
 

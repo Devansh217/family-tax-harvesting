@@ -21,7 +21,8 @@ export interface SeasonStatsRow {
 export interface AlertsDb {
   /** Families with season help on in the clear column, joined to the confirmed sign-in email ('' when not confirmed). */
   optedIn(): Promise<{ userId: string; email: string; version: number; envelope: Envelope; updatedAt: string }[]>;
-  logged(userId: string, kind: LogKind, onDate: ISODate): Promise<boolean>;
+  /** The day's row for this family and kind: whether it exists, and whether its email went out. */
+  logged(userId: string, kind: LogKind, onDate: ISODate): Promise<{ exists: boolean; sent: boolean }>;
   /** false on a unique clash: another run already did it. */
   log(userId: string, kind: LogKind, onDate: ISODate): Promise<boolean>;
   /** Records that the email for this row went out (the row exists from the read, whether or not anything was sent). */
@@ -82,11 +83,23 @@ interface FamilyDoc {
 const parts = (d: string) => ({ y: +d.slice(0, 4), m: +d.slice(5, 7), d: +d.slice(8, 10) });
 const isSunday = (d: string) => new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10))).getUTCDay() === 0;
 
-/** Sundays from 1 Feb to the first Sunday of April: the days the server also computes season numbers. */
-function isNumbersSunday(d: ISODate): boolean {
-  if (!isSunday(d)) return false;
+/** The days the server also computes season numbers: each email Sunday, and 31 March for the final totals. Never after 31 March. */
+function isNumbersDay(d: ISODate, emailKind: EmailKind | null): boolean {
   const p = parts(d);
-  return p.m === 2 || p.m === 3 || (p.m === 4 && p.d <= 7);
+  if (p.m === 3 && p.d === 31) return true;
+  return emailKind !== null && isSunday(d);
+}
+
+/**
+ * The date for a rehearsal run (header `x-alerts-date`): an ISO date from 1 Feb to 31 Mar of the rules' end year, else null.
+ * The caller accepts it only after the secret has matched.
+ */
+export function rehearsalDate(header: string | null | undefined, rulesEnd: ISODate): ISODate | null {
+  if (!header || !/^\d{4}-\d{2}-\d{2}$/.test(header)) return null;
+  const y = rulesEnd.slice(0, 4);
+  if (header.slice(0, 4) !== y || header < `${y}-02-01` || header > `${y}-03-31`) return null;
+  const t = new Date(Date.UTC(+header.slice(0, 4), +header.slice(5, 7) - 1, +header.slice(8, 10)));
+  return t.toISOString().slice(0, 10) === header ? header : null;
 }
 
 /** Constant-time comparison for the shared secret. Missing or empty never matches. */
@@ -99,18 +112,22 @@ export function secretMatches(given: string | null | undefined, expected: string
 }
 
 /**
- * The daily run. Send days (spec section 7) email; Sundays from 1 Feb to the first Sunday of April also total the
- * season (section 8). Each family's read is logged before anything is decrypted, and a family already logged for the
- * day is skipped without decrypting, so a re-run does nothing. Counts only are returned; nothing personal is logged.
+ * The daily run. Send days (spec section 7) email; email Sundays and 31 March also total the season (section 8), and
+ * there are no reads after 31 March. Each family's read is logged before anything is decrypted. A family whose row for the
+ * day shows its email went out is skipped without decrypting; a row left unsent (the send failed) is retried. A row is
+ * never taken back once the family has been decrypted. A rehearsal run (`rehearsal: true`) does everything except write
+ * season totals. Counts only are returned; nothing personal is logged.
  */
-export async function runAlerts(today: ISODate, deps: AlertsDeps): Promise<{ sent: number; checked: number; stats: boolean }> {
+export async function runAlerts(
+  today: ISODate, deps: AlertsDeps, opts: { rehearsal?: boolean } = {},
+): Promise<{ sent: number; checked: number; stats: boolean }> {
   const { db, ring, prices, funds, appUrl, engine } = deps;
   const none = { sent: 0, checked: 0, stats: false };
   // The rules are for one tax year; outside its season there is nothing to say.
   if (today.slice(0, 4) !== engine.rules.end.slice(0, 4)) return none;
   const lastSafe = engine.lastSafeDay(engine.rules.end, engine.holidays);
   const emailKind = emailKindFor(today, lastSafe);
-  const numbers = isNumbersSunday(today);
+  const numbers = isNumbersDay(today, emailKind);
   if (!emailKind && !numbers) return none;
   const kind: LogKind = emailKind ?? 'season_check';
 
@@ -120,11 +137,14 @@ export async function runAlerts(today: ISODate, deps: AlertsDeps): Promise<{ sen
 
   for (const f of await db.optedIn()) {
     if (!f.email) continue;
-    let owned = false, opened = false, sending = false;
+    let owned = false, opened = false, retryRow = false;
     try {
-      if (await db.logged(f.userId, kind, today)) { skippedDone++; continue; }
-      if (!(await db.log(f.userId, kind, today))) { skippedDone++; continue; }
-      owned = true;
+      const row = await db.logged(f.userId, kind, today);
+      // An email row left unsent is the only one retried; its row already exists, so it is not logged again.
+      const retry = row.exists && !row.sent && emailKind !== null;
+      if (row.exists && !retry) { skippedDone++; continue; }
+      if (!retry && !(await db.log(f.userId, kind, today))) { skippedDone++; continue; }
+      owned = true; retryRow = retry;
       const doc = await openJson<FamilyDoc>(f.envelope, ring, familyAad(f.userId, f.version));
       opened = true;
       if (doc.alerts?.seasonHelp !== true) continue; // the read happened, so its row stays
@@ -146,9 +166,7 @@ export async function runAlerts(today: ISODate, deps: AlertsDeps): Promise<{ sen
         // The email's figure is the usable room still left: usable minus used.
         const mail = renderEmail(emailKind, { ...s, roomLeft: Math.max(0, s.usable - s.used) }, engine.todayISO(new Date(f.updatedAt)), today, appUrl, lastSafe);
         if (mail) {
-          sending = true;
-          await deps.send(f.email, mail.subject, mail.text);
-          sending = false;
+          await deps.send(f.email, mail.subject, mail.text); // a throw here keeps the row, unsent, for a retry
           sent++;
           await db.markSent(f.userId, kind, today).catch(() => {}); // a failed mark must never cause a second send
         }
@@ -156,13 +174,13 @@ export async function runAlerts(today: ISODate, deps: AlertsDeps): Promise<{ sen
     } catch (e) {
       const err = e as { code?: string; name?: string } | null;
       console.error('alerts: a family failed', err?.code ?? err?.name);
-      // Take the row back only if nothing was read (decrypt failed) or the send threw, so a retry can do it. Never after a completed read.
-      if (owned && (!opened || sending)) await db.unlog(f.userId, kind, today).catch(() => {});
+      // Take the row back only if nothing was read (decrypt failed), so a retry can do it. Never after a decrypt.
+      if (owned && !opened && !retryRow) await db.unlog(f.userId, kind, today).catch(() => {});
     }
   }
 
   // A re-run that skipped families would total only the rest and overwrite the first run's row.
-  const writeStats = numbers && checked > 0 && skippedDone === 0;
+  const writeStats = numbers && checked > 0 && skippedDone === 0 && !opts.rehearsal;
   if (writeStats) await db.saveStats({ week: today, families: checked, ...totals, used_share_by_family: shares.sort((a, b) => a - b) });
   return { sent, checked, stats: writeStats };
 }
