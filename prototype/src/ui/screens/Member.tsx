@@ -8,6 +8,8 @@ import { dateLabel, inr, possessive, RELATIONS, units } from '../format';
 import { Avatar, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow } from './Plan';
 import { reconcile } from '../../reconcile';
+import { cgSchedule, isSaleRow, SALE_SECTIONS } from '../../engine/cgSchedule';
+import { scheduleCsv, scheduleFileName } from '../csv';
 
 function PriceInput({ value, onCommit, label }: { value: Paise | undefined; onCommit: (p: Paise | undefined) => void; label: string }) {
   const [text, setText] = useState(value != null ? String(value / 100) : '');
@@ -22,6 +24,56 @@ function PriceInput({ value, onCommit, label }: { value: Paise | undefined; onCo
     />
   );
 }
+
+function CapitalGains({ memberId, memberName }: { memberId: string; memberName: string }) {
+  const { fam } = useApp();
+  const sched = cgSchedule(fam, memberId);
+  const shown = sched.sections.filter((s) => s.rows.length > 0);
+  const hasSales = shown.some((s) => SALE_SECTIONS.includes(s.key));
+  const download = () => {
+    // The byte-order mark lets Excel read the ₹ in the header as UTF-8.
+    const url = URL.createObjectURL(new Blob(['\uFEFF', scheduleCsv(sched)], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = scheduleFileName(memberName);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+  return (
+    <Section title="Capital gains this year" id="cg-h" action={shown.length > 0 ? <button className="btn" type="button" onClick={download}>Download CSV</button> : undefined}>
+      {!hasSales && <p className="small muted">No sales this year.</p>}
+      {shown.map((sec) => (
+        <div key={sec.key} className="stack" style={{ gap: 6 }}>
+          <h3 style={{ fontSize: 15 }}>{sec.title}</h3>
+          <div className="tablebox">
+            <table>
+              <thead>
+                <tr>{isSection(sec.key) ? <><th>Name</th><th className="num">Units</th><th>Sale date</th><th className="num">Sale value</th><th className="num">Cost</th><th className="num">31 Jan 2018 value</th><th className="num">Gain</th></> : <><th>Line</th><th className="num">Amount</th></>}</tr>
+              </thead>
+              <tbody>
+                {sec.rows.map((r, i) => isSection(sec.key) ? (
+                  <tr key={`${r.saleDate}|${r.isin}|${i}`}>
+                    <td>{r.name}{isSaleRow(r) && <span className="tiny muted" style={{ display: 'block' }}>{r.isin}</span>}</td>
+                    <td className="num">{isSaleRow(r) ? units(r.units) : '—'}</td>
+                    <td style={{ textAlign: 'left' }}>{dateLabel(r.saleDate)}</td>
+                    <td className="num">{isSaleRow(r) ? inr(r.saleValue) : '—'}</td>
+                    <td className="num">{isSaleRow(r) ? inr(r.cost) : '—'}</td>
+                    <td className="num">{r.fmv2018 != null ? inr(r.fmv2018) : '—'}</td>
+                    <td className="num">{inr(r.gain)}</td>
+                  </tr>
+                ) : (
+                  <tr key={r.name}><td>{r.name}</td><td className="num">{inr(r.gain)}</td></tr>
+                ))}
+              </tbody>
+              {isSection(sec.key) && <tfoot><tr><td colSpan={6}>Total</td><td className="num">{inr(sec.total)}</td></tr></tfoot>}
+            </table>
+          </div>
+        </div>
+      ))}
+      <p className="tiny muted">The new Act's return forms for 2026-27 are not out yet (expected April–June 2027). Check the sections against the form, or give this to your CA.</p>
+    </Section>
+  );
+}
+const isSection = (k: string) => SALE_SECTIONS.includes(k as never);
 
 export function MemberScreen({ id }: { id: string }) {
   const { fam, state, update, indexOf, asOf } = useApp();
@@ -257,6 +309,8 @@ export function MemberScreen({ id }: { id: string }) {
           </div>
         </Section>
       )}
+
+      <CapitalGains memberId={id} memberName={member.name} />
 
       <Section title="Imported files" id="imp-h" action={<a className="small" href="#import" style={{ fontWeight: 600, textDecoration: 'none' }}>Import more</a>}>
         {imports.length === 0 ? <p className="small muted">None yet.</p> : (
