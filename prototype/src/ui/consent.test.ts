@@ -33,6 +33,6 @@ describe('harvest season help', () => {
   });
   it('the Account screen carries the consent text verbatim', () => {
     const src = readFileSync(resolve(__dirname, 'screens/Account.tsx'), 'utf8').replace(/&rsquo;/g, '’').replace(/\s+/g, ' ');
-    expect(src).toContain("From 1 Feb to 31 Mar, our server reads your family on each email day (once a week, plus a few deadline days) to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below.");
+    expect(src).toContain("From 1 Feb to 31 Mar, our server reads your family on each email day (once a week, plus a few deadline days) and on 31 March for the final totals, to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below.");
   });
 });
