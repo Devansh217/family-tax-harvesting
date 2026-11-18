@@ -28,24 +28,24 @@ export function plainDate(d: string): string {
 const isSunday = (d: string) => new Date(utcDay(d)).getUTCDay() === 0;
 const daysBetween = (from: string, to: string) => Math.round((utcDay(to) - utcDay(from)) / 86_400_000);
 
-/** Which email goes out on `date`: start 1 Feb; deadline 1 Mar, 15 Mar, last safe day; weekly each Sunday 2 Feb–31 Mar. */
+/** Which email goes out on `date`: start 1 Feb; deadline 1 Mar, 15 Mar, last safe day; weekly each Sunday 7 Feb–28 Mar. */
 export function emailKindFor(date: string, lastSafe: string | null): EmailKind | null {
   const { m, d } = parts(date);
   if (m === 3 && (d === 1 || d === 15)) return 'email_deadline';
   if (lastSafe !== null && date === lastSafe) return 'email_deadline';
   if (m === 2 && d === 1) return 'email_start';
-  if ((m === 2 || m === 3) && isSunday(date)) return 'email_weekly';
+  if (((m === 2 && d >= 7) || (m === 3 && d <= 28)) && isSunday(date)) return 'email_weekly';
   return null;
 }
 
-const rupees = (paise: number) => `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
+const rupees = (paise: number) => `₹${Math.floor(paise / 100).toLocaleString('en-IN')}`;
 const moves = (n: number) => `${n} ${n === 1 ? 'move' : 'moves'}`;
 
 const FRESH = "Import this month's statements so the app can mark what's done. For shares, import your broker's tradebook.";
 
 /** The email for `kind`, or null when there is nothing to say (room under ₹2,000 and no moves waiting). */
 export function renderEmail(
-  kind: EmailKind, s: SeasonEmailInput, savedOn: string, today: string, appUrl: string, lastSafe: string | null = null,
+  kind: EmailKind, s: SeasonEmailInput, savedOn: string, today: string, appUrl: string, lastSafe: string | null,
 ): { subject: string; text: string } | null {
   if (s.roomLeft < FLOOR && s.movesWaiting === 0) return null;
   const stale = daysBetween(savedOn, today) >= STALE_DAYS;

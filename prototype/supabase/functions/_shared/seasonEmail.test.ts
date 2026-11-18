@@ -31,9 +31,19 @@ describe('emailKindFor', () => {
   it('works with an unpublished last safe day and in other years', () => {
     expect(emailKindFor('2027-03-29', null)).toBeNull();
     expect(emailKindFor('2027-03-01', null)).toBe('email_deadline');
-    expect(emailKindFor('2028-02-06', null)).toBe('email_weekly'); // a Sunday in 2028
+    expect(emailKindFor('2028-02-13', null)).toBe('email_weekly'); // a Sunday in 2028, inside the window
+    expect(emailKindFor('2028-02-06', null)).toBeNull(); // a Sunday before 7 Feb
     expect(emailKindFor('2028-02-07', null)).toBeNull();
     expect(emailKindFor('2028-02-01', null)).toBe('email_start');
+  });
+  it('weekly window is Sundays from 7 Feb to 28 Mar', () => {
+    expect(emailKindFor('2027-02-07', null)).toBe('email_weekly');
+    expect(emailKindFor('2027-03-28', null)).toBe('email_weekly');
+    expect(emailKindFor('2024-03-31', null)).toBeNull(); // a Sunday after 28 Mar
+    expect(emailKindFor('2027-02-14', null)).toBe('email_weekly');
+  });
+  it('1 Feb on a Sunday is the start email, not a weekly one', () => {
+    expect(emailKindFor('2026-02-01', null)).toBe('email_start'); // 1 Feb 2026 is a Sunday
   });
 });
 
@@ -85,6 +95,9 @@ describe('renderEmail', () => {
     const ok = mk('email_weekly', base, '2027-01-09', '2027-02-07'); // 29 days
     expect(ok.text).not.toContain(fresh);
     expect(ok.text).toContain('₹');
+  });
+  it('rounds the rupee figure down', () => {
+    expect(mk('email_weekly', { ...base, roomLeft: 340_000_99 }).text).toContain('₹3,40,000 ');
   });
   it('returns null under the floor with nothing waiting', () => {
     expect(renderEmail('email_weekly', { ...base, roomLeft: 199_999, movesWaiting: 0 }, '2027-02-03', '2027-02-07', URL, LAST_SAFE)).toBeNull();
