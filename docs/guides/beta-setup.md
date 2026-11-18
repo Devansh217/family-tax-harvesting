@@ -38,5 +38,5 @@ The daily `alerts` function emails families that turned on "Harvest season help"
    `npx supabase@2 functions deploy alerts --no-verify-jwt` (Cron calls it without a sign-in; the secret header is its lock)
 8. **Try it once by hand**, with your own family's season help turned on and your email confirmed:
    `curl -X POST -H "x-alerts-secret: <ALERTS_SECRET>" https://<project-ref>.supabase.co/functions/v1/alerts`
-   Outside the season (before 1 Feb 2027) the reply is `{"sent":0,"checked":0,"stats":false}` and no email goes out; that is correct. To see a real email before the season, ask Claude for a one-off dry run. During the season, a send day gives you an email and a line under "Automatic season checks" on the Account page.
+   Outside the season (before 1 Feb 2027) the reply is `{"sent":0,"checked":0,"stats":false}` and no email goes out; that is correct. Emails only go out on send days inside the season, so the first real check is 1 Feb 2027: on a send day a send day gives you an email and a line under "Automatic season checks" on the Account page.
 9. **Know what it does and doesn't do.** It skips the whole run if the site's `prices/latest.json` can't be fetched (no wrong numbers are emailed). Running it twice in a day sends nothing the second time. Families without a confirmed sign-in email get nothing.
