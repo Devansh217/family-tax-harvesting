@@ -50,7 +50,7 @@ export interface AppState {
 
 
 export const emptyState = (): AppState => ({
-  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [], datedMoves: [], alerts: { seasonHelp: false },
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [], datedMoves: [], alerts: { seasonHelp: false, chosen: false },
 });
 
 /** Shapes saved before the member profile and tax-type changes (Nov 2026). */
