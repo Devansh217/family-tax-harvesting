@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { handleAdmin, type AdminDb } from './admin.ts';
+import type { SeasonStatsRow } from './alerts.ts';
 import { toB64 } from './base64.ts';
 import { familyAad, importKeyRing, sealJson, type Envelope, type KeyRing } from './envelope.ts';
 
 const key = () => toB64(crypto.getRandomValues(new Uint8Array(32)));
+let season: SeasonStatsRow[] = [];
 const invites = new Map<string, string | null>();
 let ring: KeyRing, log: Array<{ familyUserId: string; adminUserId: string; reason: string }>, rows: Map<string, { version: number; envelope: Envelope }>;
 const db: AdminDb = {
@@ -15,6 +17,7 @@ const db: AdminDb = {
     add: async (email, note) => { invites.set(email, note); },
     remove: async (email) => { invites.delete(email); },
   },
+  season: async () => season,
   family: { get: async (u) => rows.get(u) ?? null },
 };
 const call = (path: 'list' | 'read', who = 'boss', aal = 'aal2', body?: unknown, r = ring) =>
@@ -24,6 +27,7 @@ beforeEach(async () => {
   ring = await importKeyRing(JSON.stringify({ k1: key() }), 'k1');
   log = [];
   invites.clear();
+  season = [];
   rows = new Map([['fam1', { version: 3, envelope: await sealJson({ version: 1, members: [] }, ring, familyAad('fam1', 3)) }]]);
 });
 
@@ -58,6 +62,28 @@ describe('admin function', () => {
     const r = await call('read', 'boss', 'aal2', { familyUserId: 'fam1', reason: 'check keys' }, otherRing);
     expect(r.status).toBe(500);
     expect(log).toHaveLength(1);
+  });
+
+  describe('season', () => {
+    const row = (week: string): SeasonStatsRow => ({ week, families: 2, room_usable: 100000, room_used: 50000, used_share_by_family: [0.5], moves_shown: 1, moves_dated: 1, moves_done: 0, moves_detected: 0, families_with_detected: 0 });
+    const get = (who = 'boss', aal = 'aal2', method = 'GET') => handleAdmin({ method, path: 'season', userId: who, aal }, { db, ring });
+
+    it('needs two-factor and an admin', async () => {
+      expect(await get('boss', 'aal1')).toEqual({ status: 403, json: { error: 'two_factor_required' } });
+      expect(await get('someone')).toEqual({ status: 403, json: { error: 'not_admin' } });
+    });
+
+    it('returns rows newest first, and logs nothing', async () => {
+      season = [row('2026-02-07'), row('2026-02-21'), row('2026-02-14')];
+      const r = await get();
+      expect(r.status).toBe(200);
+      expect((r.json as SeasonStatsRow[]).map((x) => x.week)).toEqual(['2026-02-21', '2026-02-14', '2026-02-07']);
+      expect(log).toEqual([]);
+    });
+
+    it('is GET only', async () => {
+      expect((await get('boss', 'aal2', 'POST')).status).toBe(405);
+    });
   });
 
   describe('invites', () => {

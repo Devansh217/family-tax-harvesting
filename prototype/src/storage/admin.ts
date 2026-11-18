@@ -10,13 +10,20 @@ export async function isAdmin(): Promise<boolean> {
 
 export interface FamilyListing { userId: string; email: string; version: number; updatedAt: string }
 
-const call = async (path: 'list' | 'read' | 'invites', method: 'GET' | 'POST' | 'DELETE', body?: unknown) => {
+const call = async (path: 'list' | 'read' | 'invites' | 'season', method: 'GET' | 'POST' | 'DELETE', body?: unknown) => {
   const r = await supabaseInvoke(`admin/${path}`, { method, body });
   if (r.error) throw new Error(r.error.status === 403 ? 'Two-factor sign-in needed, or not an admin.' : friendly(r.error.message));
   return r.data;
 };
 
 export const adminList = async (): Promise<FamilyListing[]> => (await call('list', 'GET')) as FamilyListing[];
+
+export interface SeasonRow {
+  week: string; families: number; room_usable: number; room_used: number; used_share_by_family: number[];
+  moves_shown: number; moves_dated: number; moves_done: number; moves_detected: number; families_with_detected: number;
+}
+/** Weekly beta totals, newest first. */
+export const seasonStats = async (): Promise<SeasonRow[]> => (await call('season', 'GET')) as SeasonRow[];
 
 export interface Invite { email: string; note: string | null; invitedAt: string }
 

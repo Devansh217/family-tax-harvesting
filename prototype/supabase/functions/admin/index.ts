@@ -1,7 +1,8 @@
-// The `admin` server function (Deno): GET …/admin/list, POST …/admin/read, and GET/POST/DELETE …/admin/invites. Logic in ../_shared/admin.ts.
+// The `admin` server function (Deno): GET …/admin/list, GET …/admin/season, POST …/admin/read, and GET/POST/DELETE …/admin/invites. Logic in ../_shared/admin.ts.
 // Deploy: npx supabase@2 functions deploy admin
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { handleAdmin, type AdminDb } from '../_shared/admin.ts';
+import type { SeasonStatsRow } from '../_shared/alerts.ts';
 import { importKeyRing, type Envelope, type KeyRing } from '../_shared/envelope.ts';
 import { corsHeaders, jwtPayload, toResponse } from '../_shared/http.ts';
 
@@ -42,6 +43,11 @@ const db: AdminDb = {
       if (error) throw error;
     },
   },
+  async season() {
+    const { data, error } = await service.from('season_stats').select('*').order('week', { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as SeasonStatsRow[];
+  },
   family: {
     async get(userId) {
       const { data, error } = await service.from('families').select('version, envelope').eq('user_id', userId).maybeSingle();
@@ -58,7 +64,7 @@ Deno.serve(async (req) => {
   const { data } = await service.auth.getUser(token);
   if (!data.user) return toResponse({ status: 401, json: { error: 'sign_in' } }, origin);
   const last = new URL(req.url).pathname.split('/').pop();
-  const path = last === 'read' ? 'read' : last === 'invites' ? 'invites' : 'list';
+  const path = last === 'read' ? 'read' : last === 'invites' ? 'invites' : last === 'season' ? 'season' : 'list';
   try {
     const body = req.method === 'POST' || req.method === 'DELETE' ? await req.text() : undefined;
     const aal = String(jwtPayload(token).aal ?? 'aal1');

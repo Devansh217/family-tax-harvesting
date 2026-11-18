@@ -1,4 +1,5 @@
 import { familyAad, openJson, type KeyRing } from './envelope.ts';
+import type { SeasonStatsRow } from './alerts.ts';
 import type { FamilyDb, Reply } from './family.ts';
 
 export interface AdminDb {
@@ -12,6 +13,8 @@ export interface AdminDb {
     add(email: string, note: string | null): Promise<void>;
     remove(email: string): Promise<void>;
   };
+  /** Weekly beta totals (no family data), any order. */
+  season(): Promise<SeasonStatsRow[]>;
   family: Pick<FamilyDb, 'get'>;
 }
 
@@ -20,12 +23,16 @@ export interface AdminDb {
  * reason and is logged before anything is decrypted: no log, no data. The family sees the log on its Account page.
  */
 export async function handleAdmin(
-  req: { method: string; path: 'list' | 'read' | 'invites'; userId: string; aal: string; body?: string },
+  req: { method: string; path: 'list' | 'read' | 'invites' | 'season'; userId: string; aal: string; body?: string },
   deps: { db: AdminDb; ring: KeyRing },
 ): Promise<Reply> {
   const { db, ring } = deps;
   if (req.aal !== 'aal2') return { status: 403, json: { error: 'two_factor_required' } };
   if (!(await db.isAdmin(req.userId))) return { status: 403, json: { error: 'not_admin' } };
+  if (req.path === 'season') {
+    if (req.method !== 'GET') return { status: 405, json: { error: 'method' } };
+    return { status: 200, json: [...(await db.season())].sort((a, b) => (a.week < b.week ? 1 : a.week > b.week ? -1 : 0)) };
+  }
   if (req.path === 'invites') return handleInvites(req, db);
   if (req.path === 'list' && req.method === 'GET') return { status: 200, json: await db.list() };
   if (req.path !== 'read' || req.method !== 'POST') return { status: 405, json: { error: 'method' } };
