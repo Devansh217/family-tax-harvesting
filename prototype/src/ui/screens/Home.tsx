@@ -63,7 +63,7 @@ export function Home({ days }: { days: number }) {
         </span>
       </div>
 
-      {cloud.session && !state.isSample && !state.alerts?.seasonHelp && (
+      {cloud.session && !state.isSample && !state.alerts?.seasonHelp && !state.alerts?.chosen && (
         <p className="small" role="note"><a href="#account">Turn on harvest season help (Account)</a></p>
       )}
       <LastSafeDay />

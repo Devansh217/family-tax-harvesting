@@ -45,7 +45,7 @@ export interface AppState {
   /** Moves the family picked a day for; sized first on every recompute so they hold their room. */
   datedMoves: DatedMove[];
   /** Harvest season help: the server may read this family weekly, 1 Feb to 31 Mar, to email what is left to do. Off until switched on. */
-  alerts?: { seasonHelp: boolean };
+  alerts?: { seasonHelp: boolean; chosen?: boolean };
 }
 
 
@@ -109,16 +109,29 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
     securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
     plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
     brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [], datedMoves: s.datedMoves ?? [],
-    alerts: { seasonHelp: s.alerts?.seasonHelp === true },
+    alerts: { seasonHelp: s.alerts?.seasonHelp === true, chosen: s.alerts?.chosen === true },
   };
 }
 
 /** A backup file's text as a family, migrated like any saved copy; null when it is not a backup. */
 export function parseBackup(text: string): AppState | null {
   try {
-    return normalizeState(JSON.parse(text) as AppState);
+    const s = normalizeState(JSON.parse(text) as AppState);
+    // Consent is not carried in a file: after a restore the family chooses again.
+    return s && { ...s, alerts: { seasonHelp: false, chosen: false } };
   } catch {
     return null;
+  }
+}
+
+export const RESTORE_ALERTS_NOTE = 'Harvest season help is off after a restore; turn it on in Account.';
+
+/** True when the backup file had harvest season help switched on (so the restore switches it off). */
+export function backupHadSeasonHelp(text: string): boolean {
+  try {
+    return (JSON.parse(text) as AppState).alerts?.seasonHelp === true;
+  } catch {
+    return false;
   }
 }
 

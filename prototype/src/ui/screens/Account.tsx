@@ -141,7 +141,7 @@ function AdminReads() {
 }
 
 /** The consent wording, verbatim from the spec. */
-const SEASON_CONSENT = "From 1 Feb to 31 Mar, our server reads your family once a week to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below.";
+const SEASON_CONSENT = "From 1 Feb to 31 Mar, our server reads your family on each email day (once a week, plus a few deadline days) to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below.";
 
 /** The harvest-season switch, with the consent text, and every automatic read listed under it. */
 function SeasonHelp() {
@@ -154,7 +154,7 @@ function SeasonHelp() {
     <div className="sheet pad stack">
       <h2>Harvest season help</h2>
       <label className="row" style={{ gap: 8 }}>
-        <input type="checkbox" checked={on} onChange={(e) => update((s) => ({ ...s, alerts: { seasonHelp: e.target.checked } }))} />
+        <input type="checkbox" checked={on} onChange={(e) => update((s) => ({ ...s, alerts: { seasonHelp: e.target.checked, chosen: true } }))} />
         Turn on harvest season help
       </label>
       <p className="small">{SEASON_CONSENT}</p>

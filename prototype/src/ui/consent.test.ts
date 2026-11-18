@@ -22,11 +22,17 @@ describe('harvest season help', () => {
     expect(emptyState().alerts?.seasonHelp ?? false).toBe(false);
     const old = { ...emptyState() } as Partial<AppState>;
     delete old.alerts;
-    expect(normalizeState(old as AppState)!.alerts).toEqual({ seasonHelp: false });
-    expect(normalizeState({ ...emptyState(), alerts: { seasonHelp: true } })!.alerts).toEqual({ seasonHelp: true });
+    expect(normalizeState(old as AppState)!.alerts).toEqual({ seasonHelp: false, chosen: false });
+    expect(normalizeState({ ...emptyState(), alerts: { seasonHelp: true, chosen: true } })!.alerts).toEqual({ seasonHelp: true, chosen: true });
+  });
+  it('turning the switch either way records a choice, and the Home prompt hides after any choice', () => {
+    const acct = readFileSync(resolve(__dirname, 'screens/Account.tsx'), 'utf8');
+    expect(acct).toMatch(/alerts: \{ seasonHelp: e\.target\.checked, chosen: true \}/);
+    const home = readFileSync(resolve(__dirname, 'screens/Home.tsx'), 'utf8');
+    expect(home).toMatch(/!state\.alerts\?\.chosen/);
   });
   it('the Account screen carries the consent text verbatim', () => {
     const src = readFileSync(resolve(__dirname, 'screens/Account.tsx'), 'utf8').replace(/&rsquo;/g, '’').replace(/\s+/g, ' ');
-    expect(src).toContain("From 1 Feb to 31 Mar, our server reads your family once a week to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below.");
+    expect(src).toContain("From 1 Feb to 31 Mar, our server reads your family on each email day (once a week, plus a few deadline days) to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below.");
   });
 });

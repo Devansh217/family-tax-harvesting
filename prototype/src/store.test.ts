@@ -3,7 +3,7 @@ import { computeFamily } from './engine/family';
 import { FY_2026_27 } from './engine/rules';
 import { parseTablePreview, previewTable } from './parsers';
 import { sampleState } from './sample';
-import { applyImport, emptyState, normalizeState, parseBackup, removeImport, type AppState } from './store';
+import { applyImport, emptyState, normalizeState, backupHadSeasonHelp, parseBackup, removeImport, RESTORE_ALERTS_NOTE, type AppState } from './store';
 import { ageOn } from './engine/dates';
 
 const withMember = (): AppState => ({ ...emptyState(), members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: 0 , from: 'manual' as const }]}] });
@@ -160,6 +160,14 @@ describe('review: restoring a backup', () => {
     expect(s.taxTypeOverrides).toEqual({});
     expect(s.recommendations).toEqual([]);
     expect(s.securities[0]).toMatchObject({ taxType: 'equity', listed: false });
+  });
+  it('a restore turns harvest season help off, and the family is told when it had been on', () => {
+    const on = JSON.stringify({ ...emptyState(), alerts: { seasonHelp: true, chosen: true } });
+    expect(parseBackup(on)!.alerts).toEqual({ seasonHelp: false, chosen: false });
+    expect(backupHadSeasonHelp(on)).toBe(true);
+    expect(backupHadSeasonHelp(JSON.stringify(emptyState()))).toBe(false);
+    expect(backupHadSeasonHelp('not json')).toBe(false);
+    expect(RESTORE_ALERTS_NOTE).toBe('Harvest season help is off after a restore; turn it on in Account.');
   });
   it('rejects a file that is not a backup', () => {
     expect(parseBackup('{"hello":1}')).toBeNull();
