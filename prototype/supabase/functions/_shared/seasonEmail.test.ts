@@ -7,7 +7,7 @@ const fromEngine = (s: ReturnType<typeof seasonSummary>): SeasonEmailInput => s;
 void fromEngine;
 
 const LAST_SAFE = '2027-03-29';
-const base: SeasonEmailInput = { roomLeft: 340_000_00, movesWaiting: 3, nextDate: '2027-02-26', doneSinceWeek: 2, taxableGainsBooked: false };
+const base: SeasonEmailInput = { roomLeft: 340_000_00, movesWaiting: 3, nextDate: '2027-02-26', doneSinceWeek: 2, taxableGainsBooked: false, lastImport: '2027-02-01' };
 const rupees = (t: string) => (t.match(/₹/g) ?? []).length;
 const URL = 'https://app.example.in/';
 const mk = (kind: Parameters<typeof renderEmail>[0], s = base, savedOn = '2027-02-03', today = '2027-02-07', lastSafe: string | null = LAST_SAFE) =>
@@ -96,8 +96,23 @@ describe('renderEmail', () => {
     expect(ok.text).not.toContain(fresh);
     expect(ok.text).toContain('₹');
   });
+  it('fresh-statement line when the last import is missing or 30+ days old and moves are waiting; the room figure stays', () => {
+    const fresh = "Import this month's statements";
+    for (const lastImport of [null, '2027-01-08']) {
+      const t = mk('email_weekly', { ...base, lastImport }).text; // saved 3 Feb, so not stale itself
+      expect(t).toContain(fresh);
+      expect(t).toContain('₹3,40,000');
+    }
+    expect(mk('email_weekly', { ...base, lastImport: '2027-01-09' }).text).not.toContain(fresh);
+    expect(mk('email_weekly', { ...base, lastImport: null, movesWaiting: 0 }).text).not.toContain(fresh);
+  });
   it('words the figure as room the family can still use', () => {
     expect(mk('email_weekly').text).toContain('₹3,40,000 of tax-free room your family can still use');
+  });
+  it('omits the room sentence when the floored figure is zero, and explains the figure otherwise', () => {
+    expect(mk('email_weekly', { ...base, roomLeft: 99 }).text).not.toContain('₹');
+    expect(mk('email_weekly', { ...base, roomLeft: 99 }).text).not.toMatch(/tax-free room/);
+    expect(mk('email_weekly').text).toContain('This counts only gains you can still take tax-free this year.');
   });
   it('rounds the rupee figure down', () => {
     expect(mk('email_weekly', { ...base, roomLeft: 340_000_99 }).text).toContain('₹3,40,000 ');

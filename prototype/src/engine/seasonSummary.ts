@@ -61,7 +61,8 @@ export function seasonSummary(
 
   const done = doneStatus(state.recommendations);
   const retired = retiredMoveIds(state.recommendations);
-  const waiting = view.moves.filter((m) => m.kind !== 'wait' && !m.noRoom && !done.has(m.id));
+  // Only moves the family can act on today: not waits, no-room or done moves, and not a switch that has to wait for a later date.
+  const waiting = view.moves.filter((m) => m.kind !== 'wait' && !m.noRoom && !done.has(m.id) && !(m.kind === 'switch_direct' && m.when !== 'now'));
   const dates = waiting.map((m) => m.date).filter((d): d is ISODate => !!d && d >= asOf).sort();
 
   const prefix = `${rules.label}|`;

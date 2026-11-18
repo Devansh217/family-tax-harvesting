@@ -101,6 +101,24 @@ describe('seasonSummary: counts', () => {
     expect(s.nextDate).toBe('2027-02-20'); // 3 is in the past
   });
 
+  it('a switch that is not for now (wait / next_year), and a done or detected move, are not moves waiting', () => {
+    const sw = (id: string, when: 'now' | 'wait' | 'next_year') =>
+      mv(id, { kind: 'switch_direct', when, date: '2027-02-20' } as Partial<Move>);
+    const view = withMoves([sw(`${T}|s|1`, 'now'), sw(`${T}|s|2`, 'wait'), sw(`${T}|s|3`, 'next_year'), mv(`${T}|h|4`, { date: '2027-02-25' })]);
+    const recs = [statusRecord(view.moves[3]!, 'detected_done', '2027-02-14T00:00:00Z')];
+    const s = seasonSummary(view, { ...noState, recommendations: recs }, ASOF, START);
+    expect(s.movesWaiting).toBe(1);
+    expect(s.nextDate).toBe('2027-02-20');
+  });
+
+  it('a regular fund bought 1 Oct 2026 and not yet long-term: usable 0 and no move waiting on 7 Feb 2027', () => {
+    const reg: Security = { isin: 'INFREG', name: 'Reg Fund - Regular Plan - Growth', taxType: 'equity', listed: false, category: 'Equity Scheme - Flexi Cap Fund', plan: 'regular', option: 'growth', price: rs(180) } as Security;
+    const v = computeFamily({ members: [person('a')], securities: [reg], txns: [buy('a', 'INFREG', '2026-10-01', 1000, 100)] }, '2027-02-07', R);
+    const s = seasonSummary(v, noState, '2027-02-07', START);
+    expect(s.usable).toBe(0);
+    expect(s.movesWaiting).toBe(0);
+  });
+
   it('nextDate is null with no waiting dated move', () => {
     expect(seasonSummary(withMoves([mv(`${T}|h|1`)]), noState, ASOF, START).nextDate).toBeNull();
   });

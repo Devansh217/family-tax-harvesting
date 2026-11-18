@@ -10,6 +10,7 @@ export interface SeasonEmailInput {
   nextDate: string | null;
   doneSinceWeek: number;
   taxableGainsBooked: boolean;
+  lastImport: string | null; // ISO date of the latest import, if any
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -53,7 +54,9 @@ export function renderEmail(
 
   let subject: string;
   const body: string[] = [];
-  const room = stale ? null : `There is ${rupees(s.roomLeft)} of tax-free room your family can still use.`;
+  const figure = Math.floor(s.roomLeft / 100);
+  const room = stale || figure <= 0 ? null : `There is ${rupees(s.roomLeft)} of tax-free room your family can still use. This counts only gains you can still take tax-free this year.`;
+  const importStale = s.lastImport === null || daysBetween(s.lastImport, today) >= STALE_DAYS;
 
   if (kind === 'email_start') {
     subject = 'Harvest season has started';
@@ -77,7 +80,7 @@ export function renderEmail(
     }
   }
 
-  if (stale) body.push(FRESH);
+  if (stale || (importStale && s.movesWaiting > 0)) body.push(FRESH);
 
   const text = [
     body.join('\n'),
