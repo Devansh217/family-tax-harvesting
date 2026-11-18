@@ -4,7 +4,7 @@ import { familyAad, openJson, type Envelope, type KeyRing } from './envelope.ts'
 type ISODate = string;
 export type LogKind = EmailKind | 'season_check';
 
-/** One row for the whole beta: totals and a sorted list of shares, no user id. Column names are the table's. */
+/** One row for the whole beta: totals and a sorted list of shares, no user id. `used_share_by_family` leaves out families whose usable room is 0. Column names are the table's. */
 export interface SeasonStatsRow {
   week: ISODate;
   families: number;
@@ -24,16 +24,35 @@ export interface AlertsDb {
   logged(userId: string, kind: LogKind, onDate: ISODate): Promise<boolean>;
   /** false on a unique clash: another run already did it. */
   log(userId: string, kind: LogKind, onDate: ISODate): Promise<boolean>;
+  /** Records that the email for this row went out (the row exists from the read, whether or not anything was sent). */
+  markSent(userId: string, kind: LogKind, onDate: ISODate): Promise<void>;
   unlog(userId: string, kind: LogKind, onDate: ISODate): Promise<void>;
   /** Upsert on `week`. */
   saveStats(row: SeasonStatsRow): Promise<void>;
 }
 
 export interface PriceFile { date: ISODate; source: string; prices: Record<string, number> }
+export interface FundsFile { date: ISODate; funds: Record<string, { n: string; c: string }> }
+
+const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+/** The published closing prices, or null when the file is not what the nightly job writes. */
+export const parsePrices = (j: unknown): PriceFile | null => (isObj(j) && typeof j.date === 'string' && isObj(j.prices) ? (j as unknown as PriceFile) : null);
+/** The published fund list, or null when malformed. */
+export const parseFunds = (j: unknown): FundsFile | null => (isObj(j) && typeof j.date === 'string' && isObj(j.funds) ? (j as unknown as FundsFile) : null);
+
+/** A fixed sample for the founder's pre-season check of the email provider. It carries no family data. */
+export function sampleEmail(appUrl: string): { subject: string; text: string } {
+  return {
+    subject: 'Harvesting test email',
+    text: `This is a test of the Harvesting season emails. If you can read it, the email provider is set up.\n\nOpen Harvesting: ${appUrl}\n`,
+  };
+}
 
 /** The slice of the engine bundle this module uses. Injected: Vitest passes the TypeScript source, the Deno entry the built bundle. */
 export interface AlertsEngine {
   // deno-lint-ignore no-explicit-any
+  withFunds(securities: any[], file: FundsFile | null, userOverrides: Record<string, any>): any[];
+  withPrices(securities: any[], file: PriceFile | null): any[];
   computeFamily(state: any, asOf: ISODate, rules: any): any;
   // deno-lint-ignore no-explicit-any
   seasonSummary(view: any, state: any, asOf: ISODate): SeasonEmailInput & {
@@ -46,7 +65,7 @@ export interface AlertsEngine {
 }
 
 export interface AlertsDeps {
-  db: AlertsDb; ring: KeyRing; prices: PriceFile; appUrl: string; engine: AlertsEngine;
+  db: AlertsDb; ring: KeyRing; prices: PriceFile; funds: FundsFile; appUrl: string; engine: AlertsEngine;
   send: (to: string, subject: string, text: string) => Promise<void>;
 }
 
@@ -79,24 +98,13 @@ export function secretMatches(given: string | null | undefined, expected: string
   return diff === 0;
 }
 
-/** Closing prices from the public file, plus the family's own tax-type choices (the server has no funds file). */
-function priced(doc: FamilyDoc, prices: PriceFile): unknown[] {
-  return (doc.securities ?? []).map((s) => {
-    const o = doc.taxTypeOverrides?.[s.isin];
-    const withType = o ? { ...s, taxType: o } : s;
-    const p = prices.prices[s.isin];
-    if (p == null || (s.priceDate && s.priceDate > prices.date)) return withType;
-    return { ...withType, price: p, priceDate: prices.date };
-  });
-}
-
 /**
  * The daily run. Send days (spec section 7) email; Sundays from 1 Feb to the first Sunday of April also total the
  * season (section 8). Each family's read is logged before anything is decrypted, and a family already logged for the
  * day is skipped without decrypting, so a re-run does nothing. Counts only are returned; nothing personal is logged.
  */
 export async function runAlerts(today: ISODate, deps: AlertsDeps): Promise<{ sent: number; checked: number; stats: boolean }> {
-  const { db, ring, prices, appUrl, engine } = deps;
+  const { db, ring, prices, funds, appUrl, engine } = deps;
   const none = { sent: 0, checked: 0, stats: false };
   // The rules are for one tax year; outside its season there is nothing to say.
   if (today.slice(0, 4) !== engine.rules.end.slice(0, 4)) return none;
@@ -112,13 +120,17 @@ export async function runAlerts(today: ISODate, deps: AlertsDeps): Promise<{ sen
 
   for (const f of await db.optedIn()) {
     if (!f.email) continue;
-    if (await db.logged(f.userId, kind, today)) { skippedDone++; continue; }
-    if (!(await db.log(f.userId, kind, today))) { skippedDone++; continue; }
+    let owned = false, opened = false, sending = false;
     try {
+      if (await db.logged(f.userId, kind, today)) { skippedDone++; continue; }
+      if (!(await db.log(f.userId, kind, today))) { skippedDone++; continue; }
+      owned = true;
       const doc = await openJson<FamilyDoc>(f.envelope, ring, familyAad(f.userId, f.version));
+      opened = true;
       if (doc.alerts?.seasonHelp !== true) continue; // the read happened, so its row stays
-      const state = { ...doc, securities: priced(doc, prices), funds: undefined };
-      const view = engine.computeFamily(state, today, engine.rules);
+      // The same path as the app: AMFI categories and repo overrides, the family's own choices, then closing prices.
+      const securities = engine.withPrices(engine.withFunds(doc.securities ?? [], funds, doc.taxTypeOverrides ?? {}), prices);
+      const view = engine.computeFamily({ ...doc, securities, funds: funds.funds }, today, engine.rules);
       const s = engine.seasonSummary(view, {
         recommendations: doc.recommendations ?? [], datedMoves: doc.datedMoves ?? [],
         imports: (doc.imports ?? []).map((i) => ({ date: i.at.slice(0, 10) })),
@@ -131,15 +143,21 @@ export async function runAlerts(today: ISODate, deps: AlertsDeps): Promise<{ sen
         if (s.usable > 0) shares.push(Math.round((s.used / s.usable) * 10_000) / 10_000);
       }
       if (emailKind) {
-        const mail = renderEmail(emailKind, s, engine.todayISO(new Date(f.updatedAt)), today, appUrl, lastSafe);
+        // The email's figure is the usable room still left: usable minus used.
+        const mail = renderEmail(emailKind, { ...s, roomLeft: Math.max(0, s.usable - s.used) }, engine.todayISO(new Date(f.updatedAt)), today, appUrl, lastSafe);
         if (mail) {
+          sending = true;
           await deps.send(f.email, mail.subject, mail.text);
+          sending = false;
           sent++;
+          await db.markSent(f.userId, kind, today).catch(() => {}); // a failed mark must never cause a second send
         }
       }
-    } catch {
-      // This family's read or send failed: take its row back so a retry can do it, and carry on with the others.
-      await db.unlog(f.userId, kind, today).catch(() => {});
+    } catch (e) {
+      const err = e as { code?: string; name?: string } | null;
+      console.error('alerts: a family failed', err?.code ?? err?.name);
+      // Take the row back only if nothing was read (decrypt failed) or the send threw, so a retry can do it. Never after a completed read.
+      if (owned && (!opened || sending)) await db.unlog(f.userId, kind, today).catch(() => {});
     }
   }
 

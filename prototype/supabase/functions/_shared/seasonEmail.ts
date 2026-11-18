@@ -5,7 +5,7 @@
 export type EmailKind = 'email_start' | 'email_weekly' | 'email_deadline';
 
 export interface SeasonEmailInput {
-  roomLeft: number; // paise
+  roomLeft: number; // paise: usable room still left (usable minus used)
   movesWaiting: number;
   nextDate: string | null;
   doneSinceWeek: number;
@@ -53,7 +53,7 @@ export function renderEmail(
 
   let subject: string;
   const body: string[] = [];
-  const room = stale ? null : `Your family still has ${rupees(s.roomLeft)} of tax-free room this year.`;
+  const room = stale ? null : `There is ${rupees(s.roomLeft)} of tax-free room your family can still use.`;
 
   if (kind === 'email_start') {
     subject = 'Harvest season has started';

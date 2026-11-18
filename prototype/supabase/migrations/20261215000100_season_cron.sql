@@ -12,4 +12,4 @@ grant select on public.season_alert_families to service_role;
 -- 2. The daily call at 05:30 UTC (11:00 IST). The URL and secret live in Vault (see docs/guides/beta-setup.md, Season emails).
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
-select cron.schedule('season-alerts', '30 5 * * *', $$ select net.http_post(url := (select decrypted_secret from vault.decrypted_secrets where name = 'alerts_url'), headers := jsonb_build_object('x-alerts-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'alerts_secret'))) $$);
+select cron.schedule('season-alerts', '30 5 * * *', $$ select net.http_post(url := (select decrypted_secret from vault.decrypted_secrets where name = 'alerts_url'), headers := jsonb_build_object('x-alerts-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'alerts_secret')), timeout_milliseconds := 120000) $$);

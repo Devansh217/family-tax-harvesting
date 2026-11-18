@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { runAlerts, secretMatches, type AlertsDb, type AlertsDeps, type SeasonStatsRow } from './alerts.ts';
+import { parseFunds, parsePrices, runAlerts, sampleEmail, secretMatches, type AlertsDb, type AlertsDeps, type SeasonStatsRow } from './alerts.ts';
 import { toB64 } from './base64.ts';
 import { familyAad, importKeyRing, sealJson, type Envelope, type KeyRing } from './envelope.ts';
-import { computeFamily, FY_2026_27, lastSafeDay, NSE_HOLIDAYS_2027, seasonSummary, todayISO, QTY_SCALE } from '../../../src/engine/index';
+import { computeFamily, FY_2026_27, lastSafeDay, NSE_HOLIDAYS_2027, seasonSummary, todayISO, withFunds, withPrices, QTY_SCALE } from '../../../src/engine/index';
 
 const key = () => toB64(crypto.getRandomValues(new Uint8Array(32)));
 const rs = (n: number) => Math.round(n * 100);
-const engine = { computeFamily, seasonSummary, lastSafeDay, todayISO, rules: FY_2026_27, holidays: NSE_HOLIDAYS_2027 };
-const prices = { date: '2027-02-05', source: 'test', prices: { X: rs(2000) } };
+const engine = { withFunds, withPrices, computeFamily, seasonSummary, lastSafeDay, todayISO, rules: FY_2026_27, holidays: NSE_HOLIDAYS_2027 };
+const prices = { date: '2027-02-05', source: 'test', prices: { X: rs(2000), INF000A01010: rs(2000) } };
+const fundsFile = { date: '2027-02-05', funds: { INF000A01010: { n: 'Blue Fund - Direct Plan - Growth', c: 'Equity Scheme - Large Cap Fund' } } };
 
 const stateOf = (seasonHelp: boolean) => ({
   version: 1,
@@ -18,6 +19,7 @@ const stateOf = (seasonHelp: boolean) => ({
 });
 
 let ring: KeyRing, decrypts: number;
+let marked: string[];
 let logs: Set<string>, stats: SeasonStatsRow[], sent: Array<{ to: string; subject: string; text: string }>;
 let fams: Array<{ userId: string; email: string; version: number; envelope: Envelope; updatedAt: string }>;
 let failFor: string | null;
@@ -27,10 +29,11 @@ const mkDb = (): AlertsDb => ({
   logged: async (u, k, d) => logs.has(`${u}|${k}|${d}`),
   log: async (u, k, d) => { const id = `${u}|${k}|${d}`; if (logs.has(id)) return false; logs.add(id); return true; },
   unlog: async (u, k, d) => { logs.delete(`${u}|${k}|${d}`); },
+  markSent: async (u, k, d) => { marked.push(`${u}|${k}|${d}`); },
   saveStats: async (row) => { stats.push(row); },
 });
 const deps = (): AlertsDeps => ({
-  db: mkDb(), ring, prices, appUrl: 'https://app.example.in/', engine,
+  db: mkDb(), ring, prices, funds: fundsFile, appUrl: 'https://app.example.in/', engine,
   send: async (to, subject, text) => { if (failFor === to) throw new Error('boom'); sent.push({ to, subject, text }); },
 });
 const run = (d: string, x: AlertsDeps) => { decrypts = 0; return runAlerts(d, x); };
@@ -41,7 +44,7 @@ beforeEach(async () => {
   const real = await importKeyRing(JSON.stringify({ k1: key() }), 'k1');
   decrypts = 0;
   ring = { current: real.current, keys: new Proxy(real.keys, { get: (t, p) => { decrypts++; return (t as Record<string | symbol, unknown>)[p]; } }) };
-  logs = new Set(); stats = []; sent = []; failFor = null;
+  marked = []; logs = new Set(); stats = []; sent = []; failFor = null;
   fams = [await fam('f1'), await fam('f2')];
 });
 
@@ -138,6 +141,72 @@ describe('runAlerts', () => {
 
   it('does nothing outside the rules year', async () => {
     expect(await run('2028-02-13', deps())).toEqual({ sent: 0, checked: 0, stats: false });
+  });
+});
+
+const fundState = () => {
+  const s = stateOf(true);
+  return { ...s, securities: [{ isin: 'INF000A01010', name: 'Blue Fund', taxType: 'check', listed: false, price: rs(1000) }], txns: [{ ...s.txns[0]!, isin: 'INF000A01010' }] };
+};
+
+describe('runAlerts: funds, logging and sent marks', () => {
+  it('classifies an unchecked fund from AMFI like the app does: its gain counts in the email figure and the totals', async () => {
+    fams = [{ ...(await fam('f1')), envelope: await sealJson(fundState(), ring, familyAad('f1', 2)) }];
+    await run('2027-02-07', deps());
+    expect(stats[0]!.room_usable).toBe(rs(1_00_000));
+    expect(sent[0]!.text).toContain('₹1,00,000');
+  });
+
+  it('the email figure is the usable room still left, not the whole free room', async () => {
+    await run('2027-02-07', deps()); // 1,00,000 of gain to harvest, 1,25,000+ of free room
+    expect(sent[0]!.text).toContain('₹1,00,000');
+    expect(sent[0]!.text).not.toMatch(/₹1,2\d,\d{3}/);
+  });
+
+  it('a read stays logged when the engine throws after a successful decrypt', async () => {
+    const d = deps();
+    d.engine = { ...engine, computeFamily: () => { throw new Error('engine'); } };
+    const r = await run('2027-02-07', d);
+    expect(r.sent).toBe(0);
+    expect(logs.size).toBe(2);
+  });
+
+  it('marks the log row as sent only after a successful send', async () => {
+    failFor = 'f1@x.in';
+    await run('2027-02-07', deps());
+    expect(marked).toEqual(['f2|email_weekly|2027-02-07']);
+  });
+
+  it('marks nothing when nothing is sent (under the floor)', async () => {
+    fams = [{ ...(await fam('f1')), envelope: await sealJson({ ...stateOf(true), members: [], txns: [] }, ring, familyAad('f1', 2)) }];
+    await run('2027-02-07', deps());
+    expect(marked).toEqual([]);
+  });
+
+  it('one database blip on the log check does not stop the other families', async () => {
+    const d = deps();
+    const real = d.db.logged;
+    d.db.logged = async (u, k, dt) => { if (u === 'f1') throw new Error('network'); return real(u, k, dt); };
+    const r = await run('2027-02-07', d);
+    expect(r.sent).toBe(1);
+  });
+});
+
+describe('market files and the test email', () => {
+  it('accepts well-formed files and rejects malformed ones', () => {
+    expect(parsePrices(prices)).toEqual(prices);
+    expect(parsePrices({ date: 5, prices: {} })).toBeNull();
+    expect(parsePrices({ date: '2027-02-05' })).toBeNull();
+    expect(parsePrices(null)).toBeNull();
+    expect(parseFunds(fundsFile)).toEqual(fundsFile);
+    expect(parseFunds({ date: '2027-02-05', funds: null })).toBeNull();
+    expect(parseFunds({ funds: {} })).toBeNull();
+  });
+  it('the test email is a fixed sample with no family data', () => {
+    const m = sampleEmail('https://app.example.in/');
+    expect(m.subject).toMatch(/test/i);
+    expect(m.text).toContain('https://app.example.in/');
+    expect(m.text).not.toMatch(/₹\d/);
   });
 });
 

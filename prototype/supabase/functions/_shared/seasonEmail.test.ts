@@ -96,6 +96,9 @@ describe('renderEmail', () => {
     expect(ok.text).not.toContain(fresh);
     expect(ok.text).toContain('₹');
   });
+  it('words the figure as room the family can still use', () => {
+    expect(mk('email_weekly').text).toContain('₹3,40,000 of tax-free room your family can still use');
+  });
   it('rounds the rupee figure down', () => {
     expect(mk('email_weekly', { ...base, roomLeft: 340_000_99 }).text).toContain('₹3,40,000 ');
   });

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { sendPasswordReset, setNewPassword, SHOW_EMAIL_SIGNIN, signIn, signInWithGoogle, signUp } from '../../cloud';
+import { seasonLogLabel } from '../seasonLog';
 import { deleteAccount, listMyAdminReads, loadSeasonLog, saveProfile } from '../../storage';
 import { useApp } from '../app-context';
 import { Icon, Svg } from '../parts';
@@ -142,17 +143,10 @@ function AdminReads() {
 /** The consent wording, verbatim from the spec. */
 const SEASON_CONSENT = "From 1 Feb to 31 Mar, our server reads your family once a week to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below.";
 
-const SEASON_KIND: Record<string, string> = {
-  season_check: 'Read your family',
-  email_start: 'Emailed: season has started',
-  email_weekly: 'Emailed: weekly summary',
-  email_deadline: 'Emailed: deadline reminder',
-};
-
 /** The harvest-season switch, with the consent text, and every automatic read listed under it. */
 function SeasonHelp() {
   const { state, update } = useApp();
-  const [rows, setRows] = useState<Array<{ on_date: string; kind: string }> | null>(null);
+  const [rows, setRows] = useState<Array<{ on_date: string; kind: string; sent: boolean }> | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => { loadSeasonLog().then(setRows, () => setFailed(true)); }, []);
   const on = state.alerts?.seasonHelp === true;
@@ -168,7 +162,7 @@ function SeasonHelp() {
       {failed ? <p className="small muted">Could not load the list. Try again later.</p>
         : rows == null ? <p className="small muted">Loading…</p>
         : rows.length === 0 ? <p className="small muted">No automatic checks yet.</p>
-        : <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{rows.map((r) => <li key={r.on_date + r.kind}>{r.on_date}: {SEASON_KIND[r.kind] ?? r.kind}</li>)}</ul>}
+        : <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{rows.map((r) => <li key={r.on_date + r.kind}>{r.on_date}: {seasonLogLabel(r.kind, r.sent)}</li>)}</ul>}
     </div>
   );
 }
