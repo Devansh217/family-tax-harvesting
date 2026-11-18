@@ -22,6 +22,7 @@ export function Admin({ onView }: { onView: (s: AppState, name: string) => void 
   const [inviteNote, setInviteNote] = useState('');
   const [season, setSeason] = useState<SeasonRow[] | null>(null);
   const [seasonError, setSeasonError] = useState<string | null>(null);
+  const [invitesError, setInvitesError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!cloud.session) return;
@@ -30,7 +31,7 @@ export function Admin({ onView }: { onView: (s: AppState, name: string) => void 
   }, [cloud.session]);
   useEffect(() => { if (mfa === 'verified') adminList().then(setList, (e: Error) => toast(e.message)); }, [mfa, toast]);
 
-  useEffect(() => { if (mfa === 'verified') invitesList().then(setInvites, (e: Error) => toast(e.message)); }, [mfa, toast]);
+  useEffect(() => { if (mfa === 'verified') invitesList().then(setInvites, (e: Error) => setInvitesError(e.message)); }, [mfa]);
 
   useEffect(() => { if (mfa === 'verified') seasonStats().then(setSeason, (e: Error) => setSeasonError(e.message)); }, [mfa, toast]);
 
@@ -76,7 +77,7 @@ export function Admin({ onView }: { onView: (s: AppState, name: string) => void 
             <label className="field" htmlFor="inv-note">Note<input id="inv-note" value={inviteNote} maxLength={200} onChange={(e) => setInviteNote(e.target.value)} /></label>
             <button className="btn primary" type="submit" disabled={!inviteEmail.includes('@')}>Invite</button>
           </form>
-          {invites == null ? <p className="muted">Loading…</p> : invites.length === 0 ? <p className="muted">No one is invited yet.</p> : (
+          {invitesError ? <p className="small" role="alert">{invitesError}</p> : invites == null ? <p className="muted">Loading…</p> : invites.length === 0 ? <p className="muted">No one is invited yet.</p> : (
             <div className="tablebox"><table>
               <thead><tr><th>Email</th><th>Note</th><th></th></tr></thead>
               <tbody>{invites.map((i) => (

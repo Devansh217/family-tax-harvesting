@@ -1,6 +1,7 @@
 import { friendly, supabase } from '../cloud';
 import { normalizeState, type AppState } from '../store';
 import { supabaseInvoke } from './functions';
+import { parseInvites, type Invite } from './invites';
 import { parseSeasonRows, type SeasonRow } from './seasonRows';
 
 /** Whether the signed-in person is in `admins` (only to show the admin tab; the function checks again). */
@@ -27,9 +28,13 @@ export async function seasonStats(): Promise<SeasonRow[]> {
   return rows;
 }
 
-export interface Invite { email: string; note: string | null; invitedAt: string }
-
-export const invitesList = async (): Promise<Invite[]> => (await call('invites', 'GET')) as Invite[];
+export type { Invite };
+/** The beta invite list. An old `admin` deploy answers with the family list, which must never show here. */
+export async function invitesList(): Promise<Invite[]> {
+  const rows = parseInvites(await call('invites', 'GET'));
+  if (!rows) throw new Error('Redeploy the admin function (see the setup guide).');
+  return rows;
+}
 export const invitesAdd = async (email: string, note: string): Promise<void> => { await call('invites', 'POST', { email, note }); };
 export const invitesRemove = async (email: string): Promise<void> => { await call('invites', 'DELETE', { email }); };
 
