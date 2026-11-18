@@ -47,14 +47,14 @@ function CapitalGains({ memberId, memberName }: { memberId: string; memberName: 
           <div className="tablebox">
             <table>
               <thead>
-                <tr>{isSection(sec.key) ? <><th>Name</th><th className="num">Units</th><th>Sale date</th><th className="num">Sale value</th><th className="num">Cost</th><th className="num">31 Jan 2018 value</th><th className="num">Gain</th></> : <><th>Line</th><th className="num">Amount</th></>}</tr>
+                <tr>{isSection(sec.key) ? <><th>Name</th><th className="num">Units</th><th>Sale date</th><th className="num">Sale value</th><th className="num">Cost for tax</th><th className="num">31 Jan 2018 value</th><th className="num">Gain</th></> : <><th>Line</th><th className="num">Amount</th></>}</tr>
               </thead>
               <tbody>
                 {sec.rows.map((r, i) => isSection(sec.key) ? (
                   <tr key={`${r.saleDate}|${r.isin}|${i}`}>
                     <td>{r.name}{isSaleRow(r) && <span className="tiny muted" style={{ display: 'block' }}>{r.isin}</span>}</td>
                     <td className="num">{isSaleRow(r) ? units(r.units) : '—'}</td>
-                    <td style={{ textAlign: 'left' }}>{dateLabel(r.saleDate)}</td>
+                    <td style={{ textAlign: 'left' }}>{isSaleRow(r) ? dateLabel(r.saleDate) : ''}</td>
                     <td className="num">{isSaleRow(r) ? inr(r.saleValue) : '—'}</td>
                     <td className="num">{isSaleRow(r) ? inr(r.cost) : '—'}</td>
                     <td className="num">{r.fmv2018 != null ? inr(r.fmv2018) : '—'}</td>
@@ -69,6 +69,7 @@ function CapitalGains({ memberId, memberName }: { memberId: string; memberName: 
           </div>
         </div>
       ))}
+      <p className="tiny muted">Cost for tax: for shares and equity funds bought on or before 31 Jan 2018, it is the higher of what you paid and the lower of the 31 Jan 2018 value and the sale value. The 31 Jan 2018 value column shows the value of those units only.</p>
       <p className="tiny muted">The new Act's return forms for 2026-27 are not out yet (expected April–June 2027). Check the sections against the form, or give this to your CA.</p>
     </Section>
   );

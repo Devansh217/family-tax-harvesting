@@ -16,7 +16,10 @@ export const units3 = (q: Qty): string => {
 /** RFC 4180: quote a field that holds a comma, quote or line break; double any quote. */
 export const csvField = (s: string): string => (/[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
 
-export const CSV_HEADER = ['Section', 'ISIN', 'Name', 'Units', 'Sale date', 'Sale value (₹)', 'Cost (₹)', '31 Jan 2018 value (₹)', 'Gain (₹)'];
+/** Text that starts with = + - @ would run as a formula in a spreadsheet: a leading quote makes it plain text. */
+export const textCell = (s: string): string => (/^[=+\-@]/.test(s) ? `'${s}` : s);
+
+export const CSV_HEADER = ['Section', 'ISIN', 'Name', 'Units', 'Sale date', 'Sale value (₹)', 'Cost for tax (₹)', '31 Jan 2018 value (₹)', 'Gain (₹)'];
 
 export function scheduleCsv(s: CgSchedule): string {
   const lines = [CSV_HEADER.map(csvField).join(',')];
@@ -24,7 +27,7 @@ export function scheduleCsv(s: CgSchedule): string {
     for (const r of sec.rows) {
       const sale = isSaleRow(r);
       lines.push([
-        sec.title, sale ? r.isin : '', r.name, sale ? units3(r.units) : '', r.saleDate, sale ? rupees2(r.saleValue) : '', sale ? rupees2(r.cost) : '',
+        textCell(sec.title), sale ? r.isin : '', textCell(r.name), sale ? units3(r.units) : '', sale ? r.saleDate : '', sale ? rupees2(r.saleValue) : '', sale ? rupees2(r.cost) : '',
         r.fmv2018 != null ? rupees2(r.fmv2018) : '', rupees2(r.gain),
       ].map(csvField).join(','));
     }

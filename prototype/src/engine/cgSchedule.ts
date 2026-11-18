@@ -29,7 +29,7 @@ export const CG_TITLES: Record<CgSectionKey, string> = {
   other_lt: 'Other long-term',
   slab: 'Slab-taxed gains (debt and specified funds)',
   check: 'Needs checking (tax type unknown)',
-  set_off: 'Losses set off and carried forward',
+  set_off: 'Losses brought forward and carried forward',
   business: "Intraday and F&O (from your broker's report)",
 };
 const ORDER: CgSectionKey[] = ['equity_lt', 'equity_st', 'other_lt', 'slab', 'check', 'set_off', 'business'];

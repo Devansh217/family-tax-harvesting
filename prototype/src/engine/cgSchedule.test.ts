@@ -143,14 +143,27 @@ describe('scheduleCsv', () => {
   const lines = csv.split('\r\n');
 
   it('starts with the header and uses CRLF line ends', () => {
-    expect(lines[0]).toBe('Section,ISIN,Name,Units,Sale date,Sale value (₹),Cost (₹),31 Jan 2018 value (₹),Gain (₹)');
+    expect(lines[0]).toBe('Section,ISIN,Name,Units,Sale date,Sale value (₹),Cost for tax (₹),31 Jan 2018 value (₹),Gain (₹)');
     expect(csv.endsWith('\r\n')).toBe(true);
     expect(csv.replace(/\r\n/g, '')).not.toMatch(/[\r\n]/);
   });
 
   it('writes plain rupees with 2 decimals and quotes names with commas or quotes', () => {
     expect(lines).toContain('Slab-taxed gains (debt and specified funds),D,"Debt, ""Short"" Fund",100,2026-09-01,1200.00,1000.00,,200.00');
-    expect(lines).toContain('Equity short-term (111A),,"Broker figure: Shares, short-term",,2026-04-01,,,,7000.00');
+    expect(lines).toContain('Equity short-term (111A),,"Broker figure: Shares, short-term",,,,,,7000.00');
+  });
+
+  it('keeps spreadsheets from running text as a formula', () => {
+    const f = run({ members: [person('a')], securities: [eq('F', { name: '=HYPERLINK("x")' }), eq('P', { name: '+cmd' }), eq('M', { name: '-1' }), eq('T', { name: '@SUM' })],
+      txns: ['F', 'P', 'M', 'T'].flatMap((i) => [tx('a', i, '2024-01-01', 'buy', 1, 100), tx('a', i, '2026-06-01', 'sell', 1, 200)]) });
+    const out = scheduleCsv(cgSchedule(f, 'a'));
+    expect(out).toContain(",\"'=HYPERLINK(\"\"x\"\")\",");
+    for (const n of ["'+cmd", "'-1", "'@SUM"]) expect(out).toContain(`,${n},`);
+    expect(out).not.toMatch(/,[=+@]/);
+  });
+
+  it('retitles the loss section to what it shows', () => {
+    expect(cgSchedule(fam, 'a').sections.find((x) => x.key === 'set_off')!.title).toBe('Losses brought forward and carried forward');
   });
 
   it('formats units, negatives and the file name', () => {
