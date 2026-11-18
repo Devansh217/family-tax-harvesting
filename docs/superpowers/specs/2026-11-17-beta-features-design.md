@@ -140,7 +140,7 @@ After an import, each move shown or dated is matched against new sale transactio
 
 ## 7. Season emails
 
-**Consent:** one switch on the Account screen, **"Harvest season help"**, off until the manager turns it on, stored in the family document (`AppState.alerts = { seasonHelp: boolean }`). Its text: "From 1 Feb to 31 Mar, our server reads your family once a week to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below." The onboarding checklist suggests it, and the founder asks beta families to turn it on. *Claude's call:* one switch for both, off by default, because both are the server reading the family, and the secure storage design promised every server read is shown to the family.
+**Consent:** one switch on the Account screen, **"Harvest season help"**, off until the manager turns it on, stored in the family document (`AppState.alerts = { seasonHelp: boolean }`). Its text: "From 1 Feb to 31 Mar, our server reads your family on each email day (once a week, plus a few deadline days) to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below." The onboarding checklist suggests it, and the founder asks beta families to turn it on. *Claude's call:* one switch for both, off by default, because both are the server reading the family, and the secure storage design promised every server read is shown to the family.
 
 **Every automatic read is logged.** Each time the `alerts` function decrypts a family it writes a row to `season_log (family_user_id, kind, on_date)`, kind one of `season_check`, `email_start`, `email_weekly`, `email_deadline`. The Account page lists them under "Automatic season checks", beside the founder's reads. Families with the switch off are never decrypted by `alerts`: the `family` function copies the switch to a plain `families.season_help` column on each save, and `alerts` filters on it before decrypting.
 
@@ -150,12 +150,12 @@ After an import, each move shown or dated is matched against new sale transactio
 
 | Email | When (IST, 11 am) | Content |
 |---|---|---|
-| Season start | 1 Feb | Family room left this year, last safe day, number of moves waiting |
+| Season start | 1 Feb | Usable room left this year, last safe day, number of moves waiting |
 | Weekly | Each Sunday from 7 Feb to 28 Mar | Room left, moves waiting and the next date the family picked, moves done since last week |
 | Deadline | 1 Mar, 15 Mar, last safe day | Room left and the date; on 15 Mar, one line: "If anyone booked taxable gains this year, check the 15 March advance tax instalment." |
 | Fresh statement | In a weekly email, if the last import is over 30 days old and moves are waiting | "Import this month's statements so the app can mark what's done." |
 
-Every email: one rupee figure (family room left), counts and dates only, no names, funds or income; a link to the app; "Turn these off on the Account page" (one click, no prompt). At most one email a day. Nothing is sent if room left is under ₹2,000 and no moves are waiting (NUDGE floor).
+Every email: one rupee figure (usable room left: room the family can still use on gains it actually has, section 1; omitted when ₹0), counts and dates only, no names, funds or income; a link to the app; "Turn these off on the Account page" (one click, no prompt). At most one email a day. Nothing is sent if usable room left is under ₹2,000 and no moves the family can act on now are waiting (NUDGE floor). A send that fails keeps its log row, marked not sent; a same-day re-run resends only those. *Changed 18 Nov 2026 in the build (ruling): the figure was "family room left", which told families with nothing to harvest they had ₹1.25 L.*
 
 **How it runs:**
 - Supabase Cron calls a new `alerts` function daily at 05:30 UTC (11:00 IST).
@@ -167,7 +167,7 @@ Every email: one rupee figure (family room left), counts and dates only, no name
 
 ## 8. Season numbers for the founder
 
-On each Sunday run from 1 Feb to the first Sunday of April, the `alerts` function also computes, for every family with season help on (and logs that read, section 7), usable room and room used (section 1 definition), and moves shown, dated, marked done and detected done. It writes **one row for the whole beta** to `season_stats (week, families, room_usable, room_used, used_share_by_family numeric[] sorted, moves_shown, moves_dated, moves_done, moves_detected, families_with_detected)`. No family id is stored. The admin screen shows the table. *Claude's call:* totals only, so the founder can judge the beta without opening any family. Families with season help off aren't in the totals; the founder asks them directly.
+On each Sunday run from 1 Feb to 28 Mar, and a final run on 31 Mar (no reads after 31 Mar), the `alerts` function also computes, for every family with season help on (and logs that read, section 7), usable room and room used (section 1 definition), and moves shown, dated, marked done and detected done. It writes **one row for the whole beta** to `season_stats (week, families, room_usable, room_used, used_share_by_family numeric[] sorted, moves_shown, moves_dated, moves_done, moves_detected, families_with_detected)`. No family id is stored. The admin screen shows the table. *Claude's call:* totals only, so the founder can judge the beta without opening any family. Families with season help off aren't in the totals; the founder asks them directly.
 
 ## 9. Capital gains schedule
 
