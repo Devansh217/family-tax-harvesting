@@ -21,6 +21,7 @@ export function Admin({ onView }: { onView: (s: AppState, name: string) => void 
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteNote, setInviteNote] = useState('');
   const [season, setSeason] = useState<SeasonRow[] | null>(null);
+  const [seasonError, setSeasonError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!cloud.session) return;
@@ -31,7 +32,7 @@ export function Admin({ onView }: { onView: (s: AppState, name: string) => void 
 
   useEffect(() => { if (mfa === 'verified') invitesList().then(setInvites, (e: Error) => toast(e.message)); }, [mfa, toast]);
 
-  useEffect(() => { if (mfa === 'verified') seasonStats().then(setSeason, (e: Error) => toast(e.message)); }, [mfa, toast]);
+  useEffect(() => { if (mfa === 'verified') seasonStats().then(setSeason, (e: Error) => setSeasonError(e.message)); }, [mfa, toast]);
 
   if (!cloud.session) return <><h1>Admin</h1><p>Sign in first.</p></>;
   if (allowed === false) return <><h1>Admin</h1><p>This page is only for the app&rsquo;s maker.</p></>;
@@ -90,7 +91,7 @@ export function Admin({ onView }: { onView: (s: AppState, name: string) => void 
           )}
           <h2>Season numbers</h2>
           <p className="small">Target: 60% of usable room used by 31 Mar</p>
-          {season == null ? <p className="muted">Loading…</p> : season.length === 0 ? <p className="muted">No season numbers yet. The first ones arrive on 1 Feb.</p> : (
+          {seasonError ? <p className="small" role="alert">{seasonError}</p> : season == null ? <p className="muted">Loading…</p> : season.length === 0 ? <p className="muted">No season numbers yet. The first ones arrive on 1 Feb.</p> : (
             <>
               <div className="tablebox"><table>
                 <thead><tr><th>Week</th><th>Families</th><th>Usable room</th><th>Used</th><th>Share used</th><th>Moves shown</th><th>Dated</th><th>Done</th><th>Detected</th><th>Families with detected</th><th>Share by family</th></tr></thead>
@@ -99,7 +100,7 @@ export function Admin({ onView }: { onView: (s: AppState, name: string) => void 
                     <td>{r.week}</td><td>{r.families}</td><td>{inr(r.room_usable)}</td><td>{inr(r.room_used)}</td>
                     <td>{r.room_usable > 0 ? `${Math.round((r.room_used / r.room_usable) * 100)}%` : '—'}</td>
                     <td>{r.moves_shown}</td><td>{r.moves_dated}</td><td>{r.moves_done}</td><td>{r.moves_detected}</td><td>{r.families_with_detected}</td>
-                    <td>{[...r.used_share_by_family].sort((a, b) => a - b).map((x) => `${Math.round(x * 100)}%`).join(', ') || '—'}</td>
+                    <td>{[...(r.used_share_by_family ?? [])].sort((a, b) => a - b).map((x) => `${Math.round(x * 100)}%`).join(', ') || '—'}</td>
                   </tr>
                 ))}</tbody>
               </table></div>

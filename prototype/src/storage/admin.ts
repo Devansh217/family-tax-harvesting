@@ -1,6 +1,7 @@
 import { friendly, supabase } from '../cloud';
 import { normalizeState, type AppState } from '../store';
 import { supabaseInvoke } from './functions';
+import { parseSeasonRows, type SeasonRow } from './seasonRows';
 
 /** Whether the signed-in person is in `admins` (only to show the admin tab; the function checks again). */
 export async function isAdmin(): Promise<boolean> {
@@ -18,12 +19,13 @@ const call = async (path: 'list' | 'read' | 'invites' | 'season', method: 'GET' 
 
 export const adminList = async (): Promise<FamilyListing[]> => (await call('list', 'GET')) as FamilyListing[];
 
-export interface SeasonRow {
-  week: string; families: number; room_usable: number; room_used: number; used_share_by_family: number[];
-  moves_shown: number; moves_dated: number; moves_done: number; moves_detected: number; families_with_detected: number;
-}
+export type { SeasonRow };
 /** Weekly beta totals, newest first. */
-export const seasonStats = async (): Promise<SeasonRow[]> => (await call('season', 'GET')) as SeasonRow[];
+export async function seasonStats(): Promise<SeasonRow[]> {
+  const rows = parseSeasonRows(await call('season', 'GET'));
+  if (!rows) throw new Error('Season numbers are not available. Redeploy the admin function (see the setup guide).');
+  return rows;
+}
 
 export interface Invite { email: string; note: string | null; invitedAt: string }
 

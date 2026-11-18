@@ -44,7 +44,7 @@ export interface AppState {
   recommendations: RecommendationRecord[];
   /** Moves the family picked a day for; sized first on every recompute so they hold their room. */
   datedMoves: DatedMove[];
-  /** Harvest season help: the server may read this family weekly, 1 Feb to 31 Mar, to email what is left to do. Off until switched on. */
+  /** Harvest season help: the server may read this family on email days, 1 Feb to 31 Mar, to email what is left to do. Off until switched on. */
   alerts?: { seasonHelp: boolean; chosen?: boolean };
 }
 

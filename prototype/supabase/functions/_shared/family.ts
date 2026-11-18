@@ -3,8 +3,7 @@ import { familyAad, openJson, sealJson, type Envelope, type KeyRing } from './en
 /** The families table as the function needs it. The real one is in family/index.ts; tests use an in-memory one. */
 export interface FamilyDb {
   get(userId: string): Promise<{ version: number; envelope: Envelope } | null>;
-  /** `seasonHelp` is the family's harvest-season switch, kept in the clear so the weekly check can skip families that are off without decrypting them. */
-  /** Inserts version 1; false when a row already exists. */
+  /** Inserts version 1; false when a row already exists. `seasonHelp` is the family's harvest-season switch, kept in the clear so the season check can skip families that are off without decrypting them. */
   insert(userId: string, envelope: Envelope, seasonHelp: boolean): Promise<boolean>;
   /** Writes only if the stored version is still `knownVersion`; false if another save got there first. */
   updateIf(userId: string, knownVersion: number, newVersion: number, envelope: Envelope, seasonHelp: boolean): Promise<boolean>;
