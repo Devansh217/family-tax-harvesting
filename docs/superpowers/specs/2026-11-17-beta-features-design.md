@@ -1,6 +1,6 @@
 # Beta features: design
 
-17 Nov 2026 · Status: **design written; founder delegated the calls (17 Nov 2026, "take the call"); waiting for his read.**
+17 Nov 2026 · Status: **built on branch `beta-features` (20 Nov 2026), not merged or deployed.** Sections 1–9 built (Tasks 1–13), each task reviewed, two milestone reviews and a final whole-branch review, all findings fixed; 385 tests pass. Section 10 (new money) gets its own plan in March. Decisions taken while building: `docs/superpowers/plans/2026-11-17-beta-features-rulings.md`. Setup: `docs/guides/beta-setup.md`.
 
 Background: `docs/PLANNER-NOTES.md`, `docs/research/2026-11-15-core-feature-list.md` §2.2 and §2.4, the foundation spec (`2026-11-15-planner-foundation-design.md`), the architecture spec (`2026-11-16-architecture-design.md`) and the secure storage spec (`2026-11-17-secure-storage-design.md`).
 

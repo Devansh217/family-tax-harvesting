@@ -1,3 +1,9 @@
+# Handoff: beta-features build — FINISHED (20 Nov 2026)
+
+All 13 tasks are built and reviewed; final review clean; 385 tests pass. Nothing is merged, pushed or deployed. Next steps are in `docs/PLANNER-NOTES.md` item 5 and `docs/guides/beta-setup.md`. Decisions: `docs/superpowers/plans/2026-11-17-beta-features-rulings.md`. The working ledger below was deleted after the build.
+
+---
+
 # Handoff: Harvesting beta-features build (17 Nov 2026)
 
 Repo `/Users/devansh/Documents/family-tax-harvesting`, branch **`beta-features`** (not pushed, no PR). App in `prototype/`.
