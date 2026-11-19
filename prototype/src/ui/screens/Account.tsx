@@ -146,7 +146,7 @@ const SEASON_CONSENT = "From 1 Feb to 31 Mar, our server reads your family on ea
 /** The harvest-season switch, with the consent text, and every automatic read listed under it. */
 function SeasonHelp() {
   const { state, update } = useApp();
-  const [rows, setRows] = useState<Array<{ on_date: string; kind: string; sent: boolean }> | null>(null);
+  const [rows, setRows] = useState<Array<{ on_date: string; kind: string; outcome: string | null }> | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => { loadSeasonLog().then(setRows, () => setFailed(true)); }, []);
   const on = state.alerts?.seasonHelp === true;
@@ -162,7 +162,7 @@ function SeasonHelp() {
       {failed ? <p className="small muted">Could not load the list. Try again later.</p>
         : rows == null ? <p className="small muted">Loading…</p>
         : rows.length === 0 ? <p className="small muted">No automatic checks yet.</p>
-        : <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{rows.map((r) => <li key={r.on_date + r.kind}>{r.on_date}: {seasonLogLabel(r.kind, r.sent)}</li>)}</ul>}
+        : <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{rows.map((r) => <li key={r.on_date + r.kind}>{r.on_date}: {seasonLogLabel(r.kind, r.outcome)}</li>)}</ul>}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { parseFunds, parsePrices, rehearsalDate, runAlerts, sampleEmail, secretMatches, type AlertsDb, type AlertsDeps, type SeasonStatsRow } from './alerts.ts';
+import { parseFunds, parsePrices, rehearsalDate, runAlerts, sampleEmail, secretMatches, type AlertsDb, type AlertsDeps, type Outcome, type SeasonStatsRow } from './alerts.ts';
 import { toB64 } from './base64.ts';
 import { familyAad, importKeyRing, sealJson, type Envelope, type KeyRing } from './envelope.ts';
 import { computeFamily, FY_2026_27, lastSafeDay, NSE_HOLIDAYS_2027, seasonSummary, todayISO, withFunds, withPrices, QTY_SCALE } from '../../../src/engine/index';
@@ -20,19 +20,29 @@ const stateOf = (seasonHelp: boolean) => ({
 
 let ring: KeyRing, decrypts: number;
 let marked: string[];
-let sentRows: Set<string>;
+let outcomes: Map<string, { outcome: Outcome | null; retrying: boolean }>;
 let logs: Set<string>, stats: SeasonStatsRow[], sent: Array<{ to: string; subject: string; text: string }>;
 let fams: Array<{ userId: string; email: string; version: number; envelope: Envelope; updatedAt: string }>;
+let admins: Set<string>;
 let failFor: string | null;
 
 const mkDb = (): AlertsDb => ({
-  optedIn: async () => fams,
-  logged: async (u, k, d) => ({ exists: logs.has(`${u}|${k}|${d}`), sent: sentRows.has(`${u}|${k}|${d}`) }),
-  log: async (u, k, d) => { const id = `${u}|${k}|${d}`; if (logs.has(id)) return false; logs.add(id); return true; },
-  unlog: async (u, k, d) => { logs.delete(`${u}|${k}|${d}`); },
-  markSent: async (u, k, d) => { marked.push(`${u}|${k}|${d}`); sentRows.add(`${u}|${k}|${d}`); },
+  optedIn: async (adminsOnly) => (adminsOnly ? fams.filter((f) => admins.has(f.userId)) : fams),
+  logged: async (u, k, d) => {
+    const id = `${u}|${k}|${d}`, o = outcomes.get(id);
+    return { exists: logs.has(id), outcome: o?.outcome ?? null, retrying: o?.retrying ?? false };
+  },
+  log: async (u, k, d) => { const id = `${u}|${k}|${d}`; if (logs.has(id)) return false; logs.add(id); outcomes.set(id, { outcome: null, retrying: false }); return true; },
+  claimRetry: async (u, k, d) => {
+    const o = outcomes.get(`${u}|${k}|${d}`);
+    if (!o || o.outcome !== 'failed' || o.retrying) return false;
+    o.retrying = true; return true;
+  },
+  unlog: async (u, k, d) => { logs.delete(`${u}|${k}|${d}`); outcomes.delete(`${u}|${k}|${d}`); },
+  setOutcome: async (u, k, d, outcome) => { const id = `${u}|${k}|${d}`; if (outcome === 'sent') marked.push(id); outcomes.set(id, { outcome, retrying: false }); },
   saveStats: async (row) => { stats.push(row); },
 });
+const outcomeOf = (id: string) => outcomes.get(id)?.outcome ?? null;
 const deps = (): AlertsDeps => ({
   db: mkDb(), ring, prices, funds: fundsFile, appUrl: 'https://app.example.in/', engine,
   send: async (to, subject, text) => { if (failFor === to) throw new Error('boom'); sent.push({ to, subject, text }); },
@@ -45,7 +55,7 @@ beforeEach(async () => {
   const real = await importKeyRing(JSON.stringify({ k1: key() }), 'k1');
   decrypts = 0;
   ring = { current: real.current, keys: new Proxy(real.keys, { get: (t, p) => { decrypts++; return (t as Record<string | symbol, unknown>)[p]; } }) };
-  marked = []; sentRows = new Set(); logs = new Set(); stats = []; sent = []; failFor = null;
+  marked = []; outcomes = new Map(); admins = new Set(); logs = new Set(); stats = []; sent = []; failFor = null;
   fams = [await fam('f1'), await fam('f2')];
 });
 
@@ -99,12 +109,13 @@ describe('runAlerts', () => {
     expect(decrypts).toBe(0);
   });
 
-  it('a send that throws keeps the row unsent; a retry the same day sends only to that family', async () => {
+  it('a send that throws marks the row failed; a retry the same day sends only to that family', async () => {
     failFor = 'f1@x.in';
     const r = await run('2027-02-07', deps());
     expect(r).toEqual({ sent: 1, checked: 2, stats: true });
     expect([...logs].sort()).toEqual(['f1|email_weekly|2027-02-07', 'f2|email_weekly|2027-02-07']); // every decrypt stays logged
     expect(marked).toEqual(['f2|email_weekly|2027-02-07']);
+    expect(outcomeOf('f1|email_weekly|2027-02-07')).toBe('failed');
     failFor = null;
     const r2 = await run('2027-02-07', deps());
     expect(r2.sent).toBe(1);
@@ -112,12 +123,28 @@ describe('runAlerts', () => {
     expect(marked).toContain('f1|email_weekly|2027-02-07');
     expect(stats).toHaveLength(1); // the retry does not overwrite the first run's totals
     expect((await run('2027-02-07', deps())).sent).toBe(0); // and now nothing is left to send
+    expect(outcomeOf('f1|email_weekly|2027-02-07')).toBe('sent');
   });
 
-  it('a rehearsal run logs and sends as normal but writes no season totals', async () => {
+  it('a rehearsal run reads, logs and emails only families of admins and writes no season totals', async () => {
+    admins = new Set(['f2']);
+    fams = [await fam('f2')];
+    await run('2027-03-01', deps());
+    const oneFamily = decrypts;
+    expect(oneFamily).toBeGreaterThan(0);
+    logs = new Set(); outcomes = new Map(); sent = []; marked = [];
+    fams = [await fam('f1'), await fam('f2')];
     const r = await run('2027-02-07', deps(), { rehearsal: true });
-    expect(r).toEqual({ sent: 2, checked: 2, stats: false });
-    expect(stats).toHaveLength(0); expect(logs.size).toBe(2);
+    expect(r).toEqual({ sent: 1, checked: 1, stats: false });
+    expect(decrypts).toBe(oneFamily); // f1 is never decrypted
+    expect([...logs]).toEqual(['f2|email_weekly|2027-02-07']);
+    expect(sent.map((m) => m.to)).toEqual(['f2@x.in']);
+    expect(stats).toHaveLength(0);
+  });
+
+  it('a rehearsal with no admin family opted in reads nobody', async () => {
+    expect(await run('2027-03-01', deps(), { rehearsal: true })).toEqual({ sent: 0, checked: 0, stats: false });
+    expect(decrypts).toBe(0); expect(logs.size).toBe(0);
   });
 
   it('logs before sending, so a clash from a concurrent run sends nothing', async () => {
@@ -181,6 +208,54 @@ describe('runAlerts: funds, logging and sent marks', () => {
     expect(logs.size).toBe(2);
   });
 
+  it('records an outcome for every read: sent, nothing to send (under the floor, switch off in the document, 31 March)', async () => {
+    fams = [await fam('f1'), { ...(await fam('f2')), envelope: await sealJson({ ...stateOf(true), members: [], txns: [] }, ring, familyAad('f2', 2)) }, await fam('f3', false)];
+    await run('2027-02-07', deps());
+    expect(outcomeOf('f1|email_weekly|2027-02-07')).toBe('sent');
+    expect(outcomeOf('f2|email_weekly|2027-02-07')).toBe('nothing_to_send');
+    expect(outcomeOf('f3|email_weekly|2027-02-07')).toBe('nothing_to_send');
+    await run('2027-03-31', deps());
+    expect(outcomeOf('f1|season_check|2027-03-31')).toBe('nothing_to_send');
+  });
+
+  it('a same-day re-run does not decrypt a nothing-to-send row again', async () => {
+    fams = [{ ...(await fam('f1')), envelope: await sealJson({ ...stateOf(true), members: [], txns: [] }, ring, familyAad('f1', 2)) }];
+    await run('2027-02-07', deps());
+    expect(await run('2027-02-07', deps())).toEqual({ sent: 0, checked: 0, stats: false });
+    expect(decrypts).toBe(0);
+  });
+
+  it('a send that went out but whose outcome write failed is never sent again; the failure is logged by code only', async () => {
+    const d = deps();
+    d.db.setOutcome = async () => { throw Object.assign(new Error('Asha'), { code: 'PGRST301' }); };
+    const errs: unknown[][] = [];
+    const orig = console.error;
+    console.error = (...a: unknown[]) => { errs.push(a); };
+    try { expect((await run('2027-02-07', d)).sent).toBe(2); } finally { console.error = orig; }
+    expect(errs.length).toBeGreaterThan(0);
+    for (const e of errs) expect(JSON.stringify(e)).not.toMatch(/Asha|f1|f2|@/);
+    expect(errs.flat()).toContain('PGRST301');
+    expect((await run('2027-02-07', deps())).sent).toBe(0); // outcome still null: in progress, never retried
+    expect(sent).toHaveLength(2);
+  });
+
+  it('a failed row is retried by only one run: the claim is conditional', async () => {
+    failFor = 'f1@x.in';
+    await run('2027-02-07', deps());
+    failFor = null;
+    const d = deps();
+    d.db.claimRetry = async () => false; // another run claimed it first
+    expect((await run('2027-02-07', d)).sent).toBe(0);
+    expect(decrypts).toBe(0);
+  });
+
+  it('only email days retry; a failed engine run after a decrypt is marked failed', async () => {
+    const d = deps();
+    d.engine = { ...engine, computeFamily: () => { throw new Error('engine'); } };
+    await run('2027-02-07', d);
+    expect(outcomeOf('f1|email_weekly|2027-02-07')).toBe('failed');
+  });
+
   it('marks the log row as sent only after a successful send', async () => {
     failFor = 'f1@x.in';
     await run('2027-02-07', deps());
@@ -237,5 +312,15 @@ describe('secretMatches', () => {
     expect(secretMatches(null, 'abc')).toBe(false);
     expect(secretMatches('', '')).toBe(false);
     expect(secretMatches('x', undefined)).toBe(false);
+  });
+});
+
+describe('the alerts entry', () => {
+  it('rejects a bad x-alerts-date (400) before fetching the market files', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../alerts/index.ts', import.meta.url), 'utf8');
+    const bad = src.indexOf("'bad date'"), fetchPrices = src.indexOf("'latest.json'");
+    expect(bad).toBeGreaterThan(0); expect(fetchPrices).toBeGreaterThan(0);
+    expect(bad).toBeLessThan(fetchPrices);
   });
 });

@@ -5,9 +5,9 @@ const SENT: Record<string, string> = {
   email_deadline: 'Emailed: deadline reminder',
 };
 
-/** One line of "Automatic season checks": "Emailed" only when an email really went out. */
-export function seasonLogLabel(kind: string, sent: boolean): string {
+/** One line of "Automatic season checks": "Emailed" only when the row's outcome is 'sent' (an email really went out). */
+export function seasonLogLabel(kind: string, outcome: string | null): string {
   if (kind === 'season_check') return 'Read your family';
-  if (sent && SENT[kind]) return SENT[kind]!;
+  if (outcome === 'sent' && SENT[kind]) return SENT[kind]!;
   return DAY[kind] ? `Read your family (${DAY[kind]} email day)` : kind;
 }

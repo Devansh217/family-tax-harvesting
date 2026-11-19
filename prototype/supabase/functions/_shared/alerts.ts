@@ -18,15 +18,23 @@ export interface SeasonStatsRow {
   families_with_detected: number;
 }
 
+/** How a season_log row ended: null while the run that wrote it is still working (or died mid-way; never retried). */
+export type Outcome = 'sent' | 'nothing_to_send' | 'failed';
+
 export interface AlertsDb {
-  /** Families with season help on in the clear column, joined to the confirmed sign-in email ('' when not confirmed). */
-  optedIn(): Promise<{ userId: string; email: string; version: number; envelope: Envelope; updatedAt: string }[]>;
-  /** The day's row for this family and kind: whether it exists, and whether its email went out. */
-  logged(userId: string, kind: LogKind, onDate: ISODate): Promise<{ exists: boolean; sent: boolean }>;
+  /**
+   * Families with season help on in the clear column, joined to the confirmed sign-in email ('' when not confirmed).
+   * With `adminsOnly`, only families whose user id is in `admins` (a rehearsal run).
+   */
+  optedIn(adminsOnly: boolean): Promise<{ userId: string; email: string; version: number; envelope: Envelope; updatedAt: string }[]>;
+  /** The day's row for this family and kind: whether it exists, how it ended, and whether a retry is under way. */
+  logged(userId: string, kind: LogKind, onDate: ISODate): Promise<{ exists: boolean; outcome: Outcome | null; retrying: boolean }>;
   /** false on a unique clash: another run already did it. */
   log(userId: string, kind: LogKind, onDate: ISODate): Promise<boolean>;
-  /** Records that the email for this row went out (the row exists from the read, whether or not anything was sent). */
-  markSent(userId: string, kind: LogKind, onDate: ISODate): Promise<void>;
+  /** Claims a failed row for a retry: `set retrying = true where outcome = 'failed' and not retrying`. false when another run got it. */
+  claimRetry(userId: string, kind: LogKind, onDate: ISODate): Promise<boolean>;
+  /** Records how the attempt ended (and keeps `sent` in step); clears `retrying`. */
+  setOutcome(userId: string, kind: LogKind, onDate: ISODate, outcome: Outcome): Promise<void>;
   unlog(userId: string, kind: LogKind, onDate: ISODate): Promise<void>;
   /** Upsert on `week`. */
   saveStats(row: SeasonStatsRow): Promise<void>;
@@ -113,10 +121,12 @@ export function secretMatches(given: string | null | undefined, expected: string
 
 /**
  * The daily run. Send days (spec section 7) email; email Sundays and 31 March also total the season (section 8), and
- * there are no reads after 31 March. Each family's read is logged before anything is decrypted. A family whose row for the
- * day shows its email went out is skipped without decrypting; a row left unsent (the send failed) is retried. A row is
- * never taken back once the family has been decrypted. A rehearsal run (`rehearsal: true`) does everything except write
- * season totals. Counts only are returned; nothing personal is logged.
+ * there are no reads after 31 March. Each family's read is logged before anything is decrypted, and each row gets an
+ * outcome once the attempt ends. A same-day re-run skips every row except one whose outcome is 'failed', which it first
+ * claims with a conditional update so two runs never both retry it; a row with no outcome (a run still working, or one
+ * that died after sending) is never retried, so nobody is emailed twice. A row is never taken back once the family has
+ * been decrypted. A rehearsal run (`rehearsal: true`) reads only the admins' families and writes no season totals.
+ * Counts only are returned; nothing personal is logged.
  */
 export async function runAlerts(
   today: ISODate, deps: AlertsDeps, opts: { rehearsal?: boolean } = {},
@@ -135,19 +145,26 @@ export async function runAlerts(
   const shares: number[] = [];
   const totals = { room_usable: 0, room_used: 0, moves_shown: 0, moves_dated: 0, moves_done: 0, moves_detected: 0, families_with_detected: 0 };
 
-  for (const f of await db.optedIn()) {
+  // An outcome that cannot be written is logged by code only; the row stays without an outcome and is never retried.
+  const record = (userId: string, outcome: Outcome) => db.setOutcome(userId, kind, today, outcome).catch((e) => {
+    const err = e as { code?: string; name?: string } | null;
+    console.error('alerts: outcome not recorded', err?.code ?? err?.name);
+  });
+
+  for (const f of await db.optedIn(!!opts.rehearsal)) {
     if (!f.email) continue;
     let owned = false, opened = false, retryRow = false;
     try {
       const row = await db.logged(f.userId, kind, today);
-      // An email row left unsent is the only one retried; its row already exists, so it is not logged again.
-      const retry = row.exists && !row.sent && emailKind !== null;
-      if (row.exists && !retry) { skippedDone++; continue; }
-      if (!retry && !(await db.log(f.userId, kind, today))) { skippedDone++; continue; }
-      owned = true; retryRow = retry;
+      if (row.exists) {
+        // Only a failed email row is retried, and only by the run that claims it.
+        if (row.outcome !== 'failed' || emailKind === null || row.retrying || !(await db.claimRetry(f.userId, kind, today))) { skippedDone++; continue; }
+        retryRow = true;
+      } else if (!(await db.log(f.userId, kind, today))) { skippedDone++; continue; }
+      owned = true;
       const doc = await openJson<FamilyDoc>(f.envelope, ring, familyAad(f.userId, f.version));
       opened = true;
-      if (doc.alerts?.seasonHelp !== true) continue; // the read happened, so its row stays
+      if (doc.alerts?.seasonHelp !== true) { await record(f.userId, 'nothing_to_send'); continue; } // the read happened, so its row stays
       // The same path as the app: AMFI categories and repo overrides, the family's own choices, then closing prices.
       const securities = engine.withPrices(engine.withFunds(doc.securities ?? [], funds, doc.taxTypeOverrides ?? {}), prices);
       const view = engine.computeFamily({ ...doc, securities, funds: funds.funds }, today, engine.rules);
@@ -162,20 +179,20 @@ export async function runAlerts(
         if (s.detected > 0) totals.families_with_detected++;
         if (s.usable > 0) shares.push(Math.round((s.used / s.usable) * 10_000) / 10_000);
       }
-      if (emailKind) {
-        // The email's figure is the usable room still left: usable minus used.
-        const mail = renderEmail(emailKind, { ...s, roomLeft: Math.max(0, s.usable - s.used) }, engine.todayISO(new Date(f.updatedAt)), today, appUrl, lastSafe);
-        if (mail) {
-          await deps.send(f.email, mail.subject, mail.text); // a throw here keeps the row, unsent, for a retry
-          sent++;
-          await db.markSent(f.userId, kind, today).catch(() => {}); // a failed mark must never cause a second send
-        }
-      }
+      // The email's figure is the usable room still left: usable minus used.
+      const mail = emailKind
+        ? renderEmail(emailKind, { ...s, roomLeft: Math.max(0, s.usable - s.used) }, engine.todayISO(new Date(f.updatedAt)), today, appUrl, lastSafe)
+        : null;
+      if (!mail) { await record(f.userId, 'nothing_to_send'); continue; }
+      await deps.send(f.email, mail.subject, mail.text); // a throw here marks the row failed, for a retry
+      sent++;
+      await record(f.userId, 'sent');
     } catch (e) {
       const err = e as { code?: string; name?: string } | null;
       console.error('alerts: a family failed', err?.code ?? err?.name);
-      // Take the row back only if nothing was read (decrypt failed), so a retry can do it. Never after a decrypt.
+      // Take a new row back only if nothing was read (decrypt failed), so a later run can do it. Never after a decrypt.
       if (owned && !opened && !retryRow) await db.unlog(f.userId, kind, today).catch(() => {});
+      else if (owned) await record(f.userId, 'failed');
     }
   }
 

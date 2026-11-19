@@ -21,8 +21,8 @@ export async function listMyAdminReads(): Promise<Array<{ at: string; reason: st
 }
 
 /** Every automatic read of this family by the server's season check (row-level security: own rows only). */
-export async function loadSeasonLog(): Promise<{ on_date: string; kind: string; sent: boolean }[]> {
-  const { data, error } = await supabase.from('season_log').select('on_date, kind, sent').order('on_date', { ascending: false });
+export async function loadSeasonLog(): Promise<{ on_date: string; kind: string; outcome: string | null }[]> {
+  const { data, error } = await supabase.from('season_log').select('on_date, kind, outcome').order('on_date', { ascending: false });
   if (error) throw new Error(friendly(error.message));
-  return (data ?? []) as { on_date: string; kind: string; sent: boolean }[];
+  return (data ?? []) as { on_date: string; kind: string; outcome: string | null }[];
 }
