@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeFunctionsStore, type Invoke } from './functions';
+import { FamilyLoadError, makeFunctionsStore, type Invoke } from './functions';
 
 const fake = (reply: Awaited<ReturnType<Invoke>>) => {
   const calls: Array<{ name: string; method: string; body?: unknown }> = [];
@@ -26,5 +26,16 @@ describe('family store over server functions', () => {
   it('other errors throw', async () => {
     const { store } = fake({ data: null, error: { status: 500, message: 'Edge Function returned a non-2xx status code' } });
     await expect(store.load('u1')).rejects.toThrow();
+  });
+  it('a 403 on load means the beta is invite-only for this account', async () => {
+    const { store } = fake({ data: null, error: { status: 403, message: 'x' } });
+    const e = await store.load('u1').catch((x) => x);
+    expect(e).toBeInstanceOf(FamilyLoadError);
+    expect(e.kind).toBe('not_invited');
+  });
+  it('deleting the account does not depend on being invited', async () => {
+    const { calls, store } = fake({ data: null, error: null });
+    await store.remove('u1');
+    expect(calls[0]).toEqual({ name: 'family', method: 'DELETE' });
   });
 });

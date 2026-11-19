@@ -3,7 +3,7 @@ import { canGift } from '../../engine/relations';
 import { todayISO } from '../../engine/dates';
 import type { Member } from '../../engine/types';
 import { sampleState } from '../../sample';
-import { emptyState, parseBackup, removeMember, uid } from '../../store';
+import { backupHadSeasonHelp, emptyState, parseBackup, RESTORE_ALERTS_NOTE, removeMember, uid } from '../../store';
 import { FY_2026_27 } from '../../engine/rules';
 import { IncomeFields, LossFields, PersonFields } from './memberFields';
 import { useApp } from '../app-context';
@@ -87,10 +87,11 @@ export function Family() {
 
   const restore = async (file: File) => {
     try {
-      const s = parseBackup(await file.text());
+      const text = await file.text();
+      const s = parseBackup(text);
       if (!s) throw new Error('bad');
       update(() => s);
-      toast('Backup restored');
+      toast(backupHadSeasonHelp(text) ? `Backup restored. ${RESTORE_ALERTS_NOTE}` : 'Backup restored');
     } catch {
       toast('That file is not a Harvesting backup');
     }

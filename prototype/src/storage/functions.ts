@@ -18,6 +18,11 @@ export class SignInRequired extends Error {
   constructor() { super('Your sign-in has ended. Sign in again to keep saving; your family is safe in this browser.'); }
 }
 
+/** Loading the family failed for a reason the person can act on. `not_invited`: the beta is invite-only. */
+export class FamilyLoadError extends Error {
+  constructor(public kind: 'not_invited') { super('This beta is invite-only. Ask the person who invited you.'); }
+}
+
 const fail = (e: { status?: number; message: string }): never => {
   if (e.status === 401) throw new SignInRequired();
   throw new Error(friendly(e.message));
@@ -31,12 +36,14 @@ export function makeFunctionsStore(invoke: Invoke = supabaseInvoke): FamilyStore
   return {
     async load() {
       const r = await invoke('family', { method: 'GET' });
+      if (r.error?.status === 403) throw new FamilyLoadError('not_invited');
       if (r.error) return fail(r.error);
       return (r.data as CloudFamily | null) ?? null;
     },
     async save(_userId: string, state: AppState, knownVersion: number | null) {
       const r = await invoke('family', { method: 'PUT', body: { state, knownVersion } });
       if (r.error?.status === 409) return 'conflict';
+      if (r.error?.status === 403) throw new FamilyLoadError('not_invited');
       if (r.error) return fail(r.error);
       return (r.data as { version: number }).version;
     },

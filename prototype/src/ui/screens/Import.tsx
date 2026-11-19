@@ -4,7 +4,8 @@ import {
   detectKind, FIELD_LABELS, FIELDS, parseStatementLines, parseTablePreview, PdfPasswordError, previewTable,
   type Field, type Mapping, type ParseResult, type TablePreview,
 } from '../../parsers';
-import { applyImport, guessAccount, removeImport } from '../../store';
+import { guessAccount, removeImport } from '../../store';
+import { importAndDetect } from '../importFlow';
 import { useApp } from '../app-context';
 import { dateLabel, inr, units } from '../format';
 import { Icon, Svg } from '../parts';
@@ -28,7 +29,7 @@ function resultOf(item: Item): ParseResult | null {
 }
 
 export function Import() {
-  const { state, update, toast, go, asOf } = useApp();
+  const { state, update, toast, go, asOf, fam } = useApp();
   const [items, setItems] = useState<Item[]>([]);
   const [memberId, setMemberId] = useState(state.members[0]?.id ?? '');
   const [over, setOver] = useState(false);
@@ -73,7 +74,12 @@ export function Import() {
   const add = (item: Item, account: string, checkOnly = false) => {
     const r = resultOf(item);
     if (!r || !member) return;
-    update((s) => applyImport(s, member.id, item.name, r, { openingDate: opening ? openingDate : undefined, account: account.trim() || undefined, checkOnly }));
+    // The moves as the family last saw them (before this import changes anything) are what a sale is matched against.
+    const seen = fam.moves;
+    update((s) => importAndDetect(s, {
+      memberId: member.id, fileName: item.name, result: r, seen, rules: fam.rules, at: new Date().toISOString(),
+      opts: { openingDate: opening ? openingDate : undefined, account: account.trim() || undefined, checkOnly },
+    }));
     setItems((xs) => xs.map((x) => (x.id === item.id && (x.status === 'pdf' || x.status === 'table' || x.status === 'statement') ? { ...x, added: true } : x)));
     toast(`Added to ${member.name}`);
   };
@@ -133,7 +139,7 @@ export function Import() {
           <h2>What to import</h2>
           <div className="sheet">
             <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Mutual funds</strong><span className="small muted">Detailed CAS PDF from CAMS or KFintech, from the first purchase till today. Covers ET Money, Groww, Zerodha Coin and every other platform.</span></span></div>
-            <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Shares</strong><span className="small muted">Trade history from the broker: Zerodha Console tradebook, Groww order history, Angel One trade history. All years.</span></span></div>
+            <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Shares</strong><span className="small muted">Trade history from the broker: Zerodha Console tradebook, Groww order history, Angel One trade history. All years. For shares, import your broker&rsquo;s tradebook.</span></span></div>
             <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Zerodha Tax P&amp;L</strong><span className="small muted">Console → Reports → Tax P&amp;L → download the .xlsx. Brings in this year&rsquo;s exits, F&amp;O profit or loss, and Zerodha&rsquo;s totals to check against.</span></span></div>
             <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Current prices</strong><span className="small muted">Holdings file from the broker, or the NSDL / CDSL CAS. Also checks units against the trade history.</span></span></div>
           </div>

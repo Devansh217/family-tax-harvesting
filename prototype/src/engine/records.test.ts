@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeFamily, type FamilyState } from './family';
-import { moveId, newShownRecords, statusRecord } from './records';
+import { datedRecord, doneThisSeason, moveId, newShownRecords, retiredMoveIds, statusRecord } from './records';
 import { FY_2026_27 as R, type TaxRules } from './rules';
 import { QTY_SCALE, type Member, type Txn } from './types';
 
@@ -46,5 +46,22 @@ describe('stable move ids', () => {
   it('status changes are records too', () => {
     const m = computeFamily(state(100), '2026-11-14', R).moves[0]!;
     expect(statusRecord(m, 'done', AT)).toEqual({ moveId: m.id, at: AT, event: 'done', move: m });
+  });
+
+  it('picking a date writes an in_plan record carrying the date', () => {
+    const m = computeFamily(state(100), '2026-11-14', R).moves[0]!;
+    expect(datedRecord(m, '2026-12-04', AT)).toEqual({ moveId: m.id, at: AT, event: 'in_plan', date: '2026-12-04', move: m });
+  });
+});
+
+describe('done this season (I4)', () => {
+  const m = computeFamily(state(100), '2026-11-14', R).moves[0]!;
+  const other = { ...m, id: 'FY 2025-26|harvest_gain|a|INE1|' };
+  it('detected_done always counts; done/undone: the latest wins; other tax years are left out', () => {
+    expect(doneThisSeason([statusRecord(m, 'done', 't1')], R)).toEqual([{ move: m, detected: false, at: 't1' }]);
+    expect(doneThisSeason([statusRecord(m, 'done', 't1'), statusRecord(m, 'undone', 't2')], R)).toEqual([]);
+    expect(doneThisSeason([statusRecord(m, 'detected_done', 't1'), statusRecord(m, 'undone', 't2')], R)).toEqual([{ move: m, detected: true, at: 't1' }]);
+    expect(doneThisSeason([statusRecord(other, 'done', 't1')], R)).toEqual([]);
+    expect([...retiredMoveIds([statusRecord(m, 'shown', 't0'), statusRecord(m, 'in_plan', 't1')])]).toEqual([]);
   });
 });

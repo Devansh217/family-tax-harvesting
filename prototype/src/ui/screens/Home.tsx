@@ -3,7 +3,7 @@ import { startOwnFamily } from '../../store';
 import { useApp } from '../app-context';
 import { inr, inrShort } from '../format';
 import { Avatar, Disclaimer, Icon, RoomMeter, Section, Svg } from '../parts';
-import { MoveRow, movesNotDone } from './Plan';
+import { LastSafeDay, MoveRow, movesNotDone } from './Plan';
 import { needsSetup } from './memberFields';
 import { FirstRunNotice } from './About';
 import { SinceClose } from './SinceClose';
@@ -23,7 +23,7 @@ export function SampleBanner() {
 }
 
 export function Home({ days }: { days: number }) {
-  const { state, fam, update, go, asOf } = useApp();
+  const { state, fam, update, go, asOf, cloud } = useApp();
 
   if (state.members.length === 0) {
     return (
@@ -63,6 +63,10 @@ export function Home({ days }: { days: number }) {
         </span>
       </div>
 
+      {cloud.session && !state.isSample && !state.alerts?.seasonHelp && !state.alerts?.chosen && (
+        <p className="small" role="note"><a href="#account">Turn on harvest season help (Account)</a></p>
+      )}
+      <LastSafeDay />
       <div className="grid-2">
         <section className="hero" aria-labelledby="room-h">
           <h2 id="room-h" className="hero-line">

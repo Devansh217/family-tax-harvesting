@@ -1,5 +1,5 @@
 import { classifyByIsin } from './parsers/common';
-import type { PlannedSale } from './engine/family';
+import type { DatedMove, PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
 import type { RecommendationRecord } from './engine/records';
 import { FY_2026_27 } from './engine/rules';
@@ -42,11 +42,15 @@ export interface AppState {
   taxTypeOverrides: Record<string, TaxType>;
   /** Every move shown and every status change, append-only (kept 5 years once registered as an adviser). */
   recommendations: RecommendationRecord[];
+  /** Moves the family picked a day for; sized first on every recompute so they hold their room. */
+  datedMoves: DatedMove[];
+  /** Harvest season help: the server may read this family on email days, 1 Feb to 31 Mar, to email what is left to do. Off until switched on. */
+  alerts?: { seasonHelp: boolean; chosen?: boolean };
 }
 
 
 export const emptyState = (): AppState => ({
-  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [],
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [], datedMoves: [], alerts: { seasonHelp: false, chosen: false },
 });
 
 /** Shapes saved before the member profile and tax-type changes (Nov 2026). */
@@ -104,16 +108,30 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
     members: linkFamily((s.members as LegacyMember[]).map(migrateMember)),
     securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
     plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
-    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [],
+    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [], datedMoves: s.datedMoves ?? [],
+    alerts: { seasonHelp: s.alerts?.seasonHelp === true, chosen: s.alerts?.chosen === true },
   };
 }
 
 /** A backup file's text as a family, migrated like any saved copy; null when it is not a backup. */
 export function parseBackup(text: string): AppState | null {
   try {
-    return normalizeState(JSON.parse(text) as AppState);
+    const s = normalizeState(JSON.parse(text) as AppState);
+    // Consent is not carried in a file: after a restore the family chooses again.
+    return s && { ...s, alerts: { seasonHelp: false, chosen: false } };
   } catch {
     return null;
+  }
+}
+
+export const RESTORE_ALERTS_NOTE = 'Harvest season help is off after a restore; turn it on in Account.';
+
+/** True when the backup file had harvest season help switched on (so the restore switches it off). */
+export function backupHadSeasonHelp(text: string): boolean {
+  try {
+    return (JSON.parse(text) as AppState).alerts?.seasonHelp === true;
+  } catch {
+    return false;
   }
 }
 

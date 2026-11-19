@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyFund, KNOWN_AMFI_HEADINGS } from './categories';
+import { classifyFund, isElss, KNOWN_AMFI_HEADINGS } from './categories';
 
 describe('fund tax type from the AMFI category', () => {
   it('maps hybrid categories by tax treatment', () => {
@@ -44,5 +44,15 @@ describe('fund tax type from the AMFI category', () => {
     expect(classifyFund('Equity Schemes - Thematic Fund', 'Mirae Asset NYSE FANG+ ETF Fund of Fund').taxType).toBe('check');
     expect(classifyFund('Equity Schemes - Thematic Fund', 'X Global Innovation Fund').taxType).toBe('check');
     expect(classifyFund('Equity Scheme - Sectoral/ Thematic', 'X Banking & Financial Services Fund').taxType).toBe('equity');
+  });
+});
+
+describe('isElss', () => {
+  it('is true for every ELSS heading AMFI uses', () => {
+    for (const h of ['ELSS', 'Equity Scheme - ELSS', 'Equity Schemes - ELSS- Tax Saver Fund']) expect(isElss(h)).toBe(true);
+  });
+  it('is false for other categories and for no category', () => {
+    expect(isElss('Equity Scheme - Large Cap Fund')).toBe(false);
+    expect(isElss(undefined)).toBe(false);
   });
 });

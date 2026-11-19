@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { emptyState, normalizeState, type AppState } from '../store';
 import { describe, expect, it } from 'vitest';
 import type { Member } from '../engine/types';
 import { consentLabel } from './screens/memberFields';
@@ -11,5 +14,25 @@ describe('consent wording', () => {
     expect(consentLabel(m({ relation: 'parent', age: 66, name: 'Ramesh' }), 'me', D)).toBe('Ramesh agreed to be included');
     expect(consentLabel(m({ id: 'me', relation: 'self', age: 40 }), 'me', D)).toBeNull();
     expect(consentLabel(m({ type: 'huf' }), 'me', D)).toBeNull();
+  });
+});
+
+describe('harvest season help', () => {
+  it('is off in a fresh and a migrated family', () => {
+    expect(emptyState().alerts?.seasonHelp ?? false).toBe(false);
+    const old = { ...emptyState() } as Partial<AppState>;
+    delete old.alerts;
+    expect(normalizeState(old as AppState)!.alerts).toEqual({ seasonHelp: false, chosen: false });
+    expect(normalizeState({ ...emptyState(), alerts: { seasonHelp: true, chosen: true } })!.alerts).toEqual({ seasonHelp: true, chosen: true });
+  });
+  it('turning the switch either way records a choice, and the Home prompt hides after any choice', () => {
+    const acct = readFileSync(resolve(__dirname, 'screens/Account.tsx'), 'utf8');
+    expect(acct).toMatch(/alerts: \{ seasonHelp: e\.target\.checked, chosen: true \}/);
+    const home = readFileSync(resolve(__dirname, 'screens/Home.tsx'), 'utf8');
+    expect(home).toMatch(/!state\.alerts\?\.chosen/);
+  });
+  it('the Account screen carries the consent text verbatim', () => {
+    const src = readFileSync(resolve(__dirname, 'screens/Account.tsx'), 'utf8').replace(/&rsquo;/g, '’').replace(/\s+/g, ' ');
+    expect(src).toContain("From 1 Feb to 31 Mar, our server reads your family on each email day (once a week, plus a few deadline days) and on 31 March for the final totals, to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below.");
   });
 });

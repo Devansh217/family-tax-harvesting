@@ -6,7 +6,7 @@ import { FY_2026_27 } from '../engine/rules';
 import type { AppState } from '../store';
 import { initialFamily, loadLocal, saveLocal } from '../storage/device';
 import { supabase } from '../cloud';
-import { AppCtx, type Ctx } from './app-context';
+import { AppCtx, useApp, type Ctx } from './app-context';
 import { addSnapshot, loadMarket, snapshotOf, withFunds, withPrices, type Market } from './market';
 import { Svg, Icon } from './parts';
 import { Home } from './screens/Home';
@@ -49,6 +49,17 @@ export function App() {
   return <Main initial={initial} />;
 }
 
+function InviteOnly() {
+  const { cloud } = useApp();
+  return (
+    <section className="sheet pad stack" style={{ maxWidth: 480, margin: '48px auto' }}>
+      <h1>Invite-only beta</h1>
+      <p>This beta is invite-only. Ask the person who invited you.</p>
+      <div className="row"><button className="btn" type="button" onClick={() => void cloud.signOutAndClear()}>Sign out</button></div>
+    </section>
+  );
+}
+
 function Main({ initial }: { initial: AppState }) {
   const [state, setState] = useState<AppState>(initial);
   const [route, setRoute] = useState(readRoute);
@@ -71,26 +82,29 @@ function Main({ initial }: { initial: AppState }) {
   }, []);
   const cloud = useCloud(state, setState, toast);
   const [market, setMarket] = useState<Market>({ latest: null, previous: null, funds: null });
-  useEffect(() => { void loadMarket().then(setMarket); }, []);
+  // Settled once funds.json has arrived or failed for good (loadMarket never throws; a failure gives nulls).
+  const [marketSettled, setMarketSettled] = useState(false);
+  useEffect(() => { void loadMarket().then((m) => { setMarket(m); setMarketSettled(true); }); }, []);
 
   // The sample family keeps its own made-up prices; real families are re-priced at the latest close.
   const live = !state.isSample;
   const securities = useMemo(() => withFunds(state.securities, market.funds, state.taxTypeOverrides), [state.securities, market.funds, state.taxTypeOverrides]);
   const fam = useMemo(
-    () => computeFamily(live ? { ...state, securities: withPrices(securities, market.latest) } : state, asOf, FY_2026_27),
+    () => computeFamily(live ? { ...state, securities: withPrices(securities, market.latest), funds: market.funds?.funds } : state, asOf, FY_2026_27),
     [state, securities, asOf, market, live],
   );
   const famPrev = useMemo(
-    () => (live && market.previous ? computeFamily({ ...state, securities: withPrices(securities, market.previous) }, asOf, FY_2026_27) : null),
+    () => (live && market.previous ? computeFamily({ ...state, securities: withPrices(securities, market.previous), funds: market.funds?.funds }, asOf, FY_2026_27) : null),
     [state, securities, asOf, market, live],
   );
 
-  // Record each move the first time it is shown (append-only), for real families only.
+  // Record each move the first time it is shown (append-only), for real families only. Not before the funds file has
+  // settled: until then a fund's category (ELSS lock, direct twin) is unknown and the moves may be wrong.
   useEffect(() => {
-    if (!live) return;
+    if (!live || !marketSettled) return;
     const fresh = newShownRecords(fam.moves, state.recommendations, new Date().toISOString());
     if (fresh.length) setState((s) => ({ ...s, recommendations: [...s.recommendations, ...newShownRecords(fam.moves, s.recommendations, fresh[0]!.at)] }));
-  }, [fam.moves, live, state.recommendations]);
+  }, [fam.moves, live, marketSettled, state.recommendations]);
 
   useEffect(() => {
     if (!live || !market.latest || state.members.length === 0) return;
@@ -128,6 +142,8 @@ function Main({ initial }: { initial: AppState }) {
   else if (route === 'about') screen = <About />;
   else if (route === 'account') screen = <Account />;
   else screen = <Home days={days} />;
+  // Signed in but not on the beta list: nothing else loads. The Account page stays reachable (sign out, delete).
+  if (cloud.status === 'not_invited' && route !== 'account') screen = <InviteOnly />;
 
   return (
     <AppCtx.Provider value={ctx}>

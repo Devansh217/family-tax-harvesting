@@ -8,6 +8,8 @@ import { dateLabel, inr, possessive, RELATIONS, units } from '../format';
 import { Avatar, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow } from './Plan';
 import { reconcile } from '../../reconcile';
+import { cgSchedule, EXEMPT_NOTE, isSaleRow, SALE_SECTIONS } from '../../engine/cgSchedule';
+import { scheduleCsv, scheduleFileName } from '../csv';
 
 function PriceInput({ value, onCommit, label }: { value: Paise | undefined; onCommit: (p: Paise | undefined) => void; label: string }) {
   const [text, setText] = useState(value != null ? String(value / 100) : '');
@@ -22,6 +24,64 @@ function PriceInput({ value, onCommit, label }: { value: Paise | undefined; onCo
     />
   );
 }
+
+function CapitalGains({ memberId, memberName }: { memberId: string; memberName: string }) {
+  const { fam } = useApp();
+  const sched = cgSchedule(fam, memberId);
+  const shown = sched.sections.filter((s) => s.rows.length > 0);
+  const hasSales = shown.some((s) => SALE_SECTIONS.includes(s.key));
+  const download = () => {
+    // The byte-order mark lets Excel read the ₹ in the header as UTF-8.
+    const url = URL.createObjectURL(new Blob(['\uFEFF', scheduleCsv(sched)], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = scheduleFileName(memberName);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+  return (
+    <Section title="Capital gains this year" id="cg-h" action={shown.length > 0 ? <button className="btn" type="button" onClick={download}>Download CSV</button> : undefined}>
+      {!hasSales && <p className="small muted">{sched.exemptGain !== 0 ? 'No taxable sales this year.' : 'No sales this year.'}</p>}
+      {shown.map((sec) => (
+        <div key={sec.key} className="stack" style={{ gap: 6 }}>
+          <h3 style={{ fontSize: 15 }}>{sec.title}</h3>
+          <div className="tablebox">
+            <table>
+              <thead>
+                <tr>{isSection(sec.key) ? <><th>Name</th><th className="num">Units</th><th>Sale date</th><th className="num">Sale value</th><th className="num">Cost for tax</th><th className="num">31 Jan 2018 value</th><th className="num">Gain</th></> : <><th>Line</th><th className="num">Amount</th></>}</tr>
+              </thead>
+              <tbody>
+                {sec.rows.map((r, i) => isSection(sec.key) ? (
+                  <tr key={`${r.saleDate}|${r.isin}|${i}`}>
+                    <td>{r.name}{isSaleRow(r) && <span className="tiny muted" style={{ display: 'block' }}>{r.isin}</span>}</td>
+                    <td className="num">{isSaleRow(r) ? units(r.units) : '—'}</td>
+                    <td style={{ textAlign: 'left' }}>{isSaleRow(r) ? dateLabel(r.saleDate) : ''}</td>
+                    <td className="num">{isSaleRow(r) ? inr(r.saleValue) : '—'}</td>
+                    <td className="num">{isSaleRow(r) ? inr(r.cost) : '—'}</td>
+                    <td className="num">{r.fmv2018 != null ? inr(r.fmv2018) : '—'}</td>
+                    <td className="num">{inr(r.gain)}</td>
+                  </tr>
+                ) : (
+                  <tr key={r.name}><td>{r.name}</td><td className="num">{inr(r.gain)}</td></tr>
+                ))}
+              </tbody>
+              {isSection(sec.key) && (
+                <tfoot>
+                  <tr><td colSpan={6}>Total</td><td className="num">{inr(sec.total)}</td></tr>
+                  {sec.afterSetOff != null && <tr><td colSpan={6}>{sec.afterSetOffLabel}</td><td className="num">{inr(sec.afterSetOff)}</td></tr>}
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      ))}
+      {sched.exemptGain !== 0 && <p className="small muted">{EXEMPT_NOTE}</p>}
+      {hasSales && <p className="tiny muted">After set-off: each section&rsquo;s gains once this year&rsquo;s losses, losses brought forward and any F&amp;O loss are set off. These are the figures the tax in &ldquo;Booked this year&rdquo; uses.</p>}
+      <p className="tiny muted">Cost for tax: for shares and equity funds bought on or before 31 Jan 2018, it is the higher of what you paid and the lower of the 31 Jan 2018 value and the sale value. The 31 Jan 2018 value column shows the value of those units only.</p>
+      <p className="tiny muted">The new Act's return forms for 2026-27 are not out yet (expected April–June 2027). Check the sections against the form, or give this to your CA.</p>
+    </Section>
+  );
+}
+const isSection = (k: string) => SALE_SECTIONS.includes(k as never);
 
 export function MemberScreen({ id }: { id: string }) {
   const { fam, state, update, indexOf, asOf } = useApp();
@@ -214,6 +274,10 @@ export function MemberScreen({ id }: { id: string }) {
                   return (
                     <tr key={h.isin}>
                       <td><span style={{ fontWeight: 600 }}>{h.name}</span> <TaxTypeChip taxType={h.taxType} /><br /><span className="tiny muted">{h.isin.startsWith('SYM:') ? 'No ISIN' : h.isin} · {h.lots.length} {h.lots.length === 1 ? 'lot' : 'lots'}{h.accounts.filter(Boolean).length > 0 ? ` · ${h.accounts.filter(Boolean).join(', ')}` : ''}</span>
+                        {(() => {
+                          const until = h.lots.map((l) => l.lockedUntil).filter((d): d is string => !!d && d > fam.asOf).sort().pop();
+                          return until ? <><br /><span className="tiny" style={{ color: 'var(--time)' }}>Locked until {dateLabel(until)} (tax-saver fund)</span></> : null;
+                        })()}
                         {h.uncertainLots > 0 && <><br /><span className="tiny" style={{ color: 'var(--time)' }}>{h.uncertainLots} {h.uncertainLots === 1 ? 'lot' : 'lots'} {pre2018 && !sec?.fmv2018 ? 'need the 31 Jan 2018 value' : 'have an estimated date'}; no moves use {h.uncertainLots === 1 ? 'it' : 'them'}</span></>}</td>
                       <td>{units(h.qty)}</td>
                       <td><PriceInput key={`${h.isin}-${sec?.price}`} value={sec?.price} label={`Price of ${h.name}`} onCommit={(p) => setSecurity(h.isin, { price: p })} /></td>
@@ -253,6 +317,8 @@ export function MemberScreen({ id }: { id: string }) {
           </div>
         </Section>
       )}
+
+      <CapitalGains memberId={id} memberName={member.name} />
 
       <Section title="Imported files" id="imp-h" action={<a className="small" href="#import" style={{ fontWeight: 600, textDecoration: 'none' }}>Import more</a>}>
         {imports.length === 0 ? <p className="small muted">None yet.</p> : (

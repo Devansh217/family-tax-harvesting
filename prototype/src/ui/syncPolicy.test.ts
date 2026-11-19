@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { sampleState } from '../sample';
 import { SignInRequired } from '../storage/functions';
 import { emptyState } from '../store';
-import { afterConflict, failureKind, shouldSave } from './syncPolicy';
+import { afterConflict, failureKind, shouldSave, signOutPlan } from './syncPolicy';
 
 const base = { uid: 'u1', isSample: false, loaded: true, json: '{"a":2}', lastSaved: '{"a":1}', failedJson: null as string | null };
 
@@ -36,5 +36,17 @@ describe('a conflict when this device never loaded the account copy', () => {
     expect(afterConflict(null, local, cloud)).toBe('choose');
     expect(afterConflict(3, local, cloud)).toBe('apply');
     expect(afterConflict(null, emptyState(), cloud)).toBe('apply');
+  });
+});
+
+describe('signing out', () => {
+  it('when not invited, keeps the browser copy and does not claim it is in the account', () => {
+    const p = signOutPlan('not_invited');
+    expect(p.clearLocal).toBe(false);
+    expect(p.message).toBe('Signed out. Your family is still in this browser.');
+  });
+  it('otherwise clears the browser copy because the account holds it', () => {
+    for (const status of ['saved', 'saving', 'error', 'loading'] as const) expect(signOutPlan(status).clearLocal).toBe(true);
+    expect(signOutPlan('saved').message).toMatch(/safe in your account/);
   });
 });

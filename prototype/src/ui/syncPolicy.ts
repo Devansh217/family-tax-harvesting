@@ -1,7 +1,7 @@
-import { SignInRequired } from '../storage/functions';
+import { FamilyLoadError, SignInRequired } from '../storage/functions';
 import { hasRealData, type AppState } from '../store';
 
-export type SyncStatus = 'signed-out' | 'loading' | 'choose' | 'saving' | 'saved' | 'error' | 'signin';
+export type SyncStatus = 'signed-out' | 'loading' | 'choose' | 'saving' | 'saved' | 'error' | 'signin' | 'not_invited';
 
 /**
  * Whether to save the family to the account now. Never before the account copy has loaded (the version would be
@@ -10,14 +10,15 @@ export type SyncStatus = 'signed-out' | 'loading' | 'choose' | 'saving' | 'saved
  */
 export function shouldSave(p: { uid: string | null; status: SyncStatus; isSample: boolean; loaded: boolean; json: string; lastSaved: string; failedJson: string | null }): boolean {
   if (!p.uid || !p.loaded || p.isSample) return false;
-  if (p.status === 'loading' || p.status === 'choose' || p.status === 'signed-out' || p.status === 'signin') return false;
+  if (p.status === 'loading' || p.status === 'choose' || p.status === 'signed-out' || p.status === 'signin' || p.status === 'not_invited') return false;
   if (p.json === p.lastSaved) return false;
   if (p.status === 'error' && p.json === p.failedJson) return false;
   return true;
 }
 
 /** An ended sign-in is the person's to fix (sign in again); anything else is shown as an error. */
-export const failureKind = (e: unknown): 'signin' | 'error' => (e instanceof SignInRequired ? 'signin' : 'error');
+export const failureKind = (e: unknown): 'signin' | 'not_invited' | 'error' =>
+  e instanceof SignInRequired ? 'signin' : e instanceof FamilyLoadError ? 'not_invited' : 'error';
 
 const sameFamily = (a: AppState, b: AppState) =>
   JSON.stringify([a.members, a.txns.length, a.securities.length]) === JSON.stringify([b.members, b.txns.length, b.securities.length]);
@@ -29,3 +30,12 @@ const sameFamily = (a: AppState, b: AppState) =>
 export function afterConflict(knownVersion: number | null, local: AppState, cloud: AppState): 'choose' | 'apply' {
   return knownVersion == null && hasRealData(local) && !sameFamily(local, cloud) ? 'choose' : 'apply';
 }
+
+/**
+ * What signing out does. Not invited means nothing was ever saved to the account, so the browser copy is the only
+ * copy and stays; otherwise the account holds the family and this browser lets go of it.
+ */
+export const signOutPlan = (status: SyncStatus): { clearLocal: boolean; message: string } =>
+  status === 'not_invited'
+    ? { clearLocal: false, message: 'Signed out. Your family is still in this browser.' }
+    : { clearLocal: true, message: 'Signed out. This browser no longer holds your family; it is safe in your account.' };

@@ -100,6 +100,21 @@ describe('CAS PDFs (text lines)', () => {
     expect(parseMutualFundCAS(mfLines).prices[0]).toMatchObject({ plan: 'direct', option: 'growth' });
   });
 
+  it('switch lines: switch out and switch in read as a sale and a purchase on the same date', () => {
+    const r = parseMutualFundCAS([
+      'Folio No: 1234567 / 89   PAN: ABCDE1234F',
+      'X Flexi Cap Fund - Regular Plan - Growth - ISIN: INF000X01011(Advisor: ARN-12345)  Registrar : CAMS',
+      '10-Jan-2022  Purchase  10,000.00  100.000  100.0000  100.000',
+      '12-Mar-2026  Switch Out - To Direct Plan  (15,000.00)  (100.000)  150.0000  0.000',
+      'X Flexi Cap Fund - Direct Plan - Growth - ISIN: INF000X01029(Advisor: DIRECT)  Registrar : CAMS',
+      '12-Mar-2026  Switch In - From Regular Plan  15,000.00  98.000  153.0612  98.000',
+    ]);
+    const out = r.txns.find((t) => t.isin === 'INF000X01011' && t.date === '2026-03-12')!;
+    const inn = r.txns.find((t) => t.isin === 'INF000X01029')!;
+    expect(out).toMatchObject({ side: 'sell', qty: 1_000_000, amount: 15_000_00 });
+    expect(inn).toMatchObject({ side: 'buy', date: '2026-03-12', qty: 980_000 });
+  });
+
   it('warns when the units do not reconcile with the closing balance', () => {
     const r = parseMutualFundCAS(mfLines.filter((l) => !l.startsWith('15-Feb')));
     expect(r.warnings.join(' ')).toMatch(/closes at 250\.000/);
