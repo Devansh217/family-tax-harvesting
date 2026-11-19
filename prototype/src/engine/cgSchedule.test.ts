@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cgSchedule, SALE_SECTIONS } from './cgSchedule';
 import { computeFamily, type FamilyState } from './family';
 import { inRange } from './dates';
+import { summariseYear } from './tax';
 import { FY_2026_27 as R } from './rules';
 import { QTY_SCALE, type Member, type Security, type Txn } from './types';
 import { rupees2, scheduleCsv, scheduleFileName } from '../ui/csv';
@@ -82,6 +83,59 @@ describe('cgSchedule totals', () => {
   }
 });
 
+const BUCKET = { equity_lt: 'equityLt', equity_st: 'equitySt', other_lt: 'otherLt' } as const;
+
+describe('cgSchedule against summariseYear', () => {
+  const withExempt: FamilyState = {
+    members: [person('a', { carriedLoss: { st: rs(3000), lt: rs(10_000) }, business: { intraday: 0, fno: rs(-4000) } })],
+    securities: [...cases['hand-built 2: every tax type, with a broker adjustment']!.securities, eq('PPF', { taxType: 'exempt', listed: false })],
+    txns: [...cases['hand-built 2: every tax type, with a broker adjustment']!.txns, tx('a', 'PPF', '2020-01-01', 'buy', 10, 100), tx('a', 'PPF', '2026-09-05', 'sell', 10, 180)],
+    brokerSummaries: cases['hand-built 2: every tax type, with a broker adjustment']!.brokerSummaries,
+  };
+  for (const [name, state] of [...Object.entries(cases), ['with an exempt sale, losses brought forward and an F&O loss', withExempt] as const]) {
+    it(`sale totals, after-set-off figures and the F&O line match the year summary: ${name}`, () => {
+      const fam = run(state);
+      for (const m of state.members) {
+        const v = fam.members.find((x) => x.member.id === m.id)!;
+        const y = summariseYear(v.member, fam.booked, R, v.business);
+        const s = cgSchedule(fam, m.id);
+        const exempt = s.exemptGain;
+        expect(s.totalGain + exempt).toBe(y.stGains - y.stLosses + y.ltGains - y.ltLosses);
+        for (const sec of s.sections.filter((x) => x.rows.length > 0 && x.key in BUCKET)) {
+          expect(sec.afterSetOff).toBe(y.buckets[BUCKET[sec.key as keyof typeof BUCKET]]);
+        }
+        const slabish = s.sections.filter((x) => (x.key === 'slab' || x.key === 'check') && x.afterSetOff != null);
+        if (s.sections.some((x) => (x.key === 'slab' || x.key === 'check') && x.rows.length > 0)) {
+          expect(slabish).toHaveLength(1);
+          expect(slabish[0]!.afterSetOff).toBe(y.buckets.slab);
+        }
+        const fno = s.sections.find((x) => x.key === 'business')!.rows.find((r) => r.name.startsWith('F&O loss set off'));
+        expect(fno?.gain ?? 0).toBe(0 - y.business.setOffAgainstGains || 0);
+      }
+    });
+  }
+
+  it('notes exempt sales, which are not listed', () => {
+    const fam = run(withExempt);
+    const s = cgSchedule(fam, 'a');
+    expect(s.exemptGain).toBe(rs(800));
+    expect(s.sections.flatMap((x) => x.rows).some((r) => r.isin === 'PPF')).toBe(false);
+    expect(scheduleCsv(s)).toContain('Exempt sales are not listed here');
+    expect(scheduleCsv(cgSchedule(run(cases['golden: uses the exemption']!), 'a'))).not.toContain('Exempt sales');
+  });
+
+  it("the F&O set-off line and the after-set-off figures are in the CSV, with a total per sale section", () => {
+    const fam = run(withExempt);
+    const csv = scheduleCsv(cgSchedule(fam, 'a'));
+    const lines = csv.split('\r\n');
+    expect(lines.some((l) => l.startsWith("Intraday and F&O (from your broker's report),,F&O loss set off against capital gains,"))).toBe(true);
+    const st = cgSchedule(fam, 'a').sections.find((x) => x.key === 'equity_st')!;
+    expect(lines).toContain(`Equity short-term (111A),,Total,,,,,,${rupees2(st.total)}`);
+    expect(lines).toContain(`Equity short-term (111A),,After set-off (what the tax uses),,,,,,${rupees2(st.afterSetOff!)}`);
+    expect(lines.filter((l) => l.includes(',Total,'))).toHaveLength(cgSchedule(fam, 'a').sections.filter((x) => x.rows.length > 0 && SALE_SECTIONS.includes(x.key)).length);
+  });
+});
+
 describe('cgSchedule rows', () => {
   const fam = run(cases['hand-built 1: grandfathered shares sold in two lots, two accounts']!);
 
@@ -92,6 +146,13 @@ describe('cgSchedule rows', () => {
     // only the 100 units bought in 2015 are grandfathered: 100 x ₹500
     expect(lt.rows[0]!.fmv2018).toBe(rs(50_000));
     expect(lt.rows[0]!.cost).toBe(rs(50_000 + 40_000));
+  });
+
+  it("gates the 31 Jan 2018 value on the sale's own tax type, not the security's", () => {
+    const securities = new Map(fam.securities);
+    securities.set('G', { ...securities.get('G')!, taxType: 'check' });
+    const lt = cgSchedule({ ...fam, securities }, 'a').sections.find((s) => s.key === 'equity_lt')!;
+    expect(lt.rows[0]!.fmv2018).toBe(rs(50_000));
   });
 
   it('leaves fmv2018 off rows that were not grandfathered', () => {

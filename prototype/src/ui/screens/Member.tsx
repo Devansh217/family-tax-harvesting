@@ -8,7 +8,7 @@ import { dateLabel, inr, possessive, RELATIONS, units } from '../format';
 import { Avatar, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow } from './Plan';
 import { reconcile } from '../../reconcile';
-import { cgSchedule, isSaleRow, SALE_SECTIONS } from '../../engine/cgSchedule';
+import { cgSchedule, EXEMPT_NOTE, isSaleRow, SALE_SECTIONS } from '../../engine/cgSchedule';
 import { scheduleCsv, scheduleFileName } from '../csv';
 
 function PriceInput({ value, onCommit, label }: { value: Paise | undefined; onCommit: (p: Paise | undefined) => void; label: string }) {
@@ -40,7 +40,7 @@ function CapitalGains({ memberId, memberName }: { memberId: string; memberName: 
   };
   return (
     <Section title="Capital gains this year" id="cg-h" action={shown.length > 0 ? <button className="btn" type="button" onClick={download}>Download CSV</button> : undefined}>
-      {!hasSales && <p className="small muted">No sales this year.</p>}
+      {!hasSales && <p className="small muted">{sched.exemptGain !== 0 ? 'No taxable sales this year.' : 'No sales this year.'}</p>}
       {shown.map((sec) => (
         <div key={sec.key} className="stack" style={{ gap: 6 }}>
           <h3 style={{ fontSize: 15 }}>{sec.title}</h3>
@@ -64,11 +64,18 @@ function CapitalGains({ memberId, memberName }: { memberId: string; memberName: 
                   <tr key={r.name}><td>{r.name}</td><td className="num">{inr(r.gain)}</td></tr>
                 ))}
               </tbody>
-              {isSection(sec.key) && <tfoot><tr><td colSpan={6}>Total</td><td className="num">{inr(sec.total)}</td></tr></tfoot>}
+              {isSection(sec.key) && (
+                <tfoot>
+                  <tr><td colSpan={6}>Total</td><td className="num">{inr(sec.total)}</td></tr>
+                  {sec.afterSetOff != null && <tr><td colSpan={6}>{sec.afterSetOffLabel}</td><td className="num">{inr(sec.afterSetOff)}</td></tr>}
+                </tfoot>
+              )}
             </table>
           </div>
         </div>
       ))}
+      {sched.exemptGain !== 0 && <p className="small muted">{EXEMPT_NOTE}</p>}
+      {hasSales && <p className="tiny muted">After set-off: each section&rsquo;s gains once this year&rsquo;s losses, losses brought forward and any F&amp;O loss are set off. These are the figures the tax in &ldquo;Booked this year&rdquo; uses.</p>}
       <p className="tiny muted">Cost for tax: for shares and equity funds bought on or before 31 Jan 2018, it is the higher of what you paid and the lower of the 31 Jan 2018 value and the sale value. The 31 Jan 2018 value column shows the value of those units only.</p>
       <p className="tiny muted">The new Act's return forms for 2026-27 are not out yet (expected April–June 2027). Check the sections against the form, or give this to your CA.</p>
     </Section>

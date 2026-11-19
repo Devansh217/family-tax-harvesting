@@ -1,5 +1,5 @@
 import { QTY_SCALE, type Paise, type Qty } from '../engine/types';
-import { isSaleRow, type CgSchedule } from '../engine/cgSchedule';
+import { EXEMPT_NOTE, isSaleRow, SALE_SECTIONS, type CgSchedule } from '../engine/cgSchedule';
 
 /** Rupees with 2 decimals and no grouping or symbol, so spreadsheets read it as a number. */
 export const rupees2 = (p: Paise): string => {
@@ -31,7 +31,12 @@ export function scheduleCsv(s: CgSchedule): string {
         r.fmv2018 != null ? rupees2(r.fmv2018) : '', rupees2(r.gain),
       ].map(csvField).join(','));
     }
+    // Sale sections end with their total, then the figure after set-off that the tax uses (gain column only).
+    const only = (label: string, p: number) => [textCell(sec.title), '', label, '', '', '', '', '', rupees2(p)].map(csvField).join(',');
+    if (sec.rows.length && SALE_SECTIONS.includes(sec.key)) lines.push(only('Total', sec.total));
+    if (sec.afterSetOff != null) lines.push(only(sec.afterSetOffLabel ?? '', sec.afterSetOff));
   }
+  if (s.exemptGain) lines.push(['Note', '', EXEMPT_NOTE, '', '', '', '', '', ''].map(csvField).join(','));
   return lines.join('\r\n') + '\r\n';
 }
 
