@@ -96,6 +96,14 @@ describe('renderEmail', () => {
     expect(ok.text).not.toContain(fresh);
     expect(ok.text).toContain('₹');
   });
+  it('stale save: every kind carries only the fresh-statement line plus saved-on, link and footer (no counts, next date or done-since-week)', () => {
+    const fresh = "Import this month's statements so the app can mark what's done. For shares, import your broker's tradebook.";
+    for (const [kind, today] of [['email_start', '2027-02-01'], ['email_weekly', '2027-02-07'], ['email_deadline', '2027-03-15'], ['email_deadline', LAST_SAFE]] as const) {
+      const m = mk(kind, { ...base, taxableGainsBooked: true }, '2026-12-01', today);
+      expect(m.text).toBe(`${fresh}\n\nBased on what you last saved on 1 Dec 2026.\n\nOpen Harvesting: ${URL}\n\nTurn these off on the Account page.\n`);
+    }
+  });
+
   it('fresh-statement line when the last import is missing or 30+ days old and moves are waiting; the room figure stays', () => {
     const fresh = "Import this month's statements";
     for (const lastImport of [null, '2027-01-08']) {

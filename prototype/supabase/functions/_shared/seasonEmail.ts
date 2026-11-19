@@ -55,7 +55,7 @@ export function renderEmail(
   let subject: string;
   const body: string[] = [];
   const figure = Math.floor(s.roomLeft / 100);
-  const room = stale || figure <= 0 ? null : `There is ${rupees(s.roomLeft)} of tax-free room your family can still use. This counts only gains you can still take tax-free this year.`;
+  const room = figure <= 0 ? null : `There is ${rupees(s.roomLeft)} of tax-free room your family can still use. This counts only gains you can still take tax-free this year.`;
   const importStale = s.lastImport === null || daysBetween(s.lastImport, today) >= STALE_DAYS;
 
   if (kind === 'email_start') {
@@ -80,7 +80,9 @@ export function renderEmail(
     }
   }
 
-  if (stale || (importStale && s.movesWaiting > 0)) body.push(FRESH);
+  // Over 30 days since the last save, the numbers are too old to quote: only the fresh-statement line goes out.
+  if (stale) body.splice(0, body.length, FRESH);
+  else if (importStale && s.movesWaiting > 0) body.push(FRESH);
 
   const text = [
     body.join('\n'),
