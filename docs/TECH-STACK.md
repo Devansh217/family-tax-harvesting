@@ -11,7 +11,7 @@ What the app is actually built with today (20 Nov 2026). For *why* it is shaped 
 | Fonts | Self-hosted via Fontsource: Hanken Grotesk (body), Bricolage Grotesque (headings) | 5.3.0 |
 | Tax engine | Pure TypeScript, no libraries, money in integer paise | `prototype/src/engine/` |
 | Statement reading | In the browser only: `pdfjs-dist` (PDF CAS), `read-excel-file` (broker Excel) | 4.10.38 · 9.3.14 |
-| Back end | Supabase, **Free plan**, project `iaesqhisslztykbglcck`, region Singapore (`ap-southeast-1`) | `@supabase/supabase-js` 2.118.0 |
+| Back end | Supabase, **Free plan**, project `iaesqhisslztykbglcck`, region Singapore (`ap-southeast-1`) | App: `@supabase/auth-js`, `postgrest-js`, `functions-js` 2.118.0 (only the parts used, wired in `src/cloud.ts`) · Edge Functions: `@supabase/supabase-js` 2.118.0 |
 | Database | Postgres with row-level security; schema in `prototype/supabase/migrations/` | |
 | Sign-in | Supabase Auth: Google only for the beta; TOTP two-factor for the admin | |
 | Server functions | Supabase Edge Functions on Deno: `family`, `admin`, `alerts` (beta branch); logic in `_shared/` | |

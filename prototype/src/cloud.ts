@@ -1,4 +1,6 @@
-import { createClient, type Session } from '@supabase/supabase-js';
+import { AuthClient, type Session } from '@supabase/auth-js';
+import { FunctionsClient } from '@supabase/functions-js';
+import { PostgrestClient } from '@supabase/postgrest-js';
 
 /**
  * Supabase project for sign-in and saving a family to an account. The publishable key is meant to ship in the web
@@ -12,9 +14,40 @@ export { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL };
 /** Beta: Google sign-in only. Supabase's built-in email sender reaches only the project team (secure storage spec §3). */
 export const SHOW_EMAIL_SIGNIN = false;
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+/**
+ * The three Supabase parts the app uses (sign-in, tables, server functions), wired the way `createClient` wires them
+ * (supabase-js 2.118.0), without file storage and live updates, which the app never uses and which made up about a
+ * third of the download. Same sign-in storage key, so people stay signed in across the change.
+ */
+const base = new URL(SUPABASE_URL.endsWith('/') ? SUPABASE_URL : `${SUPABASE_URL}/`);
+const KEY = SUPABASE_PUBLISHABLE_KEY;
+/** New-format keys (sb_publishable_…) are not JWTs: never sent as a Bearer token where supabase-js omits them. */
+const isNewKey = KEY.startsWith('sb_publishable_') || KEY.startsWith('sb_secret_');
+const auth = new AuthClient({
+  url: new URL('auth/v1', base).href,
+  headers: { Authorization: `Bearer ${KEY}`, apikey: KEY },
+  storageKey: `sb-${base.hostname.split('.')[0]}-auth-token`,
+  flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true,
 });
+const sessionToken = async () => (await auth.getSession()).data.session?.access_token ?? null;
+const withAuth = (keyAsBearer: boolean): typeof fetch => async (input, init) => {
+  const headers = new Headers(init?.headers);
+  if (!headers.has('apikey')) headers.set('apikey', KEY);
+  if (!headers.has('Authorization')) {
+    const bearer = (await sessionToken()) ?? (keyAsBearer ? KEY : null);
+    if (bearer) headers.set('Authorization', `Bearer ${bearer}`);
+  }
+  return fetch(input, { ...init, headers });
+};
+const rest = new PostgrestClient(new URL('rest/v1', base).href, { fetch: withAuth(true) });
+const functions = new FunctionsClient(new URL('functions/v1', base).href, { customFetch: withAuth(!isNewKey) });
+
+export const supabase = {
+  auth,
+  from: (table: string) => rest.from(table),
+  rpc: (fn: string, args: Record<string, unknown> = {}) => rest.rpc(fn, args),
+  functions,
+};
 
 export type { Session };
 

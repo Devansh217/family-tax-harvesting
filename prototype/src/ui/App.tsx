@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { daysBetween, todayISO } from '../engine/dates';
 import { computeFamily } from '../engine/family';
 import { newShownRecords } from '../engine/records';
@@ -12,17 +12,19 @@ import { Svg, Icon } from './parts';
 import { Home } from './screens/Home';
 import { MemberScreen } from './screens/Member';
 import { Plan } from './screens/Plan';
-import { Admin } from './screens/Admin';
-import { Compare } from './screens/Compare';
 import { isAdmin } from '../storage/admin';
 import { viewedContext } from './viewing';
 import { Setup } from './screens/Setup';
-import { Simulate } from './screens/Simulate';
 import { Family } from './screens/Family';
-import { Import } from './screens/Import';
 import { About, Footer } from './screens/About';
 import { Account, ChooseCopy } from './screens/Account';
 import { useCloud } from './useCloud';
+
+// Screens most visits never open load on first use: Admin (founder only), Import (statement readers), Compare, Simulate.
+const Admin = lazy(() => import('./screens/Admin').then((m) => ({ default: m.Admin })));
+const Compare = lazy(() => import('./screens/Compare').then((m) => ({ default: m.Compare })));
+const Simulate = lazy(() => import('./screens/Simulate').then((m) => ({ default: m.Simulate })));
+const Import = lazy(() => import('./screens/Import').then((m) => ({ default: m.Import })));
 
 const TABS = [
   { route: 'home', label: 'Home', icon: Icon.home },
@@ -177,7 +179,7 @@ function Main({ initial }: { initial: AppState }) {
             </div>
           )}
           <ChooseCopy />
-          {screen}
+          <Suspense fallback={<p className="muted" role="status" style={{ marginTop: 48, textAlign: 'center' }}>Loading…</p>}>{screen}</Suspense>
           <Footer />
         </main>
         <nav className="tabbar" aria-label="Main">

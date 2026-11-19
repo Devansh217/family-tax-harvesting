@@ -47,7 +47,7 @@ describe('module boundaries', () => {
 
   it('only cloud.ts and storage import the Supabase client library', () => {
     const bad = all.filter((f) => f.path !== 'cloud.ts' && !inDir(f.path, 'storage'))
-      .filter((f) => imports(f.text).some((i) => i.from === '@supabase/supabase-js')).map((f) => f.path);
+      .filter((f) => imports(f.text).some((i) => i.from.startsWith('@supabase/'))).map((f) => f.path);
     expect(bad).toEqual([]);
   });
 

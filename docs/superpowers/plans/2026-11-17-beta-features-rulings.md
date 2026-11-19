@@ -57,6 +57,7 @@
 - Ruling (final fix): consent text adds "and on 31 March for the final totals" — consent must match reads before families consent in Dec/Jan — cost: none.
 - Ruling (final fix): season_log.outcome + retrying claim; retry only 'failed' — no double sends, no needless re-decrypts — cost: one more migration.
 - Ruling (final fix): one ordered setup sequence: push → admin → merge → invite → family → season emails — no lockout window — cost: none.
+- Ruling (after PR #5 review, finding 1, 20 Nov 2026): season_alert_families lists only families whose lower(sign-in email) is on beta_invites, or who are in admins — same gate as family load/save; uninvited families' saves are refused, so they couldn't turn season_help off and kept getting reads and emails — new migration 20261215000400_season_alerts_invited.sql (the earlier ones are live); a removed invite stops reads and emails from the next daily run — cost: none; families.season_help stays true in the row, so re-inviting resumes emails without a new click (the family had consented before).
 
 ## Small findings left open (from task and milestone reviews)
 

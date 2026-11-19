@@ -141,7 +141,7 @@ function AdminReads() {
 }
 
 /** The consent wording, verbatim from the spec. */
-const SEASON_CONSENT = "From 1 Feb to 31 Mar, our server reads your family on each email day (once a week, plus a few deadline days) and on 31 March for the final totals, to email you what's left to do, and adds your numbers, without names, to the beta's totals. Each read is listed below.";
+const SEASON_CONSENT = "From 1 Feb to 31 Mar, our server reads your family once a week, on a few deadline days, and once more on 31 March for the final totals. It uses these reads to email you what's left to do and to add your numbers, without names, to the beta's totals. Each read is listed below.";
 
 /** The harvest-season switch, with the consent text, and every automatic read listed under it. */
 function SeasonHelp() {

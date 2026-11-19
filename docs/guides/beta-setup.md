@@ -6,6 +6,20 @@ Each step ends with a **Check:** line, and some with a **Where you are:** line s
 
 All commands run in a terminal, from the `prototype/` folder of this repo.
 
+## Already pushed the database before 20 Nov 2026? Push once more
+
+You ran Step 1 already, and one migration has been added since: `20261215000400_season_alerts_invited.sql`. It stops season reads and emails for anyone whose invite you removed. Before it, they kept getting them and couldn't turn them off, because the site refuses their saves.
+
+From the `prototype/` folder, run:
+
+`npx supabase@2 db push`
+
+A plain push is enough. This migration's name sorts after the ones you pushed, so `--include-all` isn't needed.
+
+**Check:** the push lists only `20261215000400_season_alerts_invited.sql` and finishes without an error. Then in the SQL Editor, run `select count(*) from public.season_alert_families;`. It should be no more than the number of invited families with season help on, plus you.
+
+If you haven't done Step 1 yet, skip this section. Step 1 pushes this migration with the others.
+
 ## Part 1: the invite-only beta
 
 About 20 minutes.
@@ -27,7 +41,7 @@ This applies every new migration in one go:
 - the beta invite list,
 - the season tables (the season log and the weekly totals),
 - the season help switch on each family,
-- the list of families with season help on (a database view called `season_alert_families`),
+- the list of families with season help on (a database view called `season_alert_families`); only invited families and admins are on it,
 - the daily 11:00 IST schedule for the season emails,
 - the columns that record whether each season email was sent.
 
@@ -194,3 +208,4 @@ Good to know:
 - A call with `x-alerts-date` is always a rehearsal: it only reads your own family, whatever the date.
 - There are no reads after 31 March. The final season totals are written on 31 March.
 - Families without a confirmed sign-in email get nothing.
+- Only invited families (and admins) get reads or emails. Remove someone's invite and they get nothing from the next daily run, even if their season help is still on.
