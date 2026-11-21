@@ -62,5 +62,5 @@ export function Section({ title, action, children, id }: { title: string; action
 }
 
 export function Disclaimer() {
-  return <p className="tiny muted">Tax estimates from your imported statements. Not a recommendation to buy, sell or hold any security, and not tax advice. Check large moves with a CA. <a href="#about">More</a></p>;
+  return <p className="tiny muted">Tax estimates from your imported statements. Not a recommendation to buy, sell or hold any security, and not tax advice. Check large moves with a CA. <a className="link-action" href="#about">More</a></p>;
 }

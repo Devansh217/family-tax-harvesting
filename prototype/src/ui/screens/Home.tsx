@@ -1,7 +1,7 @@
 import { sampleState } from '../../sample';
 import { startOwnFamily } from '../../store';
 import { useApp } from '../app-context';
-import { inr, inrShort } from '../format';
+import { inr, inrShort, ltLabel } from '../format';
 import { Avatar, Disclaimer, Icon, RoomMeter, Section, Svg } from '../parts';
 import { LastSafeDay, MoveRow, movesNotDone } from './Plan';
 import { needsSetup } from './memberFields';
@@ -54,7 +54,6 @@ export function Home({ days }: { days: number }) {
   return (
     <>
       <SampleBanner />
-      <FirstRunNotice />
       <div className="row-between" style={{ alignItems: 'center' }}>
         <h1>{state.isSample ? 'Mehta family' : 'Your family'}</h1>
         <span className={`chip time ${days <= 30 ? 'urgent' : ''}`}>
@@ -62,6 +61,7 @@ export function Home({ days }: { days: number }) {
           {days >= 0 ? `${days} days left in ${fam.rules.label}` : `${fam.rules.label} has ended`}
         </span>
       </div>
+      <FirstRunNotice />
 
       {cloud.session && !state.isSample && !state.alerts?.seasonHelp && !state.alerts?.chosen && (
         <p className="small" role="note"><a href="#account">Turn on harvest season help (Account)</a></p>
@@ -95,7 +95,7 @@ export function Home({ days }: { days: number }) {
           <a className="btn primary block" href="#plan">See the plan <Svg size={18}>{Icon.arrow}</Svg></a>
         </section>
 
-        <Section title="Room by member" id="mem-h" action={<a href="#family" className="small" style={{ fontWeight: 600, textDecoration: 'none' }}>Manage</a>}>
+        <Section title="Room by member" id="mem-h" action={<a href="#family" className="small link-action" style={{ fontWeight: 600, textDecoration: 'none' }}>Manage</a>}>
           <div className="sheet">
             {fam.members.map((v, i) => (
               <a key={v.member.id} className="li" href={`#member-${v.member.id}`}>
@@ -106,7 +106,7 @@ export function Home({ days }: { days: number }) {
                   <span className="tiny muted">
                     {v.year.room.used > 0 ? `${inr(v.year.room.used)} used` : 'Nothing used yet'}
                     {v.planned.roomUsed > 0 ? ` · ${inr(v.planned.roomUsed)} for planned sales` : ''}
-                    {v.holdings.length === 0 ? ' · no holdings' : ` · ${inrShort(v.holdings.reduce((a, h) => a + h.ltGain, 0))} long-term gains`}
+                    {v.holdings.length === 0 ? ' · no holdings' : ltLabel(v.holdings.reduce((a, h) => a + h.ltGain, 0))}
                     {v.plan.bonus.free > 0 ? ` · +${inrShort(v.plan.bonus.free)} bonus room` : ''}
                   </span>
                 </span>
@@ -147,7 +147,7 @@ export function Home({ days }: { days: number }) {
         </div>
       )}
 
-      <Section title="Act before it lapses" id="act-h" action={<a href="#plan" className="small" style={{ fontWeight: 600, textDecoration: 'none' }}>All {fam.moves.length} moves</a>}>
+      <Section title="Act before it lapses" id="act-h" action={<a href="#plan" className="small link-action" style={{ fontWeight: 600, textDecoration: 'none' }}>All {fam.moves.length} moves</a>}>
         {open.length === 0 ? (
           <div className="sheet empty"><p>No moves left. Every member's room is used or there are no long-term gains to harvest.</p></div>
         ) : (

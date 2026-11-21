@@ -1,4 +1,5 @@
 import { classifyByIsin } from './parsers/common';
+import { autoLink } from './engine/links';
 import type { DatedMove, PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
 import type { RecommendationRecord } from './engine/records';
@@ -69,28 +70,6 @@ function migrateMember(m: LegacyMember): Member {
   return out;
 }
 
-/** Spouse, parent and child links from relations to the manager, for families saved before links existed. */
-function linkFamily(members: Member[]): Member[] {
-  if (members.some((m) => m.spouseId || m.parentIds)) return members;
-  const self = members.find((m) => m.relation === 'self');
-  if (!self) return members;
-  const spouse = members.filter((m) => m.relation === 'spouse');
-  const parents = members.filter((m) => m.relation === 'parent');
-  const children = members.filter((m) => m.relation === 'child_adult' || m.relation === 'child_minor');
-  const wife = spouse.length === 1 ? spouse[0]! : null;
-  return members.map((m) => {
-    const out = { ...m };
-    if (m === self) {
-      if (wife) out.spouseId = wife.id;
-      if (parents.length) out.parentIds = parents.map((p) => p.id);
-    }
-    if (m === wife) out.spouseId = self.id;
-    if (parents.length === 2 && parents.includes(m)) out.spouseId = parents.find((p) => p !== m)!.id;
-    if (children.includes(m)) out.parentIds = wife ? [self.id, wife.id] : [self.id];
-    return out;
-  });
-}
-
 function migrateSecurity(x: LegacySecurity): Security {
   if (x.taxType) return x;
   const { kind, ...rest } = x;
@@ -105,7 +84,7 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
   const done = Object.fromEntries(Object.entries(s.done ?? {}).map(([k, v]) => [k.startsWith('FY ') ? k : `${TICK_YEAR}|${k}`, v]));
   return {
     ...s,
-    members: linkFamily((s.members as LegacyMember[]).map(migrateMember)),
+    members: autoLink((s.members as LegacyMember[]).map(migrateMember)),
     securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
     plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
     brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [], datedMoves: s.datedMoves ?? [],
