@@ -5,6 +5,7 @@ import { bringsHome, nominalReturn, type BringsHomeResult, type Product } from '
 import { slabRate } from '../../engine/rules';
 import { useApp } from '../app-context';
 import { dateLabel, inr, inrShort } from '../format';
+import { groupCategories } from '../categoryGroups';
 import { securitiesForCompare } from '../market';
 import { Avatar, Disclaimer } from '../parts';
 
@@ -13,6 +14,7 @@ interface Pick { kind: Kind; isin: string; category: string; label: string }
 
 const SCENARIOS: Array<[Scenario, string]> = [['conservative', 'Cautious'], ['base', 'Base'], ['optimistic', 'Optimistic']];
 const CATEGORIES = [...new Set(KNOWN_AMFI_HEADINGS)].filter((h) => classifyFund(h, '').taxType !== 'check').sort();
+const CATEGORY_GROUPS = groupCategories(CATEGORIES);
 const KINDS: Array<[Kind, string]> = [['fund', 'A fund'], ['category', 'Fund category'], ['fd', 'Fixed deposit'], ['ppf', 'PPF'], ['gold_etf', 'Gold ETF']];
 const TYPE_LABEL: Record<string, string> = { equity: 'Equity', slab: 'Slab rate', other_lt: 'Long-term 12.5%', interest: 'Interest, yearly', exempt: 'Tax-free' };
 
@@ -57,7 +59,11 @@ function ProductPicker({ value, onChange, id }: { value: Pick; onChange: (p: Pic
       {value.kind === 'category' && (
         <label className="field" htmlFor={`${id}-cat`}>Category
           <select id={`${id}-cat`} value={value.category} onChange={(e) => onChange({ ...value, category: e.target.value, label: e.target.value })}>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            {CATEGORY_GROUPS.map((g) => (
+              <optgroup key={g.label} label={g.label}>
+                {g.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </optgroup>
+            ))}
           </select>
         </label>
       )}

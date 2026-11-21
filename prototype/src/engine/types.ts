@@ -17,6 +17,7 @@ export type Relation =
   | 'self'
   | 'spouse'
   | 'parent'
+  | 'grandparent'
   | 'child_adult'
   | 'child_minor'
   | 'sibling'
@@ -43,6 +44,10 @@ export interface Member {
   regime: 'new' | 'old';
   spouseId?: string;
   parentIds?: string[];
+  /** The links in `spouseId` and `parentIds` that were filled in from "Relation to you" (see links.ts), not set by hand. */
+  autoLinks?: { spouseId?: string; parentIds?: string[] };
+  /** Set when links were changed by hand on the member form: auto-linking then leaves this member's own links alone. */
+  linksByHand?: boolean;
   /** For an HUF: the members (coparceners) whose gifts to it are clubbed back (s.99(3)). */
   hufMemberIds?: string[];
   /** Income other than capital gains this tax year. Undefined = not entered (no basic-exemption room assumed); [] = none. */

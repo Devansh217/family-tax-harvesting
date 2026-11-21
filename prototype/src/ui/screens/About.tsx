@@ -78,17 +78,27 @@ export function Footer() {
   );
 }
 
-/** One-time card on Home until the person confirms they have read how to use the numbers. */
+const FIRST_RUN_POINTS = [
+  ...NOT_ADVICE_POINTS,
+  { title: 'Your data is never used for ads or sold', body: 'It stays in this browser, or in your account if you sign in, where only you can read it.' },
+];
+
+/** One-time card on Home until the person confirms they have read how to use the numbers. Titles show; reasons open on request so the family's figures stay in the first screen on a phone. */
 export function FirstRunNotice() {
   const { state, update } = useApp();
   if (state.ackGuidance) return null;
   return (
     <section className="sheet pad stack" aria-labelledby="first-h" style={{ borderColor: 'var(--room)', boxShadow: 'var(--shadow)' }}>
       <h2 id="first-h">Before you start</h2>
-      <ul className="small" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {NOT_ADVICE_POINTS.map((p) => <li key={p.title}><strong>{p.title}.</strong> <span className="muted">{p.body}</span></li>)}
-        <li><strong>Your data is never used for ads or sold.</strong> <span className="muted">It stays in this browser, or in your account if you sign in, where only you can read it.</span></li>
+      <ul className="small" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {FIRST_RUN_POINTS.map((p) => <li key={p.title}><strong>{p.title}.</strong></li>)}
       </ul>
+      <details className="small">
+        <summary>Show details</summary>
+        <ul style={{ margin: '8px 0 0', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {FIRST_RUN_POINTS.map((p) => <li key={p.title}><strong>{p.title}.</strong> <span className="muted">{p.body}</span></li>)}
+        </ul>
+      </details>
       <div className="row wrap">
         <button className="btn primary" type="button" onClick={() => update((s) => ({ ...s, ackGuidance: true }))}>I understand</button>
         <a className="btn ghost" href="#about">Read more</a>
