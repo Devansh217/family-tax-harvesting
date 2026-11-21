@@ -97,7 +97,7 @@ function SignedOut() {
         <h2>Why sign in</h2>
         <p className="small muted">Your family is saved to your account, so you can open it on your phone and laptop and it survives clearing the browser. Each day&rsquo;s closing-price history is kept with it.</p>
         <div className="note">
-          <strong style={{ color: 'var(--ink)' }}>Encrypted, and every look is logged.</strong> Your family is encrypted before it is stored. If the app&rsquo;s maker ever opens it to fix a problem, you see when and why on this page. Your data is never used for ads, never sold or shared.
+          <strong style={{ color: 'var(--ink)' }}>Encrypted, and every look is shown to you.</strong> Your family is encrypted before it is stored, with keys Harvesting holds. If the app&rsquo;s maker ever opens it to fix a problem, you see when and why on this page. If you turn on season help, the server reads it on season days to write your email, and those checks are listed on this page. Your data is never used for ads and never sold.
         </div>
         <p className="small muted">You can keep using Harvesting without an account. Everything then stays in this browser only.</p>
       </aside>
