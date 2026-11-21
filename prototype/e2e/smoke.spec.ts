@@ -42,6 +42,9 @@ async function open(page: Page, route: string) {
 
 const h1 = (page: Page, name: string) => page.getByRole('heading', { level: 1, name, exact: true });
 
+/** Plan's "Done this season" list. */
+const doneSection = (page: Page) => page.locator('section').filter({ has: page.getByRole('heading', { level: 2, name: 'Done this season' }) });
+
 async function expectNoSideScroll(page: Page) {
   const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
   expect(scroll, 'page scrolls sideways').toBeLessThanOrEqual(client);
@@ -70,10 +73,10 @@ for (const size of SIZES) {
         const first = page.getByRole('button', { name: /^Mark done: / }).first();
         const title = (await first.getAttribute('aria-label'))!.replace(/^Mark done: /, '');
         await first.click();
-        // Home lists only moves still to do, so the ticked one leaves the list and shows as done on Plan.
+        // Home lists only moves still to do, so the ticked one leaves the list and shows under "Done this season" on Plan.
         await expect(page.getByRole('button', { name: `Mark done: ${title}`, exact: true })).toHaveCount(0);
         await open(page, 'plan');
-        await expect(page.getByRole('button', { name: `Mark not done: ${title}`, exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await expect(doneSection(page).getByText(title, { exact: true })).toBeVisible();
       });
 
       test('tick and untick a move on Plan', async ({ page }) => {
@@ -81,10 +84,11 @@ for (const size of SIZES) {
         const first = page.getByRole('button', { name: /^Mark done: / }).first();
         const title = (await first.getAttribute('aria-label'))!.replace(/^Mark done: /, '');
         await first.click();
-        const done = page.getByRole('button', { name: `Mark not done: ${title}`, exact: true });
-        await expect(done).toHaveAttribute('aria-pressed', 'true');
-        await done.click();
-        await expect(page.getByRole('button', { name: `Mark done: ${title}`, exact: true }).first()).toHaveAttribute('aria-pressed', 'false');
+        const row = doneSection(page).locator('.move').filter({ hasText: title });
+        await expect(row).toBeVisible();
+        await row.getByRole('button', { name: 'Not done' }).click();
+        await expect(page.getByRole('button', { name: `Mark done: ${title}`, exact: true })).toHaveAttribute('aria-pressed', 'false');
+        await expectNoSideScroll(page);
       });
 
       test('Simulate amount with the 25/50/75/All picks', async ({ page }) => {
