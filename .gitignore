@@ -1,6 +1,16 @@
 # Never commit real portfolio data
 *.csv
 *.pdf
+*.xlsx
+*.xls
 data/private/
+# App backups (plain JSON of a whole family) and database backups
+harvesting-backup-*.json
+*.age
+*.dump
 .env
+.env.*
 .DS_Store
+# Editor folders (can hold run configurations with environment variables)
+.idea/
+.vscode/
