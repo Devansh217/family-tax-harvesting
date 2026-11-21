@@ -38,15 +38,15 @@ export function About() {
           <div className="li" style={{ alignItems: 'flex-start' }}>
             <Svg size={20}>{Icon.lock}</Svg>
             <span className="grow stack" style={{ gap: 2 }}>
-              <strong>Never used for ads, never sold, never shared</strong>
-              <span className="small muted">Your statements and the numbers worked out from them are used only to show you your own tax position. They are not used for advertising, profiling or marketing, not sold or passed to anyone, and never used for any unlawful purpose.</span>
+              <strong>Never used for ads, never sold</strong>
+              <span className="small muted">Your statements and the numbers worked out from them are used only to show you your own tax position. They are not used for advertising, profiling or marketing, never sold or passed to anyone for their own use, and never used for any unlawful purpose. Two services work for us: Supabase stores account copies, and Brevo sends season emails if you turn them on.</span>
             </span>
           </div>
           <div className="li" style={{ alignItems: 'flex-start' }}>
             <Svg size={20}>{Icon.lock}</Svg>
             <span className="grow stack" style={{ gap: 2 }}>
               <strong>Where it is kept</strong>
-              <span className="small muted">Statement files are always read in your browser; the files themselves are never uploaded. Without an account, the results stay in this browser only. If you sign in, your family&rsquo;s data (members, transactions, plan and daily history) is saved to your account in our database, hosted by Supabase, locked so that only your login can read it. You can delete it from the Account page at any time.</span>
+              <span className="small muted">Statement files are always read in your browser; the files themselves are never uploaded. Without an account, the results stay in this browser only. If you sign in, your family&rsquo;s data (members, transactions, plan and daily history) is sent to our server over a secure connection, encrypted there, and saved in our database, hosted by Supabase. Harvesting holds the keys, not you. The app&rsquo;s maker opens it only to fix a problem, and each time is listed on your Account page. If you turn on harvest season help, the server also reads it on season days to write your email. You can delete it from the Account page at any time.</span>
             </span>
           </div>
           <div className="li" style={{ alignItems: 'flex-start' }}>
@@ -80,7 +80,7 @@ export function Footer() {
 
 const FIRST_RUN_POINTS = [
   ...NOT_ADVICE_POINTS,
-  { title: 'Your data is never used for ads or sold', body: 'It stays in this browser, or in your account if you sign in, where only you can read it.' },
+  { title: 'Your data is never used for ads or sold', body: 'Without an account, it stays in this browser. With an account, it is encrypted before it is stored; the app’s maker can open it only to fix a problem, and every look is shown to you.' },
 ];
 
 /** One-time card on Home until the person confirms they have read how to use the numbers. Titles show; reasons open on request so the family's figures stay in the first screen on a phone. */

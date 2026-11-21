@@ -68,7 +68,7 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
 }
 
 export function Family() {
-  const { state, update, fam, indexOf, toast } = useApp();
+  const { state, update, fam, indexOf, toast, cloud } = useApp();
   const [editing, setEditing] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   const restoreRef = useRef<HTMLInputElement>(null);
@@ -161,7 +161,9 @@ export function Family() {
           )}
         </div>
         <input ref={restoreRef} type="file" accept="application/json,.json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void restore(f); e.target.value = ''; }} />
-        <p className="tiny muted">Everything is stored in this browser only. Nothing is uploaded; clearing site data removes it.</p>
+        <p className="tiny muted">{cloud.session
+          ? 'Saved in this browser and, encrypted, in your account. Clearing site data removes only this browser’s copy.'
+          : 'Everything is stored in this browser only. Clearing site data removes it.'}</p>
       </Section>
     </>
   );
