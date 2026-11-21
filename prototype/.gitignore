@@ -4,3 +4,5 @@ public/prices/
 public/.private-demo/
 dist-engine/
 supabase/functions/_shared/engine.js
+test-results/
+playwright-report/
