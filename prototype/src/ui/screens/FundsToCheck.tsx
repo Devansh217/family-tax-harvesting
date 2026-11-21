@@ -5,7 +5,7 @@ const LABEL: Record<TaxType, string> = { equity: 'Equity', slab: 'Slab rate', ot
 
 /** A small label for how a holding's gains are taxed. */
 export function TaxTypeChip({ taxType }: { taxType: TaxType }) {
-  return <span className={`chip ${taxType === 'check' ? 'time' : ''}`} style={{ fontSize: 11, padding: '1px 8px' }}>{LABEL[taxType]}</span>;
+  return <span className={`chip ${taxType === 'check' ? 'time' : ''}`} style={{ fontSize: 12, padding: '1px 8px' }}>{LABEL[taxType]}</span>;
 }
 
 const CHOICES: Array<[TaxType, string, string]> = [
