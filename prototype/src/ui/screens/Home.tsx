@@ -1,7 +1,7 @@
 import { sampleState } from '../../sample';
 import { startOwnFamily } from '../../store';
 import { useApp } from '../app-context';
-import { inr, inrShort } from '../format';
+import { inr, inrShort, ltLabel } from '../format';
 import { Avatar, Disclaimer, Icon, RoomMeter, Section, Svg } from '../parts';
 import { LastSafeDay, MoveRow, movesNotDone } from './Plan';
 import { needsSetup } from './memberFields';
@@ -106,7 +106,7 @@ export function Home({ days }: { days: number }) {
                   <span className="tiny muted">
                     {v.year.room.used > 0 ? `${inr(v.year.room.used)} used` : 'Nothing used yet'}
                     {v.planned.roomUsed > 0 ? ` · ${inr(v.planned.roomUsed)} for planned sales` : ''}
-                    {v.holdings.length === 0 ? ' · no holdings' : ` · ${inrShort(v.holdings.reduce((a, h) => a + h.ltGain, 0))} long-term gains`}
+                    {v.holdings.length === 0 ? ' · no holdings' : ltLabel(v.holdings.reduce((a, h) => a + h.ltGain, 0))}
                     {v.plan.bonus.free > 0 ? ` · +${inrShort(v.plan.bonus.free)} bonus room` : ''}
                   </span>
                 </span>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ageOn } from '../../engine/dates';
 import { FY_2026_27, incomeBands } from '../../engine/rules';
 import type { IncomeKind, IncomeSource, ISODate, Member } from '../../engine/types';
+import { autoLink, linkChoices, linkProblems, linkSummary } from '../../engine/links';
 import { RELATIONS } from '../format';
 import { MoneyInput } from '../MoneyInput';
 
@@ -26,7 +27,9 @@ export function PersonFields({ member: m, onChange, members, managerId, asOf }: 
   const f = `p-${m.id}`;
   const others = members.filter((x) => x.id !== m.id && x.type !== 'huf');
   const set = (patch: Partial<Member>) => onChange({ ...m, ...patch });
-  const toggleIn = (list: string[] | undefined, id: string) => (list?.includes(id) ? list.filter((x) => x !== id) : [...(list ?? []), id]);
+  // The links as they will be once saved: auto-linking runs on every change to the members.
+  const linked = autoLink(members.some((x) => x.id === m.id) ? members.map((x) => (x.id === m.id ? m : x)) : [...members, m]);
+  const lm = linked.find((x) => x.id === m.id)!;
   return (
     <div className="stack" style={{ gap: 10 }}>
       <div className="form-grid">
@@ -46,12 +49,6 @@ export function PersonFields({ member: m, onChange, members, managerId, asOf }: 
             <label className="field" htmlFor={`${f}-dob`}>Date of birth
               <input id={`${f}-dob`} type="date" value={m.dob ?? ''} max={asOf} onChange={(e) => set({ dob: e.target.value || undefined, age: e.target.value ? ageOn({ age: m.age, dob: e.target.value }, asOf) : m.age })} />
             </label>
-            <label className="field" htmlFor={`${f}-spouse`}>Spouse
-              <select id={`${f}-spouse`} value={m.spouseId ?? ''} onChange={(e) => set({ spouseId: e.target.value || undefined })}>
-                <option value="">None in the family</option>
-                {others.map((x) => <option key={x.id} value={x.id}>{x.name || 'Unnamed'}</option>)}
-              </select>
-            </label>
           </>
         )}
         <label className="field" htmlFor={`${f}-pan`}>PAN, last 4 characters
@@ -59,18 +56,7 @@ export function PersonFields({ member: m, onChange, members, managerId, asOf }: 
             onChange={(e) => { const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); set({ panLast4: v || undefined }); }} />
         </label>
       </div>
-      {m.type !== 'huf' && others.length > 0 && (
-        <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
-          <legend style={{ padding: 0, marginBottom: 4 }}>Parents in the family</legend>
-          <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
-            {others.map((x) => (
-              <label key={x.id} className="row small" style={{ gap: 6 }}>
-                <input type="checkbox" checked={!!m.parentIds?.includes(x.id)} onChange={() => set({ parentIds: toggleIn(m.parentIds, x.id) })} />{x.name || 'Unnamed'}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      )}
+      {m.type !== 'huf' && <LinkFields member={m} linked={lm} linkedAll={linked} set={set} f={f} />}
       {m.type === 'huf' && (
         <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
           <legend style={{ padding: 0, marginBottom: 4 }}>Members of the HUF</legend>
@@ -92,6 +78,67 @@ export function PersonFields({ member: m, onChange, members, managerId, asOf }: 
           <input type="checkbox" checked={!!m.consent} onChange={(e) => set({ consent: e.target.checked ? { agreedAt: asOf, recordedBy: managerId } : undefined })} />
           {consentLabel(m, managerId, asOf)}{m.consent ? ` (${m.consent.agreedAt})` : ''}
         </label>
+      )}
+    </div>
+  );
+}
+
+const toggleIn = (list: string[] | undefined, id: string) => (list?.includes(id) ? list.filter((x) => x !== id) : [...(list ?? []), id]);
+
+/**
+ * Spouse and parent links. "Relation to you" fills them in (engine/links.ts), so they show as one line; "Change links"
+ * opens the fields, offering only choices that fit the relation. The first change by hand freezes this member's links.
+ */
+function LinkFields({ member: m, linked: lm, linkedAll, set, f }: { member: Member; linked: Member; linkedAll: Member[]; set: (p: Partial<Member>) => void; f: string }) {
+  const choices = linkChoices(lm, linkedAll);
+  const problems = linkProblems(lm, linkedAll);
+  const problem = (field: 'spouse' | 'parents') => problems.filter((p) => p.field === field).map((p) => <p key={p.text} className="tiny" role="alert" style={{ color: 'var(--tax)', margin: 0 }}>{p.text}</p>);
+  // Start from the links as shown, so changing one keeps the rest.
+  const byHand = (patch: Partial<Member>) => set({ spouseId: lm.spouseId, parentIds: lm.parentIds, autoLinks: undefined, linksByHand: true, ...patch });
+  const nameOf = (x: Member) => x.name || 'Unnamed';
+  const needsHusband = choices.husbands.length > 1 && !lm.spouseId;
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <p className="small" style={{ margin: 0 }}><span className="muted">Links: </span>{linkSummary(lm, linkedAll)}</p>
+      {choices.husbands.length > 1 && (
+        <label className="field" htmlFor={`${f}-husband`}>Whose wife?
+          <select id={`${f}-husband`} value={lm.spouseId ?? ''} onChange={(e) => byHand({ spouseId: e.target.value || undefined })}>
+            <option value="">{needsHusband ? 'Choose' : 'None in the family'}</option>
+            {choices.husbands.map((x) => <option key={x.id} value={x.id}>{nameOf(x)}</option>)}
+          </select>
+        </label>
+      )}
+      {(choices.spouse.length > 0 || choices.parents.length > 0) && (
+        <details open={problems.length > 0 || undefined}>
+          <summary className="small">Change links</summary>
+          <div className="stack" style={{ gap: 10, marginTop: 8 }}>
+            {choices.spouse.length > 0 && choices.husbands.length <= 1 && (
+              <label className="field" htmlFor={`${f}-spouse`}>Spouse
+                <select id={`${f}-spouse`} value={lm.spouseId ?? ''} onChange={(e) => byHand({ spouseId: e.target.value || undefined })}>
+                  <option value="">None in the family</option>
+                  {choices.spouse.map((x) => <option key={x.id} value={x.id}>{nameOf(x)}</option>)}
+                </select>
+                {problem('spouse')}
+              </label>
+            )}
+            {choices.parents.length > 0 && (
+              <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
+                <legend style={{ padding: 0, marginBottom: 4 }}>Parents in the family</legend>
+                <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+                  {choices.parents.map((x) => (
+                    <label key={x.id} className="row small" style={{ gap: 6 }}>
+                      <input type="checkbox" checked={!!lm.parentIds?.includes(x.id)} onChange={() => { const next = toggleIn(lm.parentIds, x.id); byHand({ parentIds: next.length ? next : undefined }); }} />{nameOf(x)}
+                    </label>
+                  ))}
+                </div>
+                {problem('parents')}
+              </fieldset>
+            )}
+            {m.linksByHand && (
+              <button className="btn sm ghost" type="button" style={{ alignSelf: 'flex-start' }} onClick={() => set({ linksByHand: undefined, autoLinks: undefined, spouseId: undefined, parentIds: undefined })}>Use links from &ldquo;Relation to you&rdquo;</button>
+            )}
+          </div>
+        </details>
       )}
     </div>
   );

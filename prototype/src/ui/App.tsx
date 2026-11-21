@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { daysBetween, todayISO } from '../engine/dates';
 import { computeFamily } from '../engine/family';
+import { autoLink } from '../engine/links';
 import { newShownRecords } from '../engine/records';
 import { FY_2026_27 } from '../engine/rules';
 import type { AppState } from '../store';
@@ -120,7 +121,8 @@ function Main({ initial }: { initial: AppState }) {
 
   const own: Ctx = {
     state, fam, famPrev, market, cloud, asOf, toast, viewing: null,
-    update: (fn) => setState((s) => fn(s)),
+    // Every change to the members re-runs auto-linking, so links follow "Relation to you" wherever members are edited.
+    update: (fn) => setState((s) => { const n = fn(s); return n.members === s.members ? n : { ...n, members: autoLink(n.members) }; }),
     go: (r) => { location.hash = r; },
     indexOf: (id) => Math.max(0, state.members.findIndex((m) => m.id === id)),
     nameOf: (id) => state.members.find((m) => m.id === id)?.name ?? 'Unknown',

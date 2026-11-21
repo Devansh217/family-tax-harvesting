@@ -86,3 +86,52 @@ describe('relations between any two members', () => {
     expect(pairRelation(stale, sp2, [stale, sp2])).toBe('spouse');
   });
 });
+
+describe('relations from "Relation to you" when members have no links', () => {
+  const self = m('self', { relation: 'self' });
+  const p1 = m('p1', { relation: 'parent', age: 66 });
+  const p2 = m('p2', { relation: 'parent', age: 63 });
+  const sib = m('sib', { relation: 'sibling' });
+  const sib2 = m('sib2', { relation: 'sibling' });
+  const c1 = m('c1', { relation: 'child_adult', age: 22 });
+  const c2 = m('c2', { relation: 'child_adult', age: 20 });
+  const sp = m('sp', { relation: 'spouse' });
+  const gp = m('gp', { relation: 'grandparent', age: 88 });
+  const all = [self, p1, p2, sib, sib2, c1, c2, sp, gp];
+
+  it('two parents are spouses: gifts between them are clubbed, so not a gift that moves tax', () => {
+    expect(pairRelation(p1, p2, all)).toBe('spouse');
+    expect(isRelative(p1, p2, all)).toBe(true);
+    expect(clubbing(p1, p2, all, D)).toMatchObject({ taxedInId: 'p1' });
+    expect(canGift(p1, p2, all, D)).toBe(false);
+  });
+
+  it('siblings, children and parents of siblings', () => {
+    expect(pairRelation(sib, sib2, all)).toBe('sibling');
+    expect(pairRelation(c1, c2, all)).toBe('sibling');
+    expect(pairRelation(p1, sib, all)).toBe('child');
+    expect(pairRelation(sib, p1, all)).toBe('parent');
+  });
+
+  it('a sibling-in-law is not a relative for the gift rule', () => {
+    expect(pairRelation(sp, sib, all)).toBe('other');
+    expect(pairRelation(sib, sp, all)).toBe('other');
+    expect(isRelative(sp, sib, all)).toBe(false);
+  });
+
+  it('your grandparent is a relative, so a gift between you is tax-free', () => {
+    expect(pairRelation(self, gp, all)).toBe('grandparent');
+    expect(pairRelation(gp, self, all)).toBe('grandchild');
+    expect(isRelative(self, gp, all)).toBe(true);
+    expect(canGift(self, gp, all, D)).toBe(true);
+  });
+
+  it('a parent and a grandparent with no link are not assumed related', () => {
+    expect(pairRelation(p1, gp, all)).toBe('other');
+  });
+});
+
+it('three parents with no links are not assumed married', () => {
+  const ps = ['a', 'b', 'c'].map((id) => m(id, { relation: 'parent', age: 65 }));
+  expect(pairRelation(ps[0]!, ps[1]!, ps)).toBe('other');
+});
