@@ -116,12 +116,33 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
 /** A backup file's text as a family, migrated like any saved copy; null when it is not a backup. */
 export function parseBackup(text: string): AppState | null {
   try {
-    const s = normalizeState(JSON.parse(text) as AppState);
+    const raw = JSON.parse(text) as Record<string, unknown>;
+    if (!backupShapeOk(raw)) return null;
+    const s = normalizeState({ ...raw, txns: raw.txns ?? [], imports: raw.imports ?? [] } as unknown as AppState);
     // Consent is not carried in a file: after a restore the family chooses again.
     return s && { ...s, alerts: { seasonHelp: false, chosen: false } };
   } catch {
     return null;
   }
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const LIST_FIELDS = ['members', 'securities', 'txns', 'positions', 'imports', 'plannedSales', 'history', 'brokerSummaries', 'recommendations', 'datedMoves'];
+const MAP_FIELDS = ['done', 'needSoon', 'taxTypeOverrides'];
+
+/**
+ * A backup file is untrusted input (anyone can hand someone a file): before it replaces the family, every list must
+ * be a list of objects, every map an object, and each member needs a text id and name. A file that fails this would
+ * otherwise load, crash the screens, and be saved over the family in this browser and the account.
+ */
+function backupShapeOk(raw: unknown): boolean {
+  if (!isObj(raw) || !Array.isArray(raw.members)) return false;
+  for (const f of LIST_FIELDS) {
+    const v = raw[f];
+    if (v !== undefined && !(Array.isArray(v) && v.every(isObj))) return false;
+  }
+  for (const f of MAP_FIELDS) if (raw[f] !== undefined && !isObj(raw[f])) return false;
+  return (raw.members as Record<string, unknown>[]).every((m) => typeof m.id === 'string' && typeof m.name === 'string');
 }
 
 export const RESTORE_ALERTS_NOTE = 'Harvest season help is off after a restore; turn it on in Account.';

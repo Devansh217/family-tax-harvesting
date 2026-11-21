@@ -1,6 +1,6 @@
 /** The slice of the pdf.js API used here, so the same code runs with the browser build and the Node legacy build. */
 export interface PdfJsLike {
-  getDocument(src: { data: Uint8Array; password?: string; verbosity?: number }): { promise: Promise<PdfDoc> };
+  getDocument(src: { data: Uint8Array; password?: string; verbosity?: number; isEvalSupported?: boolean }): { promise: Promise<PdfDoc> };
 }
 interface PdfDoc {
   numPages: number;
@@ -18,7 +18,8 @@ export class PdfPasswordError extends Error {
 export async function extractLines(pdfjs: PdfJsLike, data: Uint8Array, password?: string): Promise<string[]> {
   let doc: PdfDoc;
   try {
-    doc = await pdfjs.getDocument({ data, password, verbosity: 0 }).promise;
+    // A statement PDF is untrusted input: never let pdf.js compile code from it (CVE-2024-4367 was this path).
+    doc = await pdfjs.getDocument({ data, password, verbosity: 0, isEvalSupported: false }).promise;
   } catch (e) {
     const err = e as { name?: string; code?: number };
     if (err?.name === 'PasswordException') throw new PdfPasswordError(err.code === 2);
