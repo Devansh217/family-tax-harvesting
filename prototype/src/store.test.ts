@@ -3,7 +3,7 @@ import { computeFamily } from './engine/family';
 import { FY_2026_27 } from './engine/rules';
 import { parseTablePreview, previewTable } from './parsers';
 import { sampleState } from './sample';
-import { applyImport, emptyState, hasRealData, normalizeState, backupHadSeasonHelp, parseBackup, removeImport, RESTORE_ALERTS_NOTE, type AppState } from './store';
+import { applyImport, emptyState, hasRealData, normalizeState, backupHadSeasonHelp, parseBackup, removeImport, RESTORE_ALERTS_NOTE, setTermAnswer, type AppState } from './store';
 import { ageOn } from './engine/dates';
 import { QTY_SCALE } from './engine/types';
 
@@ -189,6 +189,16 @@ describe('migrating saved families', () => {
     const backup = (termAnswers: unknown) => JSON.stringify({ version: 1, members: [{ id: 'm1', name: 'A', relation: 'self', age: 40, regime: 'new' }], termAnswers });
     expect(parseBackup(backup(termAnswers))!.termAnswers).toEqual(termAnswers);
     expect(parseBackup(backup('st'))).toBeNull();
+  });
+
+  it('setTermAnswer keeps one answer per sale, matching the account whatever its spaces and case; no term or date clears it', () => {
+    const a = { memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', term: 'st' as const };
+    const other = { ...a, isin: 'INE2', term: 'lt' as const };
+    const s1 = setTermAnswer({ ...withMember(), termAnswers: [other] }, a);
+    expect(s1.termAnswers).toEqual([other, a]);
+    const dated = { memberId: 'm1', account: ' zerodha ', isin: 'INE1', sellDate: '2026-04-10', buyDate: '2025-01-02' };
+    expect(setTermAnswer(s1, dated).termAnswers).toEqual([other, dated]);
+    expect(setTermAnswer(s1, { memberId: 'm1', account: 'ZERODHA', isin: 'INE1', sellDate: '2026-04-10' }).termAnswers).toEqual([other]);
   });
 
   it('migrates saved security kinds to tax types', () => {

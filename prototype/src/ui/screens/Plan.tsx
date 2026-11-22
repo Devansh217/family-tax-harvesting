@@ -136,8 +136,8 @@ function PlanGaps({ gaps, empty }: { gaps: PlanGap[]; empty: boolean }) {
       <h2 id="gaps-h">{empty ? 'Why there are no moves yet' : 'Make this plan complete'}</h2>
       <p className="small muted" style={{ maxWidth: '72ch' }}>Moves need long-term holdings with known buy dates. These holdings are left out until the files below are imported.</p>
       <ul className="stack" style={{ gap: 8, margin: 0, paddingLeft: 18 }}>
-        {gaps.map((g) => (
-          <li key={`${g.memberId}|${g.key}`} className="small">{g.text} <a href={g.href}>{g.action}</a></li>
+        {gaps.map((g, i) => (
+          <li key={`${g.memberId}|${g.key}|${i}`} className="small">{g.text} <a href={g.href}>{g.action}</a></li>
         ))}
       </ul>
     </section>
@@ -172,7 +172,7 @@ function CalendarButton() {
 export function Plan() {
   const { fam, state, update, nameOf } = useApp();
   const { open, done, gainDone, gainTotal, nowDone, nowTotal, doneCount, liveCount } = planView(fam, state.recommendations);
-  const gaps = state.isSample ? [] : planGaps(fam, state.positions);
+  const gaps = state.isSample ? [] : planGaps(fam, state.positions, state.brokerSummaries);
   const empty = fam.moves.length === 0 && done.length === 0;
 
   return (

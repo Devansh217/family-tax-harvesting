@@ -410,7 +410,7 @@ describe('fill-in on every compute: cost never stacks', () => {
     const { txns, corporateActions } = effectiveTxnsWithNotes([trade('buy', '2026-03-01', 10, 1000)], [file(20, 0, 10_000)], ASOF);
     expect(openings(txns)).toEqual([expect.objectContaining({ id: 'a|X|Zerodha|opening-ca', qty: q(10), amount: 0, estimated: true })]);
     expect(lotsOf(txns).filter((l) => !l.estimated)).toMatchObject([{ date: '2026-03-01', qty: q(10), cost: rs(10_000) }]);
-    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'X', account: 'Zerodha' }]);
+    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'X', account: 'Zerodha', kind: 'units' }]);
   });
 
   it('a demerger where the broker splits the cost: the parent\u2019s held cost is capped at the file\u2019s', () => {
@@ -419,7 +419,7 @@ describe('fill-in on every compute: cost never stacks', () => {
     const { txns, corporateActions } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 10, 1000)], files, ASOF);
     expect(lotsOf(txns)).toMatchObject([{ date: '2024-01-10', qty: q(10), cost: rs(7_000) }]);
     expect(heldCost(txns, 'Y')).toBe(rs(3_000));
-    expect(corporateActions).toContainEqual({ memberId: 'a', isin: 'X', account: 'Zerodha' });
+    expect(corporateActions).toContainEqual({ memberId: 'a', isin: 'X', account: 'Zerodha', kind: 'cost' });
   });
 
   it('a consolidation whose cost is just under the history\u2019s is capped at the file\u2019s', () => {
@@ -451,12 +451,12 @@ describe('fill-in on every compute: cost never stacks', () => {
     expect(openings(txns)).toEqual([expect.objectContaining({ id: 'a|X|Zerodha|opening-ca', qty: q(10), amount: 0, estimated: true })]);
     expect(heldQty(txns)).toBe(q(20));
     expect(heldCost(txns)).toBe(rs(10_000));
-    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'X', account: 'Zerodha' }]);
+    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'X', account: 'Zerodha', kind: 'units' }]);
   });
 
   it('1:5 split: one lot of 50 units at ₹10,000, original date, nothing filled in', () => {
     const { txns, corporateActions } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 10, 1000)], [file(50, 50, 10_000)], ASOF);
-    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'X', account: 'Zerodha' }]);
+    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'X', account: 'Zerodha', kind: 'units' }]);
     expect(openings(txns)).toHaveLength(0);
     expect(txns.filter((t) => t.left)).toHaveLength(0);
     expect(lotsOf(txns)).toMatchObject([{ date: '2024-01-10', qty: q(50), cost: rs(10_000) }]);
@@ -482,7 +482,7 @@ describe('fill-in on every compute: cost never stacks', () => {
     expect(openings(txns)).toEqual([expect.objectContaining({ id: 'a|Y|Zerodha|opening-ca', isin: 'Y', qty: q(10), amount: 0, estimated: true })]);
     expect(txns.filter((t) => t.left)).toHaveLength(0);
     expect(lotsOf(txns)).toMatchObject([{ qty: q(10), cost: rs(10_000) }]);
-    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'Y', account: 'Zerodha' }]);
+    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'Y', account: 'Zerodha', kind: 'units' }]);
   });
 
   it('a share the history never saw, with no cost: a guessed lot at the file price, and no trim', () => {

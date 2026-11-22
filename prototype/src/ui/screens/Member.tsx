@@ -5,7 +5,7 @@ import type { Paise } from '../../engine/types';
 import { useApp } from '../app-context';
 import { FundsToCheck, TaxTypeChip } from './FundsToCheck';
 import { dateLabel, inr, possessive, RELATIONS, units } from '../format';
-import { Avatar, Icon, RoomMeter, Section, Svg } from '../parts';
+import { Avatar, Disclaimer, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow } from './Plan';
 import { reconcile } from '../../reconcile';
 import { effectiveTxns } from '../../engine/openingLots';
@@ -13,6 +13,79 @@ import { unitMismatches } from '../units';
 import { importHref } from '../plan';
 import { cgSchedule, EXEMPT_NOTE, isSaleRow, SALE_SECTIONS } from '../../engine/cgSchedule';
 import { scheduleCsv, scheduleFileName } from '../csv';
+import { isElssFund } from '../../engine/categories';
+import { setTermAnswer } from '../../store';
+import type { Term } from '../../engine/types';
+import {
+  answeredSales, bookedDisplay, hasYearPnl, holdingsNoteLines, oversellLine, pnlCoverage, unknownTermSales, visibleOversells, type UnknownTermSale,
+} from '../warnings';
+
+const TERM_LABEL: Record<Term, string> = { lt: 'long-term', st: 'short-term' };
+
+/**
+ * One sale whose buy date is unknown: the term the engine assumed and the family's answer. Choosing the other term can
+ * free room, so it asks first.
+ */
+function UnknownTermRow({ sale }: { sale: UnknownTermSale }) {
+  const { fam, update, asOf } = useApp();
+  const [confirm, setConfirm] = useState<Term | null>(null);
+  const [dating, setDating] = useState(false);
+  const [date, setDate] = useState('');
+  const name = fam.securities.get(sale.isin)?.name ?? sale.isin;
+  const answer = (patch: { term?: Term; buyDate?: string }) =>
+    update((s) => setTermAnswer(s, { memberId: sale.memberId, account: sale.account, isin: sale.isin, sellDate: sale.sellDate, ...patch }));
+  const pick = (term: Term) => (term === sale.term ? answer({ term }) : setConfirm(term));
+  return (
+    <div className="li" style={{ flexWrap: 'wrap', gap: 8 }}>
+      <span className="grow small" style={{ minWidth: 220 }}>
+        {name}, sold {dateLabel(sale.sellDate)}: buy date unknown, so we assumed {TERM_LABEL[sale.term]}. Room left assumes this. Was it{' '}
+        <button className="btn sm" type="button" onClick={() => pick('lt')}>Long-term</button>{' '}
+        <button className="btn sm" type="button" onClick={() => pick('st')}>Short-term</button>? Not sure?{' '}
+        <button className="btn sm ghost" type="button" onClick={() => setDating(true)}>Add buy date</button>
+      </span>
+      {confirm && (
+        <span className="stack small" style={{ gap: 6, width: '100%' }} role="group" aria-label="Confirm the term">
+          <span>{confirm === 'st'
+            ? "Only choose this if your contract note or broker P&L shows the shares were held under a year. If it's wrong, a move can create tax."
+            : "Only choose this if your contract note or broker P&L shows the shares were held over a year. If it's wrong, a move can create tax."}</span>
+          <span className="row" style={{ gap: 8 }}>
+            <button className="btn sm primary" type="button" onClick={() => { answer({ term: confirm }); setConfirm(null); }}>Yes, {TERM_LABEL[confirm]}</button>
+            <button className="btn sm" type="button" onClick={() => setConfirm(null)}>Cancel</button>
+          </span>
+        </span>
+      )}
+      {dating && (
+        <span className="row small" style={{ gap: 8, width: '100%' }}>
+          <input type="date" aria-label={`Buy date of ${name} sold ${dateLabel(sale.sellDate)}`} value={date} max={sale.sellDate < asOf ? sale.sellDate : asOf} onChange={(e) => setDate(e.target.value)} />
+          <button className="btn sm primary" type="button" disabled={!date || date > sale.sellDate} onClick={() => { answer({ buyDate: date }); setDating(false); }}>Save</button>
+          <button className="btn sm" type="button" onClick={() => setDating(false)}>Cancel</button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Sales whose buy date is unknown, this year and not covered by a Tax P&L: answer them, or change an answer. */
+function UnknownTerms({ memberId }: { memberId: string }) {
+  const { fam, state, update } = useApp();
+  const covered = pnlCoverage(state.brokerSummaries, fam.rules);
+  const elss = (isin: string) => { const s = fam.securities.get(isin); return !!s && isElssFund(s); };
+  const open = unknownTermSales(fam.ledger.realised, memberId, fam.rules, covered, elss);
+  const answered = answeredSales(fam.ledger.realised, state.termAnswers, memberId, fam.rules, covered);
+  if (open.length === 0 && answered.length === 0) return null;
+  return (
+    <div className="sheet" aria-label="Sales with an unknown buy date">
+      {open.map((s) => <UnknownTermRow key={`${s.account}|${s.isin}|${s.sellDate}`} sale={s} />)}
+      {answered.map(({ answer, label }) => (
+        <div className="li" key={`a|${answer.account}|${answer.isin}|${answer.sellDate}`}>
+          <span className="grow small">{fam.securities.get(answer.isin)?.name ?? answer.isin}, sold {dateLabel(answer.sellDate)}: {label}
+            {answer.buyDate ? ` (${dateLabel(answer.buyDate)})` : answer.term ? ` (${TERM_LABEL[answer.term]})` : ''}.</span>
+          <button className="btn sm ghost" type="button" onClick={() => update((s) => setTermAnswer(s, { memberId, account: answer.account, isin: answer.isin, sellDate: answer.sellDate }))}>Change</button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function PriceInput({ value, onCommit, label }: { value: Paise | undefined; onCommit: (p: Paise | undefined) => void; label: string }) {
   const [text, setText] = useState(value != null ? String(value / 100) : '');
@@ -44,6 +117,7 @@ function CapitalGains({ memberId, memberName }: { memberId: string; memberName: 
   return (
     <Section title="Capital gains this year" id="cg-h" action={shown.length > 0 ? <button className="btn" type="button" onClick={download}>Download CSV</button> : undefined}>
       {!hasSales && <p className="small muted">{sched.exemptGain !== 0 ? 'No taxable sales this year.' : 'No sales this year.'}</p>}
+      <UnknownTerms memberId={memberId} />
       {shown.map((sec) => (
         <div key={sec.key} className="stack" style={{ gap: 6 }}>
           <h3 style={{ fontSize: 15 }}>{sec.title}</h3>
@@ -106,11 +180,28 @@ export function MemberScreen({ id }: { id: string }) {
   const toggleNeed = (isin: string) => update((s) => ({ ...s, needSoon: { ...s.needSoon, [`${id}|${isin}`]: !s.needSoon[`${id}|${isin}`] } }));
   const myMoves = fam.moves.filter((m) => (m.kind === 'gift' ? m.toId === id || m.fromId === id : m.memberId === id));
   const myWarnings = fam.ledger.warnings.filter((w) => w.memberId === id);
-  const soon = holdings
-    // Only lots with a known date in a type that turns long-term: slab-taxed funds never do, and a guessed date says nothing.
-    .flatMap((h) => h.lots.filter((l) => l.term === 'st' && l.certain && l.longTermOn > asOf && (h.taxType === 'equity' || h.taxType === 'other_lt')).map((l) => ({ h, l })))
-    .sort((a, b) => a.l.longTermOn.localeCompare(b.l.longTermOn))
-    .slice(0, 6);
+  const nameOf = (isin: string) => fam.securities.get(isin)?.name ?? isin;
+  const oversold = visibleOversells(myWarnings, fam.rules, pnlCoverage(state.brokerSummaries, fam.rules));
+  const notes = [
+    ...holdingsNoteLines(fam.holdingsNotes, id, nameOf, hasYearPnl(state.brokerSummaries, fam.rules)),
+    ...oversold.now.map((g) => oversellLine(nameOf(g.isin), g)),
+  ];
+  const booked = bookedDisplay(year, fam.brokerAdjustments, id);
+  // Only lots with a known date in a type that turns long-term: slab-taxed funds never do, and a guessed date says nothing.
+  // Lots of one share bought on one day are one row.
+  const soonByDay = new Map<string, { h: (typeof holdings)[number]; l: { date: string; qty: number; gain: number | null; longTermOn: string } }>();
+  for (const h of holdings) {
+    if (h.taxType !== 'equity' && h.taxType !== 'other_lt') continue;
+    for (const l of h.lots) {
+      if (l.term !== 'st' || !l.certain || l.longTermOn <= asOf) continue;
+      const k = `${h.isin}|${l.date}`;
+      const x = soonByDay.get(k);
+      if (!x) { soonByDay.set(k, { h, l: { date: l.date, qty: l.qty, gain: l.gain, longTermOn: l.longTermOn } }); continue; }
+      x.l.qty += l.qty;
+      x.l.gain = x.l.gain == null || l.gain == null ? null : x.l.gain + l.gain;
+    }
+  }
+  const soon = [...soonByDay.values()].sort((a, b) => a.l.longTermOn.localeCompare(b.l.longTermOn)).slice(0, 6);
   const positions = state.positions.filter((p) => p.memberId === id);
   const mismatches = unitMismatches(
     id,
@@ -169,9 +260,10 @@ export function MemberScreen({ id }: { id: string }) {
           <div className="sheet">
             <div className="li"><span className="grow">Long-term gains (net)</span><span className="fig">{inr(year.ltNet)}</span></div>
             <div className="li"><span className="grow">Short-term gains (net)</span><span className="fig">{inr(year.stNet)}</span></div>
-            {(year.stLosses > 0 || year.ltLosses > 0) && (
-              <div className="li"><span className="grow muted">Losses set off</span><span className="fig">{inr(year.stLosses + year.ltLosses)}</span></div>
+            {booked.lossesSetOff > 0 && (
+              <div className="li"><span className="grow muted">Losses set off</span><span className="fig">{inr(booked.lossesSetOff)}</span></div>
             )}
+            {booked.adjustments.map((line) => <div className="li" key={line}><span className="grow muted small">{line}</span></div>)}
             <div className="li"><span className="grow muted">Tax on gains so far, with cess</span><span className={`fig ${year.tax > 0 ? 'bad' : ''}`}>{inr(year.tax)}</span></div>
             {(year.lossCarriedForward.st > 0 || year.lossCarriedForward.lt > 0) && (
               <div className="li"><span className="grow muted">Losses to carry forward</span><span className="fig">{inr(year.lossCarriedForward.st + year.lossCarriedForward.lt)}</span></div>
@@ -229,8 +321,19 @@ export function MemberScreen({ id }: { id: string }) {
         );
       })}
 
-      {myWarnings.length > 0 && (
-        <div className="banner warn"><ul className="warnlist grow">{myWarnings.map((w, i) => <li key={i}>{fam.securities.get(w.isin)?.name ?? w.isin}, {dateLabel(w.date)}: {w.message}</li>)}</ul></div>
+      {(notes.length > 0 || oversold.older.length > 0) && (
+        <div className="note stack" role="note" aria-label="About the imported files" style={{ gap: 8 }}>
+          <p style={{ margin: 0 }}>{notes.length > 0
+            ? "The imported files don't fully match the trade history. Here's how the figures handle it."
+            : "Some sales have no matching purchase history. This year's tax isn't affected."}</p>
+          {notes.length > 0 && <ul style={{ margin: 0, paddingLeft: 18 }}>{notes.map((n) => <li key={n}>{n}</li>)}</ul>}
+          {oversold.older.length > 0 && (
+            <details>
+              <summary>Older history gaps (no effect on this year's tax)</summary>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{oversold.older.map((w, i) => <li key={i}>{nameOf(w.isin)}, {dateLabel(w.date)}: {w.message}</li>)}</ul>
+            </details>
+          )}
+        </div>
       )}
       {mismatches.length > 0 && (
         <div className="banner warn">
@@ -267,6 +370,7 @@ export function MemberScreen({ id }: { id: string }) {
       {myMoves.length > 0 && (
         <Section title="Moves for this member" id="mv-h">
           <div className="sheet">{myMoves.map((m) => <MoveRow key={m.id} move={m} />)}</div>
+          <Disclaimer />
         </Section>
       )}
 

@@ -140,6 +140,8 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
         memberId: t.memberId,
         isin: t.isin,
         date: t.date,
+        account,
+        qty: remaining,
         message: `Sold ${(remaining / QTY_SCALE).toLocaleString('en-IN')} more units than the history shows were bought${account ? ` in ${account}` : ''}. Import older statements for exact gains.`,
       });
     }

@@ -3,7 +3,7 @@ import { autoLink } from './engine/links';
 import type { DatedMove, PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
 import type { RecommendationRecord } from './engine/records';
-import { TRIMMING_HOLDINGS_SOURCES } from './engine/openingLots';
+import { normAccount, TRIMMING_HOLDINGS_SOURCES } from './engine/openingLots';
 import { FY_2026_27 } from './engine/rules';
 import type { ISODate, Member, Paise, Qty, Security, TaxType, TermAnswer, Txn } from './engine/types';
 import type { BrokerSummary, ParsedPrice, ParseResult } from './parsers';
@@ -92,6 +92,17 @@ const isDate = (v: unknown) => typeof v === 'string' && ISO_DATE.test(v);
 /** A saved or restored term answer the engine can use: every key present, and a term or a buy date. */
 const validAnswer = (a: TermAnswer) => typeof a.memberId === 'string' && typeof a.account === 'string' && typeof a.isin === 'string'
   && isDate(a.sellDate) && (a.term === 'lt' || a.term === 'st' || isDate(a.buyDate));
+
+/**
+ * Saves the family's answer for one sale whose buy date is unknown, replacing any earlier answer for that sale (same
+ * member, ISIN, sale date and account, whatever its spaces and case). An answer with no term and no buy date clears it.
+ */
+export function setTermAnswer(state: AppState, answer: TermAnswer): AppState {
+  const same = (a: TermAnswer) => a.memberId === answer.memberId && a.isin === answer.isin && a.sellDate === answer.sellDate
+    && normAccount(a.account) === normAccount(answer.account);
+  const rest = (state.termAnswers ?? []).filter((a) => !same(a));
+  return { ...state, termAnswers: answer.term || answer.buyDate ? [...rest, answer] : rest };
+}
 
 /** Fills fields added after a copy was saved (older browser data or an account copy). Null if unusable. */
 export function normalizeState(s: AppState | null | undefined): AppState | null {

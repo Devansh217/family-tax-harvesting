@@ -170,6 +170,9 @@ export interface LedgerWarning {
   isin: string;
   date: ISODate;
   message: string;
+  /** The account the sale was in, and the units sold beyond what the history holds there. */
+  account?: string;
+  qty?: Qty;
 }
 
 export interface Ledger {

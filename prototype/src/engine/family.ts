@@ -1,7 +1,7 @@
 import { isElssFund } from './categories';
 import { addMonths, daysBetween, isLongTerm, longTermFrom } from './dates';
 import { buildLedger, effectiveCost, lotKey, lotTerms, prorate, saleTerms } from './ledger';
-import { APPROX_MARGIN, effectiveTxns, type HeldPosition } from './openingLots';
+import { APPROX_MARGIN, effectiveTxnsWithNotes, type CorporateActionNote, type HeldPosition, type TrimNote } from './openingLots';
 import { terGapFor } from './data/ter-gap';
 import { directTwin, type FundsMap } from './directTwin';
 import { giftTransferCost, ltRate, roundTripCost, slabRate, stRate, type TaxRules } from './rules';
@@ -123,6 +123,12 @@ export const isLaterBenefit = (m: Move) => m.kind === 'harvest_gain' || m.kind =
 export const taxFreeGainOf = (m: Move): Paise =>
   m.kind === 'harvest_gain' || m.kind === 'gift' ? m.gain : m.kind === 'switch_direct' ? m.taxFreeGain ?? 0 : 0;
 
+export interface HoldingsNotes {
+  trimmed: TrimNote[];
+  staleFiles: Array<{ memberId: string; account: string; asOf: ISODate }>;
+  corporateActions: CorporateActionNote[];
+}
+
 export interface MemberView {
   member: Member;
   /** Intraday and F&O income used in the tax figures; `intradayDetected` is what the tradebooks show. */
@@ -145,6 +151,8 @@ export interface FamilyView {
   ledger: Ledger;
   /** Corrections that make booked gains equal the broker's tax P&L where trade history is incomplete. */
   brokerAdjustments: BrokerAdjustment[];
+  /** What the holdings files changed: units that left, files older than the trades, units changed without a trade. */
+  holdingsNotes: HoldingsNotes;
   /** Realised gains used for tax: the ledger's plus any broker adjustments. */
   booked: Realised[];
   /** Gains the planned sales would realise. Their lots are already removed from `ledger.lots`. */
@@ -304,7 +312,8 @@ function harvestableQty(lots: Lot[], sec: Security, asOf: ISODate, rules: TaxRul
 }
 
 export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules): FamilyView {
-  const ledger = buildLedger(effectiveTxns(state.txns, state.positions ?? [], asOf, state.securities), state.securities, rules, state.termAnswers);
+  const { txns: effective, ...holdingsNotes } = effectiveTxnsWithNotes(state.txns, state.positions ?? [], asOf, state.securities);
+  const ledger = buildLedger(effective, state.securities, rules, state.termAnswers);
   const secs = new Map(state.securities.map((s) => [s.isin, s]));
   const moves: Move[] = [];
   // Dated moves: the family's picked days, by move id. Later entries for the same id win.
@@ -712,7 +721,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   const later = moves.filter(isLaterBenefit);
   const now = moves.filter((m) => !isLaterBenefit(m));
   return {
-    asOf, rules, members: views, moves, ledger, brokerAdjustments, booked, plannedRealised, securities: secs,
+    asOf, rules, members: views, moves, ledger, brokerAdjustments, holdingsNotes, booked, plannedRealised, securities: secs,
     totals: {
       freeRoom: sum((v) => v.plan.room.free),
       bonusFree: sum((v) => v.plan.bonus.free),

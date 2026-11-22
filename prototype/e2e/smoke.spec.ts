@@ -168,6 +168,38 @@ for (const size of SIZES) {
         await expect(page.getByRole('link', { name: /Priya/ }).first()).toBeVisible();
       });
 
+      test('member page: one quiet note, and an unknown-term sale answered short-term', async ({ page }) => {
+        // A synthetic family (e2e/fixtures): a ₹10,000 gain from a lot with a guessed date, sold this year, and Test
+        // Share B sold three times this year (and once last year) with no purchase history.
+        await open(page, 'family');
+        await page.locator('input[type="file"]').setInputFiles(new URL('./fixtures/unknown-term-family.json', import.meta.url).pathname);
+        await expect(page.getByText('Backup restored')).toBeVisible();
+        await open(page, 'member-p');
+        await expect(h1(page, 'Priya')).toBeVisible();
+        // One calm note, not a red list: this year's gaps grouped per share, older ones behind a closed toggle.
+        const note = page.getByRole('note', { name: 'About the imported files' });
+        await expect(note).toHaveCount(1);
+        await expect(page.locator('.banner.warn')).toHaveCount(0);
+        await expect(note.getByText('Test Share B: sold 12 more units than the history shows (Jul–Aug 2026).', { exact: false })).toBeVisible();
+        await expect(note.locator('li', { hasText: 'Test Share B: sold' })).toHaveCount(1);
+        await expect(note.locator('details')).not.toHaveAttribute('open', '');
+        await expect(note.getByText('Older history gaps (no effect on this year\'s tax)')).toBeVisible();
+        // The guessed-date gain counts long-term, so it uses room.
+        await expect(page.getByText('Free ₹1,15,000', { exact: true })).toBeVisible();
+        await expect(page.getByText(/Test Share A, sold 10 Jun 2026: buy date unknown, so we assumed long-term/)).toBeVisible();
+        await page.getByRole('button', { name: 'Short-term', exact: true }).click();
+        await expect(page.getByText('Only choose this if your contract note or broker P&L shows the shares were held under a year. If it\'s wrong, a move can create tax.')).toBeVisible();
+        // Nothing changes until confirmed.
+        await expect(page.getByText('Free ₹1,15,000', { exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Yes, short-term' }).click();
+        await expect(page.getByText('Free ₹1,25,000', { exact: true })).toBeVisible();
+        await expect(page.getByText(/Test Share A, sold 10 Jun 2026: Term set by you/)).toBeVisible();
+        await expectNoSideScroll(page);
+        // Change brings the question back and the room with it.
+        await page.getByRole('button', { name: 'Change', exact: true }).click();
+        await expect(page.getByText('Free ₹1,15,000', { exact: true })).toBeVisible();
+      });
+
       test('download a backup on Family', async ({ page }) => {
         await open(page, 'family');
         const [download] = await Promise.all([

@@ -58,8 +58,11 @@ export function decidingFiles(positions: HeldPosition[]): Map<string, DecidingFi
 /** Shares in an account's history that its newest holdings file doesn't list (or lists fewer of): they left the account. */
 export interface TrimNote { memberId: string; account: string; asOf: ISODate; isins: string[] }
 
-/** A share whose units changed without a trade (a bonus, split or demerger): the file's units are kept, the term isn't known. */
-export interface CorporateActionNote { memberId: string; isin: string; account: string }
+/**
+ * A share the history and its holdings file disagree on without a trade: `units` when the fill-in added or rescaled
+ * units (a bonus, split or demerger credit), `cost` when only the history's cost was lowered to the file's.
+ */
+export interface CorporateActionNote { memberId: string; isin: string; account: string; kind: 'units' | 'cost' }
 
 /** The transactions the ledger should replay. See `effectiveTxnsWithNotes`. */
 export function effectiveTxns(txns: Txn[], positions: HeldPosition[], asOf: ISODate, securities: PricedSecurity[] = []): Txn[] {
@@ -125,7 +128,7 @@ export function effectiveTxnsWithNotes(
     const r = fillIn(out, p, p.asOf ?? asOf, prices.get(p.isin));
     if (r.scaled) out = out.map((t) => r.scaled!.get(t) ?? t);
     added.push(...r.lots);
-    if (r.corporateAction) corporateActions.push({ memberId: p.memberId, isin: p.isin, account: p.account ?? '' });
+    if (r.corporateAction) corporateActions.push({ memberId: p.memberId, isin: p.isin, account: p.account ?? '', kind: r.corporateAction });
   }
   const filled = added.length ? [...out, ...added] : out;
   const { left, trimmed, staleFiles } = unitsThatLeft(out, filled, files);
@@ -202,7 +205,7 @@ function capHeldCost(lots: HeldPart[], keep: Qty, fileCost: Paise): Map<Txn, Pai
  *
  * Fill-in lots take the account label of the history's trades in that account, so one account is one ledger queue.
  */
-function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefined): { lots: Txn[]; scaled?: Map<Txn, Txn>; corporateAction?: true } {
+function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefined): { lots: Txn[]; scaled?: Map<Txn, Txn>; corporateAction?: CorporateActionNote['kind'] } {
   const sameHolding = (t: Txn) => t.memberId === p.memberId && t.isin === p.isin && normAccount(t.account) === normAccount(p.account);
   const all = out.filter(sameHolding);
   const history = all.filter((t) => t.date <= ref);
@@ -210,7 +213,7 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
   const sold = history.filter((t) => t.side === 'sell').reduce((a, t) => a + t.qty, 0);
 
   let scaled: Map<Txn, Txn> | undefined;
-  let corporateAction: true | undefined;
+  let corporateAction: CorporateActionNote['kind'] | undefined;
   let hist = history;
   if (p.cost != null) {
     const h = replayHeld(history, 0, ref);
@@ -225,7 +228,7 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
       && (up ? p.ltQty != null && h.ltQty > 0 && rescale(h.ltQty) === p.ltQty : p.ltQty == null || rescale(h.ltQty) === p.ltQty)) {
       scaled = new Map(history.map((t) => [t, { ...t, qty: rescale(t.qty) }]));
       hist = history.map((t) => scaled!.get(t)!);
-      corporateAction = true;
+      corporateAction = 'units';
     }
   }
 
@@ -239,7 +242,7 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
       scaled ??= new Map();
       for (const [t, amount] of cap) scaled.set(orig.get(t)!, { ...t, amount });
       hist = hist.map((t) => (cap.has(t) ? { ...t, amount: cap.get(t)! } : t));
-      corporateAction = true;
+      corporateAction ??= 'cost';
     }
   }
   if (opening <= 0) return { lots: [], scaled, corporateAction };
@@ -267,7 +270,7 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
   if (heldOpening > 0 && leftover <= 0) {
     // Nothing explains these units' cost: a bonus or demerger credit. Cost 0, term unknown.
     lots.push(guessed('opening-ca', heldOpening, 0));
-    corporateAction = true;
+    corporateAction = 'units';
     held = 0;
     unit = perUnit;
     total = Math.floor(unit * sale);
