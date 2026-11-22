@@ -67,7 +67,10 @@ export function effectiveTxns(txns: Txn[], positions: HeldPosition[], asOf: ISOD
 
 /** A demat CAS (NSDL / CDSL) lists every demat holding of the PAN, across brokers: a snapshot, not one more account. */
 // Shares (INE…) saved from a combined CAS before its demat rows were marked are demat rows too: a fund folio holds no shares.
-const isSnapshot = (p: HeldPosition) => p.source.startsWith('Demat CAS') || (p.source.startsWith('Combined CAS') && p.isin.startsWith('INE'));
+const isDematSnapshot = (p: HeldPosition) => p.source.startsWith('Demat CAS') || (p.source.startsWith('Combined CAS') && p.isin.startsWith('INE'));
+/** A platform's fund statement (Angel One) lists units held in folios; the fund CAS's folio purchases explain them. */
+const isFundSnapshot = (p: HeldPosition) => p.source.startsWith('Angel One fund holdings');
+const isSnapshot = (p: HeldPosition) => isDematSnapshot(p) || isFundSnapshot(p);
 const SNAPSHOT_ACCOUNT = 'Demat (CAS)';
 /** Units in a fund folio (from a fund CAS): a demat CAS never lists them, so they explain none of its units. */
 const isFolio = (t: Txn) => t.source.startsWith('Mutual fund CAS') || t.source.startsWith('Combined CAS');
@@ -94,7 +97,7 @@ function withSnapshots(txns: Txn[], positions: HeldPosition[], asOf: ISODate): T
   for (const p of snaps) {
     const ref = p.asOf ?? asOf;
     const explained = rest
-      .filter((t) => t.memberId === p.memberId && t.isin === p.isin && t.date <= ref && !isFolio(t))
+      .filter((t) => t.memberId === p.memberId && t.isin === p.isin && t.date <= ref && !(isDematSnapshot(p) && isFolio(t)))
       .reduce((a, t) => a + (t.side === 'buy' ? t.qty : -t.qty), 0);
     const keep = p.qty - Math.max(0, explained);
     const lot = saved.get(p);

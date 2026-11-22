@@ -32,12 +32,13 @@ export function parseAngelTrades(sheets: Sheet[]): ParseResult {
       const price = num(r[col(side === 'sell' ? 'Sell Price' : 'Buy Price')]);
       const d = date(r[col('Date')]);
       if ((side !== 'buy' && side !== 'sell') || segment !== 'CAPITAL' || !qty || qty <= 0 || price == null || price <= 0 || !d) { skipped++; continue; }
-      txns.push({ date: d, isin: `SYM:${name.toUpperCase()}`, name, side, qty: toQty(qty), amount: toPaise(price * qty) });
+      const ref = `SYM:${name.toUpperCase()}`;
+      txns.push({ date: d, isin: ref, ref, name, side, qty: toQty(qty), amount: toPaise(price * qty) });
     }
   }
   const dates = txns.map((t) => t.date).sort();
   return {
-    format: `Angel One trade history${dates.length ? ` · ${dates[0]} to ${dates.at(-1)}` : ''}`, txns, prices: [], skipped,
+    format: `Trade history · Angel One${dates.length ? ` · ${dates[0]} to ${dates.at(-1)}` : ''}`, txns, prices: [], skipped,
     warnings: txns.length ? [] : ['No share trades found in this Angel One file.'],
   };
 }

@@ -96,3 +96,23 @@ describe('share names file', () => {
     expect(r.byName).not.toHaveProperty('OLDCO'); // symbol no longer listed
   });
 });
+
+describe('share names: ambiguous names are left out', () => {
+  const rowN = (isin: string, sym: string, name: string, src = 'NSE') =>
+    `2026-11-13,2026-11-13,CM,${src},STK,1,${isin},${sym},EQ,,,,,${name},1,1,1,10,10,1,,10,,,1,1,1,F1,1,,,,,`;
+  it('drops a name two securities share (a DVR or rights entitlement), partly-paid lines, and a former name now used by another company', () => {
+    const nse = [HEAD,
+      rowN('INE001A01011', 'ABC', 'ABC LIMITED'), rowN('INE001A01029', 'ABCDVR', 'ABC LIMITED'),
+      rowN('INE155A01022', 'TMPV', 'TATA MOTORS PASSENGER VEHICLES LTD'), rowN('INE1TAE01010', 'TMCV', 'TATA MOTORS LIMITED'),
+      rowN('IN9002A01024', 'XYZPP', 'XYZ PARTLY PAID'), rowN('INE777A01011', 'SOLO', 'SOLO INDUSTRIES LTD'),
+    ].join('\n');
+    const changes = 'SYMBOL,OLD NAME OF THE COMPANY,NEW NAME OF THE COMPANY,EFFECTIVE DATE\nTMPV,Tata Motors Limited,Tata Motors Passenger Vehicles Limited,14-OCT-2025';
+    const r = parseShareNames([nse], changes);
+    expect(r.byName).not.toHaveProperty('ABCLIMITED');
+    expect(r.byName).not.toHaveProperty('TATAMOTORSLIMITED');
+    expect(r.byName).not.toHaveProperty('XYZPARTLYPAID');
+    expect(r.bySymbol).not.toHaveProperty('XYZPP');
+    expect(r.byName).toMatchObject({ SOLOINDUSTRIESLTD: 'INE777A01011', TATAMOTORSPASSENGERVEHICLESLTD: 'INE155A01022' });
+    expect(r.bySymbol).toMatchObject({ ABC: 'INE001A01011', ABCDVR: 'INE001A01029' });
+  });
+});

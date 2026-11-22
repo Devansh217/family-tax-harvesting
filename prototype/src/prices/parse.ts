@@ -97,9 +97,15 @@ export function mergePriceFiles(parts: Array<{ date: ISODate | null; prices: Map
  */
 export interface SharesFile { date: ISODate; byName: Record<string, string>; bySymbol: Record<string, string> }
 
-/** Names and symbols from NSE and BSE bhavcopies (NSE first), plus former names from NSE's namechange.csv. */
+/**
+ * Names and symbols from NSE and BSE bhavcopies, plus former names from NSE's namechange.csv. Only shares and exchange
+ * funds (INE / INF ISINs; partly-paid, bond and gold-bond lines are left out). A name or symbol that fits more than one
+ * ISIN (a DVR or rights entitlement named like its parent, a former name now used by another company) is left out, so
+ * it stays unmatched rather than landing on the wrong security.
+ */
 export function parseShareNames(bhavcopies: string[], nameChanges?: string): Pick<SharesFile, 'byName' | 'bySymbol'> {
-  const byName: Record<string, string> = {}, bySymbol: Record<string, string> = {};
+  const names = new Map<string, Set<string>>(), symbols = new Map<string, Set<string>>();
+  const add = (m: Map<string, Set<string>>, k: string, isin: string) => { if (k) m.set(k, (m.get(k) ?? new Set()).add(isin)); };
   for (const csv of bhavcopies) {
     const rows = parseCSV(csv);
     const head = rows[0] ?? [];
@@ -107,18 +113,20 @@ export function parseShareNames(bhavcopies: string[], nameChanges?: string): Pic
     if (iIsin < 0) continue;
     for (const r of rows.slice(1)) {
       const isin = r[iIsin] ?? '';
-      if (!/^IN[A-Z0-9]{10}$/.test(isin) || (iSeg >= 0 && r[iSeg] !== 'CM')) continue;
-      const sym = nameKey(r[iSym] ?? ''), name = nameKey(r[iName] ?? '');
-      if (sym && !(sym in bySymbol)) bySymbol[sym] = isin;
-      if (name && !(name in byName)) byName[name] = isin;
+      if (!/^IN[EF][A-Z0-9]{9}$/.test(isin) || (iSeg >= 0 && r[iSeg] !== 'CM')) continue;
+      add(symbols, nameKey(r[iSym] ?? ''), isin);
+      add(names, nameKey(r[iName] ?? ''), isin);
     }
   }
+  const unique = (m: Map<string, Set<string>>) => new Map([...m].filter(([, v]) => v.size === 1).map(([k, v]) => [k, [...v][0]!]));
+  const bySymbolMap = unique(symbols);
   if (nameChanges) {
     for (const r of parseCSV(nameChanges).slice(1)) {
-      const isin = bySymbol[nameKey(r[0] ?? '')];
-      const old = nameKey(r[1] ?? '');
-      if (isin && old && !(old in byName)) byName[old] = isin;
+      const sym = nameKey(r[0] ?? '');
+      const isins = symbols.get(sym);
+      // A former name joins the same pool, so one that is now another company's name becomes ambiguous and drops out.
+      for (const isin of isins ?? []) add(names, nameKey(r[1] ?? ''), isin);
     }
   }
-  return { byName, bySymbol };
+  return { byName: Object.fromEntries(unique(names)), bySymbol: Object.fromEntries(bySymbolMap) };
 }

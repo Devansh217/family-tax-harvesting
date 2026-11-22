@@ -192,18 +192,23 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
   const s: AppState = structuredClone(state);
   const importId = uid('imp');
   const seen = new Map<string, number>();
-  const existing = new Set(s.txns.map((t) => t.id));
+  const existing = new Map(s.txns.map((t) => [t.id, t]));
   let added = 0;
 
   const txns = opts.checkOnly ? [] : r.txns;
   for (const t of r.txns) upsertSecurity(s.securities, t);
   for (const t of txns) {
     const isin = resolveIsin(t.isin, t.name, s.securities);
-    const base = `${memberId}|${isin}|${t.date}|${t.side}|${t.qty}|${t.amount}`;
+    const base = `${memberId}|${t.ref ?? isin}|${t.date}|${t.side}|${t.qty}|${t.amount}`;
     const n = (seen.get(base) ?? 0) + 1;
     seen.set(base, n);
     const id = `${base}|${n}`;
-    if (existing.has(id)) continue;
+    const prior = existing.get(id);
+    if (prior) {
+      // The same row again: a name matched now upgrades the trade saved by name; a match is never undone.
+      if (prior.isin.startsWith('SYM:') && !isin.startsWith('SYM:')) prior.isin = isin;
+      continue;
+    }
     const account = t.account ?? opts.account ?? '';
     s.txns.push({ id, memberId, isin, date: t.date, side: t.side, qty: t.qty, amount: t.amount, source: r.format, importId, account });
     added++;

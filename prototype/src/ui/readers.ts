@@ -28,7 +28,8 @@ function loadShares(): Promise<SharesFile | null> {
   sharesPromise ??= fetch('./prices/shares.json', { cache: 'no-cache' })
     .then((r) => (r.ok ? r.json() : null))
     .then((j: SharesFile | null) => (j && j.byName && j.bySymbol ? j : null))
-    .catch(() => null);
+    .catch(() => null)
+    .then((j) => { if (!j) sharesPromise = null; return j; }); // a failed fetch is tried again on the next file
   return sharesPromise;
 }
 

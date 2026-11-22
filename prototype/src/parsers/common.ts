@@ -93,6 +93,9 @@ export interface ParsedTxn {
   amount: Paise;
   /** Folio or demat account when the statement says, e.g. "Folio 1234567/89". */
   account?: string;
+  /** For a share named without its ISIN: the name as written (`SYM:<NAME>`). The transaction id uses it, so the same
+   * row keeps one id whether or not the name was matched to an ISIN at import. */
+  ref?: string;
 }
 
 export interface ParsedPrice {

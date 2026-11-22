@@ -27,10 +27,10 @@ describe('Angel One trade history', () => {
   it('is recognised and read: delivery trades of shares, by company name, priced by side', () => {
     expect(isAngelTrades([trades])).toBe(true);
     const r = parseAngelTrades([trades]);
-    expect(r.format).toMatch(/^Angel One trade history/);
+    expect(r.format).toMatch(/^Trade history · Angel One/); // a tradebook, like Zerodha's
     expect(r.txns).toEqual([
-      { date: '2026-05-04', isin: 'SYM:EXAMPLE INDUSTRIES LTD', name: 'EXAMPLE INDUSTRIES LTD', side: 'buy', qty: 50_000, amount: 5_195_25 },
-      { date: '2026-11-09', isin: 'SYM:SAMPLE SYSTEMS LTD', name: 'SAMPLE SYSTEMS LTD', side: 'sell', qty: 10_000, amount: 5_980_00 },
+      { date: '2026-05-04', isin: 'SYM:EXAMPLE INDUSTRIES LTD', ref: 'SYM:EXAMPLE INDUSTRIES LTD', name: 'EXAMPLE INDUSTRIES LTD', side: 'buy', qty: 50_000, amount: 5_195_25 },
+      { date: '2026-11-09', isin: 'SYM:SAMPLE SYSTEMS LTD', ref: 'SYM:SAMPLE SYSTEMS LTD', name: 'SAMPLE SYSTEMS LTD', side: 'sell', qty: 10_000, amount: 5_980_00 },
     ]);
     expect(r.skipped).toBe(1); // the futures row
   });

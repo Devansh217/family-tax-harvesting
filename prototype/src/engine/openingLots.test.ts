@@ -145,6 +145,15 @@ describe('a demat CAS on top of broker files', () => {
     expect(casUnits(out)).toBe(0);
   });
 
+  it('an Angel One fund statement is a snapshot the CAS folios explain', () => {
+    const angelLot = (units: number) => trade('buy', '2025-10-22', units, 50, { id: `a|X|opening|ang1`, account: 'Angel One', estimated: true, source: 'Opening balance (estimated date)' });
+    const angelPos = (units: number): HeldPosition => ({ memberId: 'a', isin: 'X', account: 'Angel One', qty: q(units), asOf: CAS_DATE, source: 'Angel One fund holdings', importId: 'ang1' });
+    const folio = (units: number) => trade('buy', '2023-04-10', units, 40, { account: 'Folio 1881', source: 'Mutual fund CAS (CAMS / KFintech)' });
+    const angelUnits = (txns: Txn[]) => txns.filter((t) => t.account === 'Angel One').reduce((a, t) => a + t.qty, 0);
+    expect(angelUnits(effectiveTxns([folio(100), angelLot(100)], [angelPos(100)], ASOF))).toBe(0);
+    expect(angelUnits(effectiveTxns([folio(40), angelLot(100)], [angelPos(100)], ASOF))).toBe(q(60));
+  });
+
   it('leaves a CAS lot alone when nothing else holds that security', () => {
     const out = effectiveTxns([casLot(10)], [casPos(10)], ASOF);
     expect(casUnits(out)).toBe(q(10));

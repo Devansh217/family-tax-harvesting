@@ -42,20 +42,28 @@ if (fresh && (!prevLatest || fresh.date > prevLatest.date)) {
 
 const out = join(siteDir, 'prices');
 mkdirSync(out, { recursive: true });
+/** Publishes the live site's copy (fetched as prev-<name>) again, so a failed source never removes a file. */
+function carryOver(name: string) {
+  const prev = read(join(inDir!, `prev-${name}`));
+  if (prev && prev.trim().startsWith('{')) { writeFileSync(join(out, name), prev); console.log(`${name}: kept the live copy`); }
+  else console.log(`${name}: none today and no live copy`);
+}
 if (latest) writeFileSync(join(out, 'latest.json'), JSON.stringify(latest));
 if (previous) writeFileSync(join(out, 'previous.json'), JSON.stringify(previous));
 // Fund categories decide each fund's tax type in the app. Only written when today's NAV file parsed.
 const nav = navText ? parseAmfiNav(navText) : null;
-if (navText && nav?.date) {
-  const funds: FundsFile = { date: nav.date, funds: parseAmfiFunds(navText) };
+const funds: FundsFile | null = navText && nav?.date ? { date: nav.date, funds: parseAmfiFunds(navText) } : null;
+if (funds && Object.keys(funds.funds).length) {
   writeFileSync(join(out, 'funds.json'), JSON.stringify(funds));
   console.log(`funds: ${Object.keys(funds.funds).length} with categories`);
-}
-// Share names and symbols for statements without ISINs. Only written when a bhavcopy came in today.
-const bhav = [nseCsv ? readFileSync(join(nseDir, nseCsv), 'utf8') : null, bseText].filter((x): x is string => !!x);
-if (bhav.length && fresh) {
-  const shares: SharesFile = { date: fresh.date, ...parseShareNames(bhav, read(join(inDir, 'namechange.csv')) ?? undefined) };
+} else carryOver('funds.json');
+// Share names and symbols for statements without ISINs. Written fresh only when both exchanges' bhavcopies and the
+// name changes came in, so a partial day never publishes a thinner list; otherwise yesterday's is published again.
+const nseText = nseCsv ? readFileSync(join(nseDir, nseCsv), 'utf8') : null;
+const changes = read(join(inDir, 'namechange.csv'));
+if (nseText && bseText && changes && nse?.date) {
+  const shares: SharesFile = { date: nse.date, ...parseShareNames([nseText, bseText], changes) };
   writeFileSync(join(out, 'shares.json'), JSON.stringify(shares));
   console.log(`shares: ${Object.keys(shares.byName).length} names, ${Object.keys(shares.bySymbol).length} symbols`);
-}
+} else carryOver('shares.json');
 console.log(latest ? `prices: ${latest.date} from ${latest.source}, ${Object.keys(latest.prices).length} securities; previous ${previous?.date ?? 'none'}` : 'prices: none available');

@@ -18,7 +18,7 @@ export function resolveNames(r: ParseResult, shares: Pick<SharesFile, 'byName' |
   const txns = r.txns.map((t) => ({ ...t, isin: fix(t.isin, t.name) }));
   const prices = r.prices.map((p) => ({ ...p, isin: fix(p.isin, p.name) }));
   const warnings = missed.size
-    ? [...r.warnings, `Not matched to a listed share yet: ${[...missed].join(', ')}. These are matched when a statement with their ISIN is imported (a renamed or delisted company may need its old statements).`]
+    ? [...r.warnings, `Not matched to a listed share yet: ${[...missed].join(', ')}. Their trades are kept by name; import this file again later, or a statement with their ISIN, to match them.`]
     : r.warnings;
   return { ...r, txns, prices, warnings };
 }
