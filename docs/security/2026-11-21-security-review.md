@@ -44,7 +44,7 @@ dependency. No secret has ever been committed. The real risks are:
 | M4 | Medium | Sign-out wipes the browser copy even when the last save failed | Open |
 | M5 | Medium | Admin two-factor: whoever enrols first wins; enforcement not yet tested end to end | Open |
 | M6 | Medium | A malformed backup file restores, crashes the screens and is saved over the family | **Fixed** |
-| M7 | Medium | Live project is one migration behind; season cron runs daily with no `alerts` function or Vault secrets | Open |
+| M7 | Medium | Live project is one migration behind; season cron runs daily with no `alerts` function or Vault secrets | **Fixed on live** (22 Nov) |
 | L1 | Low | `profiles`: `authenticated` keeps Supabase's default INSERT/DELETE/TRUNCATE grants; `handle_new_user` executable by `anon` | Open |
 | L2 | Low | `season_alert_families` view (emails and envelopes) lives in the API-exposed `public` schema | Open |
 | L3 | Low | No rate limits on the functions; sign-ups are open | Open |
@@ -319,6 +319,19 @@ logs.
 
 The beta-setup guide's deploy order should say "migrations before functions".
 
+**Done on the live project (22 Nov 2026, with the founder's go-ahead):**
+- Migration `20261215000400` was applied exactly as in the repo, in one transaction. It is recorded in
+  `supabase_migrations.schema_migrations` under the same version and name, so `supabase db push` sees nothing to do.
+- Checked afterwards: the view now filters on `beta_invites`; only `postgres` and `service_role` can read it; an
+  anonymous `GET` still returns 401.
+- `cron.unschedule('season-alerts')` ran, and no cron jobs remain.
+- **To turn season alerts on later:**
+  1. Set the Vault secrets `alerts_url` and `alerts_secret`.
+  2. Deploy `alerts`.
+  3. Re-run the `cron.schedule('season-alerts', …)` statement from `20261215000100_season_cron.sql` in the SQL editor.
+
+  Re-applying that whole migration also works: the view and extensions are idempotent.
+
 ---
 
 ## Low
@@ -554,9 +567,9 @@ served from the app's origin again.
 | Advisor: extension in public (WARN) | `pg_net` is in `public`. Low: move it to `extensions` when convenient (needs the cron job recreated) |
 | Advisor: leaked password protection off (WARN) | Not applicable: email/password sign-in is off (Google only), and the check is a paid-plan feature |
 | Performance advisor | No findings |
-| Migrations | Up to `20261215000300`; **`000400` missing** → M7 |
+| Migrations | Were up to `20261215000300`, with `000400` missing → M7. **Now `000400`** (applied 22 Nov) |
 | Edge functions | `family` v3, `admin` v3, both `verify_jwt: true`; deployed source matches `main`. `alerts` not deployed → M7 |
-| Cron / Vault | `season-alerts` active daily; Vault has no secrets → M7 |
+| Cron / Vault | `season-alerts` was active daily with no Vault secrets → M7. **Unscheduled 22 Nov** |
 | Admin 2FA | 1 verified TOTP factor for the 1 admin → M5(a) closed |
 | Storage | No buckets |
 | Grants | `anon` has no table grants. `authenticated`: `admin_reads` and `season_log` SELECT; `profiles` and `family_data` all → L1, H1 |
@@ -574,7 +587,7 @@ All are covered by tests. `npm test` passes (392 tests), and so does `tsc --noEm
 ## Founder to-do, in order
 
 1. **H1:** drop `family_data` (5 minutes, SQL editor).
-2. **M7:** apply migration `000400`, and unschedule `season-alerts` until `alerts` is deployed.
+2. ~~**M7:** apply migration `000400`, and unschedule `season-alerts` until `alerts` is deployed.~~ Done 22 Nov.
 3. **M5:** run the 2FA checks (TOTP is already enrolled).
 4. **M2:** turn on branch protection for `main`, and move `SUPABASE_DB_URL` into a `backup` environment.
 5. **H3:** fix the About and meta wording (a small copy change; can ride on PR #7).
