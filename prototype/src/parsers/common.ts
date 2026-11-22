@@ -79,6 +79,9 @@ export function classifyByIsin(isin: string): Pick<Security, 'taxType' | 'listed
 }
 
 /** A stable key for securities that arrive without an ISIN, matched by symbol. */
+/** A company name or symbol for matching: capitals and digits only, so "Ami Organics Ltd." and "AMI ORGANICS LTD" meet. */
+export const nameKey = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
 export const symbolKey = (symbol: string) => `SYM:${symbol.trim().toUpperCase().replace(/[-\s]+(EQ|BE|BZ)$/, '')}`;
 
 export interface ParsedTxn {
@@ -90,6 +93,9 @@ export interface ParsedTxn {
   amount: Paise;
   /** Folio or demat account when the statement says, e.g. "Folio 1234567/89". */
   account?: string;
+  /** For a share named without its ISIN: the name as written (`SYM:<NAME>`). The transaction id uses it, so the same
+   * row keeps one id whether or not the name was matched to an ISIN at import. */
+  ref?: string;
 }
 
 export interface ParsedPrice {

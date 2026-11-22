@@ -75,6 +75,25 @@ describe('importing', () => {
     expect(h.qty).toBe(63_0000);
   });
 
+  it('re-importing a file whose names now match upgrades its trades instead of adding them again', () => {
+    const row = (isin: string) => ({ date: '2024-06-01', isin, ref: 'SYM:EXAMPLE LTD', name: 'EXAMPLE LTD', side: 'buy' as const, qty: 10_0000, amount: 10_000_00 });
+    const file = (isin: string) => ({ format: 'Trade history · Angel One', warnings: [], skipped: 0, prices: [], txns: [row(isin)] });
+    let s = applyImport(withMember(), 'a', 'angel.xlsx', file('SYM:EXAMPLE LTD'), { account: 'Angel One' });
+    s = applyImport(s, 'a', 'angel.xlsx', file('INE000A01011'), { account: 'Angel One' });
+    expect(s.txns.map((t) => t.isin)).toEqual(['INE000A01011']);
+    // And the other way round: a later import that could not match keeps the matched trade, once.
+    s = applyImport(s, 'a', 'angel.xlsx', file('SYM:EXAMPLE LTD'), { account: 'Angel One' });
+    expect(s.txns.map((t) => t.isin)).toEqual(['INE000A01011']);
+  });
+
+  it('a later file that matches a name also upgrades trades another file saved by that name', () => {
+    const t = (isin: string, side: 'buy' | 'sell', date: string) => ({ date, isin, ref: 'SYM:EXAMPLE LTD', name: 'EXAMPLE LTD', side, qty: 10_0000, amount: 10_000_00 });
+    const file = (txns: ReturnType<typeof t>[]) => ({ format: 'Trade history · Angel One', warnings: [], skipped: 0, prices: [], txns });
+    let s = applyImport(withMember(), 'a', 'fy24.xlsx', file([t('SYM:EXAMPLE LTD', 'buy', '2024-06-01')]), { account: 'Angel One' });
+    s = applyImport(s, 'a', 'fy26.xlsx', file([t('INE000A01011', 'sell', '2026-06-01')]), { account: 'Angel One' });
+    expect(s.txns.map((x) => x.isin)).toEqual(['INE000A01011', 'INE000A01011']);
+  });
+
   it('removing an import removes its transactions', () => {
     let s = applyImport(withMember(), 'a', 'tb.csv', parse(tradebook));
     s = removeImport(s, s.imports[0]!.id);

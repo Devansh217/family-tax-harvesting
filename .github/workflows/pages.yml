@@ -38,6 +38,8 @@ jobs:
           bash scripts/fetch-prices.sh "$px"
           curl -sfL "${{ steps.pages.outputs.base_url }}/prices/latest.json" -o "$px/prev-latest.json" || true
           curl -sfL "${{ steps.pages.outputs.base_url }}/prices/previous.json" -o "$px/prev-previous.json" || true
+          curl -sfL "${{ steps.pages.outputs.base_url }}/prices/funds.json" -o "$px/prev-funds.json" || true
+          curl -sfL "${{ steps.pages.outputs.base_url }}/prices/shares.json" -o "$px/prev-shares.json" || true
           npx vite-node scripts/build-prices.ts "$px" dist
       # The app at the site root. The old single-file v0.1 is no longer published: it shared this origin with the
       # encrypted browser copy and had no Content Security Policy (secure storage spec §5.7). Its source stays in the repo.

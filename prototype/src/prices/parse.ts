@@ -1,5 +1,5 @@
 import type { ISODate, Paise } from '../engine/types';
-import { parseCSV, parseDate } from '../parsers/common';
+import { nameKey, parseCSV, parseDate } from '../parsers/common';
 
 /** Published nightly at `prices/latest.json` (and the day before at `prices/previous.json`). Prices in paise. */
 export interface PriceFile {
@@ -89,4 +89,44 @@ export function mergePriceFiles(parts: Array<{ date: ISODate | null; prices: Map
     for (const [isin, v] of p.prices) if (!(isin in prices)) prices[isin] = v;
   });
   return date ? { date, source: used.join(', '), prices } : null;
+}
+
+/**
+ * Published nightly at `prices/shares.json`: listed shares by name and by symbol, for statements that name a company
+ * but give no ISIN (Angel One's trade history). Names are `nameKey`s; former names come from NSE's name changes.
+ */
+export interface SharesFile { date: ISODate; byName: Record<string, string>; bySymbol: Record<string, string> }
+
+/**
+ * Names and symbols from NSE and BSE bhavcopies, plus former names from NSE's namechange.csv. Only shares and exchange
+ * funds (INE / INF ISINs; partly-paid, bond and gold-bond lines are left out). A name or symbol that fits more than one
+ * ISIN (a DVR or rights entitlement named like its parent, a former name now used by another company) is left out, so
+ * it stays unmatched rather than landing on the wrong security.
+ */
+export function parseShareNames(bhavcopies: string[], nameChanges?: string): Pick<SharesFile, 'byName' | 'bySymbol'> {
+  const names = new Map<string, Set<string>>(), symbols = new Map<string, Set<string>>();
+  const add = (m: Map<string, Set<string>>, k: string, isin: string) => { if (k) m.set(k, (m.get(k) ?? new Set()).add(isin)); };
+  for (const csv of bhavcopies) {
+    const rows = parseCSV(csv);
+    const head = rows[0] ?? [];
+    const iIsin = head.indexOf('ISIN'), iSym = head.indexOf('TckrSymb'), iName = head.indexOf('FinInstrmNm'), iSeg = head.indexOf('Sgmt');
+    if (iIsin < 0) continue;
+    for (const r of rows.slice(1)) {
+      const isin = r[iIsin] ?? '';
+      if (!/^IN[EF][A-Z0-9]{9}$/.test(isin) || (iSeg >= 0 && r[iSeg] !== 'CM')) continue;
+      add(symbols, nameKey(r[iSym] ?? ''), isin);
+      add(names, nameKey(r[iName] ?? ''), isin);
+    }
+  }
+  const unique = (m: Map<string, Set<string>>) => new Map([...m].filter(([, v]) => v.size === 1).map(([k, v]) => [k, [...v][0]!]));
+  const bySymbolMap = unique(symbols);
+  if (nameChanges) {
+    for (const r of parseCSV(nameChanges).slice(1)) {
+      const sym = nameKey(r[0] ?? '');
+      const isins = symbols.get(sym);
+      // A former name joins the same pool, so one that is now another company's name becomes ambiguous and drops out.
+      for (const isin of isins ?? []) add(names, nameKey(r[1] ?? ''), isin);
+    }
+  }
+  return { byName: Object.fromEntries(unique(names)), bySymbol: Object.fromEntries(bySymbolMap) };
 }
