@@ -219,7 +219,8 @@ describe('the newest holdings file trims units that left the account', () => {
   });
 
   it('removes the oldest units first and keeps the newest', () => {
-    const { txns } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 10, 500), trade('buy', '2026-05-04', 5, 1500)], [file(5)], ASOF);
+    // The file's cost matches the newest 5 (₹7,500), so nothing is capped.
+    const { txns } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 10, 500), trade('buy', '2026-05-04', 5, 1500)], [file(5, { cost: rs(7_500) })], ASOF);
     expect(left(txns)).toMatchObject([{ qty: q(10) }]);
     expect(ledgerOf(txns).lots.get('a|X|Zerodha')).toMatchObject([{ date: '2026-05-04', qty: q(5), cost: rs(7_500) }]);
   });
@@ -360,12 +361,49 @@ describe('fill-in on every compute: cost never stacks', () => {
     const out = effectiveTxns([savedLot(100, 5_000)], [file(100, undefined, 5_000)], ASOF);
     expect(out.find((t) => t.id === 'a|X|opening|imp1')).toBeUndefined();
     expect(heldQty(out)).toBe(q(100));
-    // An older file's lot for a share the newest file doesn't list is dropped too: the newest file decides.
+    // An older file's lot for a share the newest file doesn't list is dropped too: when the newest file may trim,
+    // the share is held at 0; when it can't, the older file's units still fill in, once.
     const older = file(100, undefined, 5_000, { importId: 'imp0', asOf: '2026-03-31' });
+    const newer = file(10, 10, 1_000, { isin: 'Y' });
+    const trims = effectiveTxns([savedLot(100, 5_000, 'imp0')], [older, newer], ASOF);
+    expect(trims.find((t) => t.id === 'a|X|opening|imp0')).toBeUndefined();
+    expect(heldQty(trims)).toBe(0);
+    const keeps = effectiveTxns([savedLot(100, 5_000, 'imp0')], [older, { ...newer, canTrim: false }], ASOF);
+    expect(keeps.find((t) => t.id === 'a|X|opening|imp0')).toBeUndefined();
+    expect(heldQty(keeps)).toBe(q(100));
+    expect(heldCost(keeps)).toBe(rs(5_000));
+  });
+
+  it('a newer file that can\u2019t trim still lets an older file fill in what it doesn\u2019t list, but decides what it does list', () => {
+    const older = [file(100, undefined, 5_000, { importId: 'imp0', asOf: '2026-03-31' }), file(30, 30, 3_000, { isin: 'Y', importId: 'imp0', asOf: '2026-03-31' })];
     const newer = file(10, 10, 1_000, { isin: 'Y', canTrim: false });
-    const out2 = effectiveTxns([savedLot(100, 5_000, 'imp0')], [older, newer], ASOF);
-    expect(out2.find((t) => t.id === 'a|X|opening|imp0')).toBeUndefined();
-    expect(heldQty(out2)).toBe(0);
+    const out = effectiveTxns([], [...older, newer], ASOF);
+    expect(heldQty(out)).toBe(q(100));
+    expect(heldQty(out, 'Y')).toBe(q(10));
+  });
+
+  it('1:1 bonus on a holding still all short-term is not taken for a split', () => {
+    // Bought 10 at ₹1,000 in March 2026; the file shows 20, none long-term, ₹10,000 in all. A split would show the same,
+    // so the 10 new units take cost 0 and an unknown term rather than the March date.
+    const { txns, corporateActions } = effectiveTxnsWithNotes([trade('buy', '2026-03-01', 10, 1000)], [file(20, 0, 10_000)], ASOF);
+    expect(openings(txns)).toEqual([expect.objectContaining({ id: 'a|X|Zerodha|opening-ca', qty: q(10), amount: 0, estimated: true })]);
+    expect(lotsOf(txns).filter((l) => !l.estimated)).toMatchObject([{ date: '2026-03-01', qty: q(10), cost: rs(10_000) }]);
+    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'X', account: 'Zerodha' }]);
+  });
+
+  it('a demerger where the broker splits the cost: the parent\u2019s held cost is capped at the file\u2019s', () => {
+    // Bought 10 X at ₹1,000. The file: X 10 at ₹7,000 in all, Y 10 at ₹3,000. X's lot keeps its date at ₹7,000.
+    const files = [file(10, 10, 7_000), file(10, 10, 3_000, { isin: 'Y' })];
+    const { txns, corporateActions } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 10, 1000)], files, ASOF);
+    expect(lotsOf(txns)).toMatchObject([{ date: '2024-01-10', qty: q(10), cost: rs(7_000) }]);
+    expect(heldCost(txns, 'Y')).toBe(rs(3_000));
+    expect(corporateActions).toContainEqual({ memberId: 'a', isin: 'X', account: 'Zerodha' });
+  });
+
+  it('a consolidation whose cost is just under the history\u2019s is capped at the file\u2019s', () => {
+    // 50 at ₹200 (₹10,000); the file shows 10 at ₹9,950 in all, within 1%: one lot of 10 at ₹9,950.
+    const { txns } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 50, 200)], [file(10, 10, 9_950)], ASOF);
+    expect(lotsOf(txns)).toMatchObject([{ date: '2024-01-10', qty: q(10), cost: rs(9_950) }]);
   });
 
   it('a holdings file with no date (saved before files were dated) still fills in, dated today, and never trims', () => {
@@ -451,6 +489,10 @@ describe('fill-in on every compute: cost never stacks', () => {
       { name: 'older units', txns: [trade('buy', '2026-05-04', 10, 1500)], files: [file(35, 25, 42_000)] },
       { name: 'sold older units', txns: [trade('sell', '2026-06-01', 20, 900)], files: [file(30, 30, 18_000)] },
       { name: 'cheap history', txns: [trade('buy', '2026-05-04', 10, 500)], files: [file(35, 25, 42_000)] },
+      { name: 'short-term bonus', txns: [trade('buy', '2026-03-01', 10, 1000)], files: [file(20, 0, 10_000)] },
+      { name: 'demerger, cost split', txns: [trade('buy', '2024-01-10', 10, 1000)], files: [file(10, 10, 7_000), file(10, 10, 3_000, { isin: 'Y' })] },
+      { name: 'consolidation under cost', txns: [trade('buy', '2024-01-10', 50, 200)], files: [file(10, 10, 9_950)] },
+      { name: 'part sold, cost split', txns: [trade('buy', '2024-01-10', 10, 1000), trade('buy', '2025-01-10', 10, 1200), trade('sell', '2026-06-01', 5, 1500)], files: [file(15, 15, 12_000)] },
     ];
     for (const f of fixtures) {
       const out = effectiveTxns(f.txns, f.files, ASOF);

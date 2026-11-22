@@ -92,10 +92,11 @@ export function effectiveTxnsWithNotes(
   const files = decidingFiles(positions);
   const acctKey = (memberId: string, account?: string) => `${memberId}|${normAccount(account)}`;
   const isHoldingsFile = (p: HeldPosition) => TRIMMING_HOLDINGS_SOURCES.includes(p.source);
-  // An older file's positions for an account with a newer dated file count for nothing.
+  // An older file's positions for an account with a newer dated file count for nothing, unless that file can't trim
+  // and doesn't list the share: a file only drops units when it may trim.
   const counts = (p: HeldPosition) => {
     const f = isHoldingsFile(p) ? files.get(acctKey(p.memberId, p.account)) : undefined;
-    return !f || f.positions.includes(p);
+    return !f || f.positions.includes(p) || (!f.canTrim && !f.positions.some((x) => x.isin === p.isin));
   };
   // Holdings files fill in every row; other statements only rows with cost and long-term units.
   const fills = positions.filter((p) => p.qty > 0 && counts(p) && (isHoldingsFile(p) || (p.cost != null && p.ltQty != null)));
@@ -126,12 +127,12 @@ const SPLIT_COST_TOLERANCE = 0.01;
  * What the history still holds on the file's date, first in first out, after `older` units bought before it took the
  * first sales. `unmatched` counts units sold that nothing held.
  */
-function replayHeld(history: Txn[], older: Qty, ref: ISODate): { qty: Qty; cost: Paise; ltQty: Qty; unmatched: Qty } {
-  const queue: Array<{ qty: Qty; cost: Paise; date: ISODate; older?: true }> = older > 0 ? [{ qty: older, cost: 0, date: '', older: true }] : [];
+function replayHeld(history: Txn[], older: Qty, ref: ISODate): { qty: Qty; cost: Paise; ltQty: Qty; unmatched: Qty; lots: HeldPart[] } {
+  const queue: Array<HeldPart & { older?: true }> = older > 0 ? [{ qty: older, cost: 0, date: '', older: true }] : [];
   let unmatched = 0;
   const ordered = [...history].sort((a, b) => a.date.localeCompare(b.date) || (a.side === 'sell' ? 0 : 1) - (b.side === 'sell' ? 0 : 1));
   for (const t of ordered) {
-    if (t.side === 'buy') { queue.push({ qty: t.qty, cost: t.amount, date: t.date }); continue; }
+    if (t.side === 'buy') { queue.push({ qty: t.qty, cost: t.amount, date: t.date, txn: t }); continue; }
     let remaining = t.qty;
     while (remaining > 0 && queue.length) {
       const lot = queue[0]!;
@@ -147,7 +148,29 @@ function replayHeld(history: Txn[], older: Qty, ref: ISODate): { qty: Qty; cost:
   // Long-term as a holdings file counts it: listed shares held past the equity holding period.
   const months = rulesFor(ref).longTermMonths;
   const ltQty = mine.filter((l) => isLongTerm(l.date, ref, months)).reduce((a, l) => a + l.qty, 0);
-  return { qty: mine.reduce((a, l) => a + l.qty, 0), cost: mine.reduce((a, l) => a + l.cost, 0), ltQty, unmatched };
+  return { qty: mine.reduce((a, l) => a + l.qty, 0), cost: mine.reduce((a, l) => a + l.cost, 0), ltQty, unmatched, lots: mine };
+}
+
+/** What is left of one history buy on the file's date. */
+type HeldPart = { qty: Qty; cost: Paise; date: ISODate; txn?: Txn };
+
+/**
+ * Lowers the cost of the history's held buys so the newest `keep` units (what stays after the trim, which removes the
+ * oldest first) cost no more than `fileCost`. Dates stay. Returns the buys to replace, or nothing when no cap is needed.
+ * A buy partly sold earlier is lowered whole, so that sale's gain reads higher: the safe direction.
+ */
+function capHeldCost(lots: HeldPart[], keep: Qty, fileCost: Paise): Map<Txn, Paise> | undefined {
+  const kept: HeldPart[] = [];
+  let need = keep, cost = 0;
+  for (const l of [...lots].reverse()) {
+    if (need <= 0) break;
+    const take = Math.min(need, l.qty);
+    cost += take === l.qty ? l.cost : prorate(l.cost, take, l.qty);
+    need -= take;
+    kept.push(l);
+  }
+  if (cost <= fileCost) return undefined;
+  return new Map(kept.map((l) => [l.txn!, Math.floor((l.txn!.amount * fileCost) / cost)]));
 }
 
 /**
@@ -173,21 +196,40 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
   const bought = history.filter((t) => t.side === 'buy').reduce((a, t) => a + t.qty, 0);
   const sold = history.filter((t) => t.side === 'sell').reduce((a, t) => a + t.qty, 0);
 
+  let scaled: Map<Txn, Txn> | undefined;
+  let corporateAction: true | undefined;
+  let hist = history;
   if (p.cost != null) {
     const h = replayHeld(history, 0, ref);
     const whole = (a: Qty, b: Qty) => a % b === 0;
     const rescale = (qty: Qty) => Math.round((qty * p.qty) / h.qty);
-    // A 1:1 bonus looks like a 1:2 split, but its new units are short-term for a year: the file's long-term count
-    // must match the history's, rescaled, or the extra units are left to the corporate-action path.
+    // A 1:1 bonus looks like a 1:2 split, but its new units are short-term for a year. More units count as a split
+    // only when the long-term count tells the two apart: the history has long-term units and the file's count matches
+    // them rescaled. Otherwise the extra units go to the corporate-action path.
+    const up = p.qty > h.qty;
     if (h.unmatched === 0 && h.qty > 0 && p.qty !== h.qty && (whole(p.qty, h.qty) || whole(h.qty, p.qty))
-      && Math.abs(p.cost - h.cost) <= h.cost * SPLIT_COST_TOLERANCE && (p.ltQty == null || rescale(h.ltQty) === p.ltQty)) {
-      const scaled = new Map(history.map((t) => [t, { ...t, qty: rescale(t.qty) }]));
-      return { lots: [], scaled, corporateAction: true };
+      && Math.abs(p.cost - h.cost) <= h.cost * SPLIT_COST_TOLERANCE
+      && (up ? p.ltQty != null && h.ltQty > 0 && rescale(h.ltQty) === p.ltQty : p.ltQty == null || rescale(h.ltQty) === p.ltQty)) {
+      scaled = new Map(history.map((t) => [t, { ...t, qty: rescale(t.qty) }]));
+      hist = history.map((t) => scaled!.get(t)!);
+      corporateAction = true;
     }
   }
 
-  const opening = p.qty - bought + sold;
-  if (opening <= 0) return { lots: [] };
+  const opening = scaled ? 0 : p.qty - bought + sold;
+  if (p.cost != null) {
+    // Cost never stacks: the history units still held after the trim cost no more than the file says.
+    const h = replayHeld(hist, Math.max(0, opening), ref);
+    const cap = capHeldCost(h.lots, Math.min(h.qty, p.qty), p.cost);
+    if (cap) {
+      const orig = new Map(hist.map((t, i) => [t, history[i]!]));
+      scaled ??= new Map();
+      for (const [t, amount] of cap) scaled.set(orig.get(t)!, { ...t, amount });
+      hist = hist.map((t) => (cap.has(t) ? { ...t, amount: cap.get(t)! } : t));
+      corporateAction = true;
+    }
+  }
+  if (opening <= 0) return { lots: [], scaled, corporateAction };
   // First in, first out: this year's sales took the opening units first.
   const soldFromOpening = Math.min(sold, opening);
   const heldOpening = opening - soldFromOpening;
@@ -201,9 +243,8 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
   if (p.cost == null) return { lots: [guessed('opening-est', opening, price != null ? Math.round((price * opening) / QTY_SCALE) : 0)] };
 
   const perUnit = p.cost / p.qty;
-  const leftover = p.cost - replayHeld(history, opening, ref).cost;
+  const leftover = p.cost - replayHeld(hist, opening, ref).cost;
   const lots: Txn[] = [];
-  let corporateAction: true | undefined;
   // Units held: the cost the file has left after the history's held lots. Units sold: the lower of that and the
   // average, so neither the held cost nor a past sale's cost is overstated.
   let held = heldOpening;
@@ -232,7 +273,7 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
       if (stQty > 0) lots.push(guessed('opening-st', stQty, total - ltAmount));
     }
   }
-  return { lots, corporateAction };
+  return { lots, scaled, corporateAction };
 }
 
 /** A trade the family made: not a saved guess, not a Tax P&L exit. These date the account's last trade. */

@@ -229,6 +229,22 @@ describe('migrating saved families', () => {
     expect(held(G)).toBe(50 * QTY_SCALE);
   });
 
+  it('a family saved with two holdings imports keeps a fund only the older one lists', () => {
+    // Today's shape, no canTrim / asOf: import i1 listed funds F and G (G saved a guessed lot), import i2 lists only F.
+    const F = 'INF000000001', G = 'INF000000002';
+    const position = (isin: string, units: number, costRs: number, importId: string) => ({ memberId: 'a', isin, qty: units * QTY_SCALE, cost: rs(costRs), account: 'Zerodha', source: 'Zerodha holdings', importId });
+    const saved = oldState({}, {
+      members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new' }],
+      securities: [{ isin: F, name: 'F', kind: 'equity_mf' }, { isin: G, name: 'G', kind: 'equity_mf' }],
+      txns: [{ id: `a|${G}|opening|i1`, memberId: 'a', isin: G, date: '2025-10-01', side: 'buy', qty: 50 * QTY_SCALE, amount: rs(2_500), source: 'Opening balance (estimated date)', importId: 'i1', account: 'Zerodha', estimated: true }],
+      positions: [position(G, 50, 2_500, 'i1'), position(F, 100, 5_000, 'i2')],
+    });
+    const fam = computeFamily(normalizeState(saved)!, '2026-11-22', FY_2026_27);
+    const held = (isin: string) => fam.members[0]!.holdings.find((h) => h.isin === isin)?.qty;
+    expect(held(G)).toBe(50 * QTY_SCALE);
+    expect(held(F)).toBe(100 * QTY_SCALE);
+  });
+
   it('applyImport no longer saves a guessed lot for a Zerodha holdings file; other formats still do', () => {
     const fund = { isin: 'INF000000001', name: 'F', price: 50_00, priceDate: '2026-11-20', qty: 100_0000, cost: 5_000_00 };
     const zerodha = { format: 'Zerodha holdings', txns: [], warnings: [], skipped: 0, prices: [fund] };
