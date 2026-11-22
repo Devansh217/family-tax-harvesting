@@ -16,6 +16,13 @@ describe('reload after a deploy', () => {
     expect(d.reloads).toBe(1);
   });
 
+  it('reloads when the clock ticks between saving and checking the guard', () => {
+    let t = 1_000_000, n = 0, stored: string | null = null;
+    const ticking = { now: () => t++, get: () => stored, set: (v: string) => { stored = v; }, reload: () => { n++; } };
+    expect(reloadOnceForStaleBuild(ticking)).toBe(true);
+    expect(n).toBe(1);
+  });
+
   it('reloads again for a later deploy', () => {
     const d = deps('1000000', 1_000_000 + 120_000);
     expect(reloadOnceForStaleBuild(d)).toBe(true);

@@ -125,7 +125,7 @@ export function parseDematCAS(lines: string[]): ParseResult {
     if (qty == null || price == null || value == null || qty === 0) { skipped++; continue; }
     if (Math.abs(qty * price - value) > Math.max(1, value * 0.01)) { skipped++; continue; }
     const clean = name!.replace(/\s+(EQ|EQUITY SHARES?|#.*)$/i, '').trim();
-    prices.push({ isin: isin!, name: clean, price: toPaise(price), priceDate, qty: toQty(qty) });
+    prices.push({ isin: isin!, name: clean, price: toPaise(price), priceDate, qty: toQty(qty), demat: true });
   }
   if (prices.length === 0) warnings.push('No holdings rows recognised in this demat statement.');
   else warnings.push('Demat CAS has current holdings but no buy dates or prices. Add the broker trade history for exact gains.');

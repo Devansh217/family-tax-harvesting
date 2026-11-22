@@ -68,12 +68,13 @@ export function effectiveTxns(txns: Txn[], positions: HeldPosition[], asOf: ISOD
 /** A demat CAS (NSDL / CDSL) lists every demat holding of the PAN, across brokers: a snapshot, not one more account. */
 const isSnapshot = (p: HeldPosition) => p.source.startsWith('Demat CAS');
 const SNAPSHOT_ACCOUNT = 'Demat (CAS)';
+/** Units in a fund folio (from a fund CAS): a demat CAS never lists them, so they explain none of its units. */
+const isFolio = (t: Txn) => t.source.startsWith('Mutual fund CAS') || t.source.startsWith('Combined CAS');
 
 /**
  * Units a demat CAS shows that no other account explains on the statement's date. Its guessed lots saved at import
  * (ids `member|isin|opening|importId`) are dropped, older statements' too, and replaced by one guessed lot of the
  * difference. Everything else held then counts: trades, holdings-file lots, other files' guessed lots.
- * Known gap: units held in a fund folio outside demat also count, though a demat CAS does not list them.
  */
 function withSnapshots(txns: Txn[], positions: HeldPosition[], asOf: ISODate): Txn[] {
   const snaps = positions.filter((p) => isSnapshot(p) && p.qty > 0);
@@ -92,7 +93,7 @@ function withSnapshots(txns: Txn[], positions: HeldPosition[], asOf: ISODate): T
   for (const p of snaps) {
     const ref = p.asOf ?? asOf;
     const explained = rest
-      .filter((t) => t.memberId === p.memberId && t.isin === p.isin && t.date <= ref)
+      .filter((t) => t.memberId === p.memberId && t.isin === p.isin && t.date <= ref && !isFolio(t))
       .reduce((a, t) => a + (t.side === 'buy' ? t.qty : -t.qty), 0);
     const keep = p.qty - Math.max(0, explained);
     const lot = saved.get(p);

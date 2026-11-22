@@ -131,6 +131,13 @@ describe('a demat CAS on top of broker files', () => {
     expect(casUnits(out)).toBe(q(100));
   });
 
+  it('fund units in a folio do not hide the units held in demat', () => {
+    // A fund CAS shows 100 units in a folio; the demat CAS shows another 50 held in demat. Both are real.
+    const folio = trade('buy', '2023-04-10', 100, 50, { account: 'Folio 123', source: 'Mutual fund CAS (CAMS / KFintech)' });
+    const out = effectiveTxns([folio, casLot(50)], [casPos(50)], ASOF);
+    expect(casUnits(out)).toBe(q(50));
+  });
+
   it('leaves a CAS lot alone when nothing else holds that security', () => {
     const out = effectiveTxns([casLot(10)], [casPos(10)], ASOF);
     expect(casUnits(out)).toBe(q(10));

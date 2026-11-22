@@ -172,6 +172,9 @@ function upsertSecurity(list: Security[], p: { isin: string; name: string }, pri
   else if (price?.distributor) s.distributor = price.distributor;
 }
 
+/** Source of positions read from a depository statement's demat holdings (see engine/openingLots.ts). */
+export const DEMAT_SNAPSHOT_SOURCE = 'Demat CAS (NSDL / CDSL)';
+
 export interface ImportOptions {
   /** Demat account or platform for rows the file does not label, e.g. "Zerodha". */
   account?: string;
@@ -210,9 +213,11 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
     const isin = resolveIsin(p.isin, p.name, s.securities);
     upsertSecurity(s.securities, { ...p, isin }, p);
     if (p.qty != null) {
-      s.positions = s.positions.filter((x) => !(x.memberId === memberId && x.isin === isin && x.source === r.format));
+      // Demat rows keep one source whatever the statement is called, so the engine treats them as a snapshot.
+      const source = p.demat ? DEMAT_SNAPSHOT_SOURCE : r.format;
+      s.positions = s.positions.filter((x) => !(x.memberId === memberId && x.isin === isin && x.source === source));
       s.positions.push({
-        memberId, isin, qty: p.qty, ltQty: p.ltQty, asOf: p.priceDate, source: r.format, importId,
+        memberId, isin, qty: p.qty, ltQty: p.ltQty, asOf: p.priceDate, source, importId,
         ...(p.cost != null ? { cost: p.cost } : {}), account: opts.account ?? '',
       });
     }

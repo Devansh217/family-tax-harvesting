@@ -13,9 +13,10 @@ export interface ReloadDeps { now: () => number; get: () => string | null; set: 
  */
 export function reloadOnceForStaleBuild(d: ReloadDeps): boolean {
   try {
-    if (d.now() - Number(d.get() ?? 0) < WINDOW_MS) return false;
-    d.set(String(d.now()));
-    if (d.get() !== String(d.now())) return false;
+    const now = d.now();
+    if (now - Number(d.get() ?? 0) < WINDOW_MS) return false;
+    d.set(String(now));
+    if (d.get() !== String(now)) return false;
   } catch {
     return false;
   }
