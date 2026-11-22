@@ -10,6 +10,7 @@ import { MoveRow } from './Plan';
 import { reconcile } from '../../reconcile';
 import { effectiveTxns } from '../../engine/openingLots';
 import { unitMismatches } from '../units';
+import { importHref } from '../plan';
 import { cgSchedule, EXEMPT_NOTE, isSaleRow, SALE_SECTIONS } from '../../engine/cgSchedule';
 import { scheduleCsv, scheduleFileName } from '../csv';
 
@@ -271,7 +272,7 @@ export function MemberScreen({ id }: { id: string }) {
 
       <Section title="Holdings" id="hold-h">
         {holdings.length === 0 ? (
-          <div className="sheet empty"><p>No holdings imported for {member.name}.</p><a className="btn" href="#import">Import statements</a></div>
+          <div className="sheet empty"><p>No holdings imported for {member.name}.</p><a className="btn" href={importHref(id)}>Import statements</a></div>
         ) : (
           <div className="sheet tablebox">
             <table>
@@ -329,7 +330,7 @@ export function MemberScreen({ id }: { id: string }) {
 
       <CapitalGains memberId={id} memberName={member.name} />
 
-      <Section title="Imported files" id="imp-h" action={<a className="small" href="#import" style={{ fontWeight: 600, textDecoration: 'none' }}>Import more</a>}>
+      <Section title="Imported files" id="imp-h" action={<a className="small" href={importHref(id)} style={{ fontWeight: 600, textDecoration: 'none' }}>Import more</a>}>
         {imports.length === 0 ? <p className="small muted">None yet.</p> : (
           <div className="sheet">
             {imports.map((i) => (

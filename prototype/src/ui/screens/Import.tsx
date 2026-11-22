@@ -46,10 +46,11 @@ const GUIDE: Array<{ title: string; files: Array<{ name: string; level: 'Start h
   },
 ];
 
-export function Import() {
+/** `memberId` picks whose statements these are, when opened from a member's page or a Plan link. */
+export function Import({ memberId: picked }: { memberId?: string } = {}) {
   const { state, update, toast, go, asOf, fam } = useApp();
   const [items, setItems] = useState<Item[]>([]);
-  const [memberId, setMemberId] = useState(state.members[0]?.id ?? '');
+  const [memberId, setMemberId] = useState(state.members.some((m) => m.id === picked) ? picked! : state.members[0]?.id ?? '');
   const [over, setOver] = useState(false);
   const [paste, setPaste] = useState('');
   const [opening, setOpening] = useState(true);

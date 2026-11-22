@@ -30,6 +30,10 @@ export function planView(fam: Pick<FamilyView, 'moves' | 'rules'>, records: Reco
   };
 }
 
+/** Import with one member already picked: `#import-<memberId>`. */
+export const importHref = (memberId: string) => `#import-${memberId}`;
+export const importMemberOf = (route: string) => (route.startsWith('import-') ? route.slice(7) || undefined : undefined);
+
 export interface PlanGap {
   memberId: string;
   key: 'no_holdings' | 'shares_no_dates' | 'funds_no_dates' | 'funds_to_check';
@@ -51,7 +55,7 @@ export function planGaps(fam: Pick<FamilyView, 'members'> & Partial<Pick<FamilyV
   for (const v of fam.members) {
     const { id, name } = v.member;
     if (v.holdings.length === 0) {
-      out.push({ memberId: id, key: 'no_holdings', text: `${name}: nothing imported yet. Their holdings file is enough for a first plan.`, href: '#import', action: 'Import' });
+      out.push({ memberId: id, key: 'no_holdings', text: `${name}: nothing imported yet. Their holdings file is enough for a first plan.`, href: importHref(id), action: 'Import' });
       continue;
     }
     // Lots with guessed dates, plus units a holdings file shows that the history does not explain at all (bought
@@ -77,7 +81,7 @@ export function planGaps(fam: Pick<FamilyView, 'members'> & Partial<Pick<FamilyV
       const stale = mine.some((p) => p.cost == null);
       const filled = mine.some((p) => p.cost != null);
       out.push({
-        memberId: id, key: 'shares_no_dates', href: '#import', action: 'Import',
+        memberId: id, key: 'shares_no_dates', href: importHref(id), action: 'Import',
         text: stale
           ? `${name}: ${rupees(shares)} in shares has no buy dates. Import their holdings file again: it now fills in shares bought before the tradebook.`
           : filled
@@ -88,7 +92,7 @@ export function planGaps(fam: Pick<FamilyView, 'members'> & Partial<Pick<FamilyV
     const funds = undated(true);
     if (funds > 0) {
       out.push({
-        memberId: id, key: 'funds_no_dates', href: '#import', action: 'Import',
+        memberId: id, key: 'funds_no_dates', href: importHref(id), action: 'Import',
         text: `${name}: ${rupees(funds)} in mutual funds has no buy dates, so it gets no moves. Import their CAS (free from MF Central, CAMS or KFintech): it has every purchase.`,
       });
     }

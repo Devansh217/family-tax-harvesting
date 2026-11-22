@@ -1,4 +1,5 @@
 import { importOrReload } from './staleDeploy';
+import { importMemberOf } from './plan';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { daysBetween, todayISO } from '../engine/dates';
 import { computeFamily } from '../engine/family';
@@ -133,7 +134,7 @@ function Main({ initial }: { initial: AppState }) {
   // While viewing another family, every screen shows theirs read-only; sync above keeps using the founder's own state.
   const ctx = viewed ? viewedContext(own, viewed.state, viewed.name) : own;
 
-  const tab = route.startsWith('member-') ? 'home' : route;
+  const tab = route.startsWith('member-') ? 'home' : importMemberOf(route) ? 'import' : route;
   const days = daysBetween(asOf, FY_2026_27.end);
   let screen;
   if (route.startsWith('member-')) screen = <MemberScreen id={route.slice(7)} />;
@@ -143,7 +144,7 @@ function Main({ initial }: { initial: AppState }) {
   else if (route === 'setup') screen = <Setup />;
   else if (route === 'admin') screen = <Admin onView={(s, name) => { setViewed({ state: s, name }); location.hash = 'home'; }} />;
   else if (route === 'family') screen = <Family />;
-  else if (route === 'import') screen = <Import />;
+  else if (route === 'import' || importMemberOf(route)) screen = <Import key={route} memberId={importMemberOf(route)} />;
   else if (route === 'about') screen = <About />;
   else if (route === 'account') screen = <Account />;
   else screen = <Home days={days} />;
