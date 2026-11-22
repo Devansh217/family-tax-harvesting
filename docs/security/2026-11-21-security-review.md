@@ -37,7 +37,7 @@ dependency. No secret has ever been committed. The real risks are:
 |---|---|---|---|
 | H1 | High | Old plain-text `family_data` table still exists on the live project | **Fixed on live** (22 Nov) |
 | H2 | High | App shares the `devansh217.github.io` origin, and nothing stops it being framed | Open |
-| H3 | High | Privacy copy says only the family can read its account copy; the server holds the keys | Open |
+| H3 | High | Privacy copy says only the family can read its account copy; the server holds the keys | **Fixed** (PR #10) |
 | M1 | Medium | Dev toolchain advisories: vite 6.3.5, vitest 3.1.4, tinypool (2 critical, 1 high) | Open (lockfile; see note) |
 | M2 | Medium | Backup workflow: DB superuser URL as a repo-wide secret, recipient key read from the repo, unprotected `main` | Open |
 | M3 | Medium | Pages build job holds the deploy token while it runs `npm ci` and third-party downloads | Open (workflow file; not edited) |
@@ -166,6 +166,17 @@ it", and that is not true. For a product whose whole pitch is trust, this is the
 Change the meta description to "Statement files are read in your browser and never uploaded." If true end-to-end
 encryption is wanted later, it means a passphrase-derived key on the device. That breaks admin support and server-side
 season emails, so it is a product decision, not a patch.
+
+**Done (PR #10, merged 22 Nov 2026).** The privacy wording now matches how account copies are stored:
+- The meta description reads "Statement files are read in your browser and never uploaded."
+- About says that with an account the family "is encrypted before it is stored", that the app's maker can open it
+  only to fix a problem, and that every look is shown to the family.
+- The privacy section adds that the server reads the family on season days to write the email, when season help is
+  on.
+- Account adds "with keys Harvesting holds" and lists the season checks.
+- The Family and Home banners no longer say "nothing leaves this browser" when signed in.
+
+No copy in `prototype/src` or `prototype/index.html` still says "only you can read" or "never leave this device".
 
 ---
 
@@ -602,7 +613,7 @@ All are covered by tests. `npm test` passes (392 tests), and so does `tsc --noEm
 2. ~~**M7:** apply migration `000400`, and unschedule `season-alerts` until `alerts` is deployed.~~ Done 22 Nov.
 3. **M5:** run the 2FA checks (TOTP is already enrolled).
 4. **M2:** turn on branch protection for `main`, and move `SUPABASE_DB_URL` into a `backup` environment.
-5. **H3:** fix the About and meta wording (a small copy change; can ride on PR #7).
+5. ~~**H3:** fix the About and meta wording.~~ Done in PR #10.
 6. **M1:** run `npm audit fix` once the Playwright PR has merged.
 7. **M3:** move the Pages permissions onto the deploy job (coordinate with the CI session).
 8. **H2:** decide on hosting (Cloudflare Pages free tier) before inviting more beta families.
