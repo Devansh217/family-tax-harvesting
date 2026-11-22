@@ -2,6 +2,11 @@
 
 Written 22 Nov 2026 at the end of the fresh import run and the holdings-first design. For a fresh session (any account): read this first, then `CLAUDE.md` and `docs/GUARDRAILS.md`. No personal data belongs in this file. Real statements stay in the git-ignored `data/private/`.
 
+> **Before you start, and again before you call any piece done:** read `docs/fresh-run-notes.md`, the anonymised findings from the real run.
+> - Use it to **fill gaps**: when this file, a design or a plan is silent or unclear, the notes give the original observation, its cause and what the founder asked for.
+> - Use it to **validate**: check that what you built fixes the matching finding. For example, a fund's held units equal its holdings file, and shares gifted to a parent no longer show for the giver.
+> - If a finding is handled nowhere, or your change doesn't match what the notes describe, say so in your hand-back or PR. Don't silently skip it.
+
 ## 1. Ready to build: holdings-first engine
 
 - Design (approved): `docs/superpowers/specs/2026-11-22-holdings-first-engine-design.md`
