@@ -30,10 +30,12 @@ describe('opening lots from the holdings file', () => {
 
   it('adds the units older than the tradebook when the stock also traded this year', () => {
     // Holds 35, 25 long-term; the tradebook only shows this year's buy of 10.
+    // The file's ₹42,000 (35 × ₹1,200) less the ₹15,000 the tradebook lot still holds: ₹27,000 for the older 25, so
+    // held cost never exceeds the file's.
     const out = effectiveTxns([trade('buy', '2026-05-04', 10, 1500)], [pos(35, 25, 1200)], ASOF);
     const o = openings(out);
     expect(o).toHaveLength(1);
-    expect(o[0]).toMatchObject({ qty: q(25), approx: true, amount: rs(25 * 1200) });
+    expect(o[0]).toMatchObject({ qty: q(25), approx: true, amount: rs(27_000) });
     expect(o[0]!.date < '2026-05-04').toBe(true);
   });
 
@@ -49,10 +51,13 @@ describe('opening lots from the holdings file', () => {
     expect(openings(out)).toMatchObject([{ qty: q(100), approx: true }]);
   });
 
-  it('leaves the history alone when the holdings file has no cost or no long-term units (mutual funds)', () => {
+  it('fills in a guessed lot when the holdings file has no cost or no long-term units (mutual funds)', () => {
     const guessed = trade('buy', '2025-10-22', 100, 500, { estimated: true });
-    expect(effectiveTxns([guessed], [pos(100, undefined, 500)], ASOF)).toEqual([guessed]);
-    expect(effectiveTxns([guessed], [pos(100, 100, undefined)], ASOF)).toEqual([guessed]);
+    const est = (out: Txn[]) => { expect(out.find((t) => t.id === guessed.id)).toBeUndefined(); return openings(out); };
+    expect(est(effectiveTxns([guessed], [pos(100, undefined, 500)], ASOF))).toMatchObject([{ id: 'a|X|Zerodha|opening-est', qty: q(100), amount: rs(50_000), estimated: true }]);
+    // No cost in the file: priced at the latest price, as the import's guessed lot was.
+    const secs = [{ isin: 'X', price: rs(500) }];
+    expect(est(effectiveTxns([guessed], [pos(100, 100, undefined)], ASOF, secs))).toMatchObject([{ id: 'a|X|Zerodha|opening-est', qty: q(100), amount: rs(50_000), estimated: true }]);
   });
 
   it('adds nothing when the tradebook already explains every unit', () => {
@@ -322,5 +327,137 @@ describe('the newest holdings file trims units that left the account', () => {
     expect(intraday).toHaveLength(0);
     expect(delivery).toHaveLength(2);
     expect(delivery).toEqual(expect.arrayContaining([buy, out]));
+  });
+});
+
+describe('fill-in on every compute: cost never stacks', () => {
+  const SEC = (isin: string) => ({ isin, name: isin, taxType: 'equity' as const, listed: true });
+  const lotsOf = (txns: Txn[], isin = 'X', account = 'Zerodha') => buildLedger(txns, [SEC('X'), SEC('Y')]).lots.get(`a|${isin}|${account}`) ?? [];
+  const heldQty = (txns: Txn[], isin = 'X') => lotsOf(txns, isin).reduce((a, l) => a + l.qty, 0);
+  const heldCost = (txns: Txn[], isin = 'X') => lotsOf(txns, isin).reduce((a, l) => a + l.cost, 0);
+  const file = (units: number, ltUnits: number | undefined, costRs: number | undefined, over: Partial<HeldPosition> = {}) =>
+    pos(units, ltUnits, undefined, { canTrim: true, importId: 'imp1', ...(costRs == null ? {} : { cost: rs(costRs) }), ...over });
+  const savedLot = (units: number, costRs: number, importId = 'imp1', isin = 'X') => trade('buy', '2025-10-22', units, costRs / units, {
+    id: `a|${isin}|opening|${importId}`, isin, estimated: true, source: 'Opening balance (estimated date)',
+  });
+
+  // Fund: 12,000 units, ₹3,50,000 in the file; the tradebook explains 6,500 (4,000 × ₹25 + 2,500 × ₹26 = ₹1,65,000).
+  const fundBuys = () => [trade('buy', '2026-05-04', 4_000, 25), trade('buy', '2026-08-01', 2_500, 26)];
+  const fundFile = () => file(12_000, undefined, 3_50_000);
+
+  it('fund holdings: order doesn’t matter', () => {
+    const without = effectiveTxns(fundBuys(), [fundFile()], ASOF);
+    const withSaved = effectiveTxns([savedLot(12_000, 3_50_000), ...fundBuys()], [fundFile()], ASOF);
+    for (const out of [without, withSaved]) {
+      expect(heldQty(out)).toBe(q(12_000));
+      // ₹3,50,000 − ₹1,65,000 = ₹1,85,000 for the 5,500 units the history can't explain.
+      expect(openings(out)).toEqual([expect.objectContaining({ id: 'a|X|Zerodha|opening-est', qty: q(5_500), amount: rs(1_85_000), estimated: true })]);
+      expect(heldCost(out)).toBe(rs(3_50_000));
+    }
+  });
+
+  it('the guessed lot saved at import by a holdings file is dropped at compute', () => {
+    const out = effectiveTxns([savedLot(100, 5_000)], [file(100, undefined, 5_000)], ASOF);
+    expect(out.find((t) => t.id === 'a|X|opening|imp1')).toBeUndefined();
+    expect(heldQty(out)).toBe(q(100));
+    // An older file's lot for a share the newest file doesn't list is dropped too: the newest file decides.
+    const older = file(100, undefined, 5_000, { importId: 'imp0', asOf: '2026-03-31' });
+    const newer = file(10, 10, 1_000, { isin: 'Y', canTrim: false });
+    const out2 = effectiveTxns([savedLot(100, 5_000, 'imp0')], [older, newer], ASOF);
+    expect(out2.find((t) => t.id === 'a|X|opening|imp0')).toBeUndefined();
+    expect(heldQty(out2)).toBe(0);
+  });
+
+  it('a holdings file with no date (saved before files were dated) still fills in, dated today, and never trims', () => {
+    const undated = file(100, undefined, 5_000, { asOf: undefined, canTrim: undefined });
+    const out = effectiveTxnsWithNotes([savedLot(100, 5_000), trade('buy', '2026-06-01', 40, 60)], [undated], ASOF);
+    expect(out.txns.find((t) => t.id === 'a|X|opening|imp1')).toBeUndefined();
+    expect(heldQty(out.txns)).toBe(q(100));
+    expect(openings(out.txns)).toMatchObject([{ qty: q(60), amount: rs(2_600), estimated: true }]);
+    expect(out.txns.filter((t) => t.left)).toHaveLength(0);
+    // With no history, the units are all kept.
+    expect(heldQty(effectiveTxns([savedLot(100, 5_000)], [undated], ASOF))).toBe(q(100));
+  });
+
+  it('fill-in lots use the history’s account label, so one account is one queue', () => {
+    const out = effectiveTxns([trade('buy', '2026-05-04', 10, 1500, { account: 'zerodha' })], [file(35, 25, 42_000)], ASOF);
+    expect(openings(out)).toMatchObject([{ id: 'a|X|zerodha|opening-lt', account: 'zerodha', qty: q(25) }]);
+    expect(heldQty(out)).toBe(0);
+    expect(lotsOf(out, 'X', 'zerodha').reduce((a, l) => a + l.qty, 0)).toBe(q(35));
+  });
+
+  it('1:1 bonus: held cost stays ₹10,000, the 10 extra units cost 0 and are guessed', () => {
+    const { txns, corporateActions } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 10, 1000)], [file(20, 10, 10_000)], ASOF);
+    expect(openings(txns)).toEqual([expect.objectContaining({ id: 'a|X|Zerodha|opening-ca', qty: q(10), amount: 0, estimated: true })]);
+    expect(heldQty(txns)).toBe(q(20));
+    expect(heldCost(txns)).toBe(rs(10_000));
+    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'X', account: 'Zerodha' }]);
+  });
+
+  it('1:5 split: one lot of 50 units at ₹10,000, original date, nothing filled in', () => {
+    const { txns, corporateActions } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 10, 1000)], [file(50, 50, 10_000)], ASOF);
+    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'X', account: 'Zerodha' }]);
+    expect(openings(txns)).toHaveLength(0);
+    expect(txns.filter((t) => t.left)).toHaveLength(0);
+    expect(lotsOf(txns)).toMatchObject([{ date: '2024-01-10', qty: q(50), cost: rs(10_000) }]);
+  });
+
+  it('5:1 consolidation: one lot of 10 units at ₹10,000, nothing trimmed', () => {
+    const { txns } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 50, 200)], [file(10, 10, 10_050)], ASOF);
+    expect(openings(txns)).toHaveLength(0);
+    expect(txns.filter((t) => t.left)).toHaveLength(0);
+    expect(lotsOf(txns)).toMatchObject([{ date: '2024-01-10', qty: q(10), cost: rs(10_000) }]);
+  });
+
+  it('units moved out with the same count ratio but a different cost are not a split', () => {
+    // 50 held at ₹200, the file lists 10 at ₹2,000 in all: 40 left the account, they weren't consolidated.
+    const { txns } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 50, 200)], [file(10, 10, 2_000)], ASOF);
+    expect(heldQty(txns)).toBe(q(10));
+    expect(lotsOf(txns)).toMatchObject([{ date: '2024-01-10', qty: q(10), cost: rs(2_000) }]);
+  });
+
+  it('a demerger credit: the new share takes cost 0, term unknown, with a note', () => {
+    const files = [file(10, 10, 10_000), file(10, 0, 0, { isin: 'Y' })];
+    const { txns, corporateActions } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 10, 1000)], files, ASOF);
+    expect(openings(txns)).toEqual([expect.objectContaining({ id: 'a|Y|Zerodha|opening-ca', isin: 'Y', qty: q(10), amount: 0, estimated: true })]);
+    expect(txns.filter((t) => t.left)).toHaveLength(0);
+    expect(lotsOf(txns)).toMatchObject([{ qty: q(10), cost: rs(10_000) }]);
+    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'Y', account: 'Zerodha' }]);
+  });
+
+  it('a share the history never saw, with no cost: a guessed lot at the file price, and no trim', () => {
+    const files = [file(5, 5, undefined), file(10, 10, 10_000, { isin: 'Y' })];
+    const trades = [trade('buy', '2024-01-10', 10, 1000, { isin: 'Y' })];
+    const { txns, trimmed, corporateActions } = effectiveTxnsWithNotes(trades, files, ASOF, [{ isin: 'X', price: rs(120) }]);
+    expect(openings(txns)).toEqual([expect.objectContaining({ id: 'a|X|Zerodha|opening-est', qty: q(5), amount: rs(600), estimated: true })]);
+    expect(txns.filter((t) => t.left)).toHaveLength(0);
+    expect(trimmed).toEqual([]);
+    expect(corporateActions).toEqual([]);
+    // With no price either, the guess costs nothing rather than failing.
+    expect(openings(effectiveTxns(trades, files, ASOF))).toMatchObject([{ qty: q(5), amount: 0, estimated: true }]);
+  });
+
+  it('invariant: the held lots never cost more than the file', () => {
+    const fixtures: Array<{ name: string; txns: Txn[]; files: HeldPosition[] }> = [
+      { name: 'fund, no saved lot', txns: fundBuys(), files: [fundFile()] },
+      { name: 'fund, saved lot', txns: [savedLot(12_000, 3_50_000), ...fundBuys()], files: [fundFile()] },
+      { name: 'saved lot only', txns: [savedLot(100, 5_000)], files: [file(100, undefined, 5_000)] },
+      { name: 'undated', txns: [savedLot(100, 5_000), trade('buy', '2026-06-01', 40, 60)], files: [file(100, undefined, 5_000, { asOf: undefined, canTrim: undefined })] },
+      { name: 'bonus', txns: [trade('buy', '2024-01-10', 10, 1000)], files: [file(20, 10, 10_000)] },
+      { name: 'split', txns: [trade('buy', '2024-01-10', 10, 1000)], files: [file(50, 50, 10_000)] },
+      { name: 'consolidation', txns: [trade('buy', '2024-01-10', 50, 200)], files: [file(10, 10, 10_050)] },
+      { name: 'moved out', txns: [trade('buy', '2024-01-10', 50, 200)], files: [file(10, 10, 2_000)] },
+      { name: 'demerger', txns: [trade('buy', '2024-01-10', 10, 1000)], files: [file(10, 10, 10_000), file(10, 0, 0, { isin: 'Y' })] },
+      { name: 'older units', txns: [trade('buy', '2026-05-04', 10, 1500)], files: [file(35, 25, 42_000)] },
+      { name: 'sold older units', txns: [trade('sell', '2026-06-01', 20, 900)], files: [file(30, 30, 18_000)] },
+      { name: 'cheap history', txns: [trade('buy', '2026-05-04', 10, 500)], files: [file(35, 25, 42_000)] },
+    ];
+    for (const f of fixtures) {
+      const out = effectiveTxns(f.txns, f.files, ASOF);
+      for (const p of f.files) {
+        const cost = buildLedger(out, [SEC('X'), SEC('Y')]).lots.get(`a|${p.isin}|Zerodha`)?.reduce((a, l) => a + l.cost, 0) ?? 0;
+        expect([f.name, p.isin, cost <= p.cost!]).toEqual([f.name, p.isin, true]);
+      }
+    }
   });
 });

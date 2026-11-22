@@ -90,7 +90,7 @@ export function MemberScreen({ id }: { id: string }) {
   const { fam, state, update, indexOf, asOf } = useApp();
   const [view, setView] = useState<'now' | 'plan'>('now');
   // Before any early return: hooks run in the same order every render.
-  const txns = useMemo(() => effectiveTxns(state.txns, state.positions, asOf), [state.txns, state.positions, asOf]);
+  const txns = useMemo(() => effectiveTxns(state.txns, state.positions, asOf, state.securities), [state.txns, state.positions, asOf, state.securities]);
   const v = fam.members.find((m) => m.member.id === id);
   if (!v) return <div className="sheet empty"><p>This member no longer exists.</p><a className="btn" href="#home">Back to family</a></div>;
 

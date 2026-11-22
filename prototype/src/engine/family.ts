@@ -302,7 +302,7 @@ function harvestableQty(lots: Lot[], sec: Security, asOf: ISODate, rules: TaxRul
 }
 
 export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules): FamilyView {
-  const ledger = buildLedger(effectiveTxns(state.txns, state.positions ?? [], asOf), state.securities, rules);
+  const ledger = buildLedger(effectiveTxns(state.txns, state.positions ?? [], asOf, state.securities), state.securities, rules);
   const secs = new Map(state.securities.map((s) => [s.isin, s]));
   const moves: Move[] = [];
   // Dated moves: the family's picked days, by move id. Later entries for the same id win.

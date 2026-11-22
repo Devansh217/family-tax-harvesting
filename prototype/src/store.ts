@@ -235,8 +235,9 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
       });
     }
     const hasHistory = s.txns.some((t) => t.memberId === memberId && t.isin === isin && (t.account ?? '') === (opts.account ?? ''));
-    // A holdings file with cost and long-term units needs no guessed lot: the engine fills in older units (openingLots.ts).
-    const filledByEngine = p.ltQty != null && p.cost != null;
+    // A holdings file (or any row with cost and long-term units) needs no guessed lot: the engine fills in the units
+    // the history can't explain on every compute (openingLots.ts).
+    const filledByEngine = TRIMMING_HOLDINGS_SOURCES.includes(r.format) || (p.ltQty != null && p.cost != null);
     if (opts.openingDate && p.qty && p.qty > 0 && !hasHistory && !filledByEngine) {
       const cost = p.cost ?? Math.round((p.price * p.qty) / 10_000);
       s.txns.push({

@@ -207,6 +207,38 @@ describe('migrating saved families', () => {
     expect(fam.members[0]!.holdings.find((h) => h.isin === 'INE000000001')!.qty).toBe(10 * QTY_SCALE);
   });
 
+  it('a family saved with guessed fund lots from a holdings file keeps its units, never more than the file', () => {
+    // Today's shape: positions without canTrim / asOf, and the guessed lots the import saved for them.
+    const F = 'INF000000001', G = 'INF000000002';
+    const lot = (isin: string, units: number, costRs: number) => ({
+      id: `a|${isin}|opening|i2`, memberId: 'a', isin, date: '2025-10-01', side: 'buy', qty: units * QTY_SCALE, amount: rs(costRs),
+      source: 'Opening balance (estimated date)', importId: 'i2', account: 'Zerodha', estimated: true,
+    });
+    const position = (isin: string, units: number, costRs: number) => ({ memberId: 'a', isin, qty: units * QTY_SCALE, cost: rs(costRs), account: 'Zerodha', source: 'Zerodha holdings', importId: 'i2' });
+    const saved = oldState({}, {
+      members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new' }],
+      securities: [{ isin: F, name: 'F', kind: 'equity_mf' }, { isin: G, name: 'G', kind: 'equity_mf' }],
+      // F: the tradebook, imported after the holdings file, explains 40 of the file's 100 units.
+      txns: [lot(F, 100, 5_000), lot(G, 50, 2_500),
+        { id: 't1', memberId: 'a', isin: F, date: '2026-06-01', side: 'buy', qty: 40 * QTY_SCALE, amount: rs(2_400), source: 'Trade history · tb.xlsx', account: 'Zerodha', importId: 'i3' }],
+      positions: [position(F, 100, 5_000), position(G, 50, 2_500)],
+    });
+    const fam = computeFamily(normalizeState(saved)!, '2026-11-22', FY_2026_27);
+    const held = (isin: string) => fam.members[0]!.holdings.find((h) => h.isin === isin)?.qty;
+    expect(held(F)).toBe(100 * QTY_SCALE); // was 140 before: the saved lot and the tradebook stacked
+    expect(held(G)).toBe(50 * QTY_SCALE);
+  });
+
+  it('applyImport no longer saves a guessed lot for a Zerodha holdings file; other formats still do', () => {
+    const fund = { isin: 'INF000000001', name: 'F', price: 50_00, priceDate: '2026-11-20', qty: 100_0000, cost: 5_000_00 };
+    const zerodha = { format: 'Zerodha holdings', txns: [], warnings: [], skipped: 0, prices: [fund] };
+    const s = applyImport(withMember(), 'a', 'h.xlsx', zerodha, { account: 'Zerodha', openingDate: '2025-10-01' });
+    expect(s.txns).toEqual([]);
+    expect(s.positions).toHaveLength(1);
+    const other = applyImport(withMember(), 'a', 'h.csv', { ...zerodha, format: 'Holdings · h.csv' }, { account: 'Groww', openingDate: '2025-10-01' });
+    expect(other.txns.map((t) => t.id)).toEqual([expect.stringMatching(/^a\|INF000000001\|opening\|/)]);
+  });
+
   it('works out age on a date from date of birth, else the stored age', () => {
     const m = { id: 'x', name: 'X', relation: 'self' as const, age: 50, regime: 'new' as const, type: 'person' as const };
     expect(ageOn({ ...m, dob: '1966-11-16' }, '2026-11-15')).toBe(59);
