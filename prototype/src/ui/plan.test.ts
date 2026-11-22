@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { computeFamily } from '../engine/family';
 import { FY_2026_27 } from '../engine/rules';
 import type { Member, Security, Txn } from '../engine/types';
-import { datePickerBounds, dateVerb, planGaps } from './plan';
+import { datePickerBounds, dateVerb, importHref, importMemberOf, planGaps } from './plan';
 
 describe('date picker (m2, m4)', () => {
   it('max is the last safe day, or the end of the tax year when the holiday list is not out; min is today', () => {
@@ -47,5 +47,18 @@ describe('what the plan is missing', () => {
   it('says when a member has nothing imported yet', () => {
     const empty = computeFamily({ members: [m('d')], securities: [], txns: [] }, '2026-11-22', FY_2026_27);
     expect(planGaps(empty, [])).toMatchObject([{ memberId: 'd', key: 'no_holdings' }]);
+  });
+});
+
+describe('import links for one member', () => {
+  it('open Import with that member picked, and read back from the route', () => {
+    expect(importHref('mmwk1')).toBe('#import-mmwk1');
+    expect(importMemberOf('import-mmwk1')).toBe('mmwk1');
+    expect(importMemberOf('import')).toBeUndefined();
+    expect(importMemberOf('plan')).toBeUndefined();
+  });
+  it('gap links go to the member they are about', () => {
+    const empty = computeFamily({ members: [{ id: 'd', name: 'D', relation: 'self', age: 40, regime: 'new' }], securities: [], txns: [] }, '2026-11-22', FY_2026_27);
+    expect(planGaps(empty, [])[0]!.href).toBe('#import-d');
   });
 });
