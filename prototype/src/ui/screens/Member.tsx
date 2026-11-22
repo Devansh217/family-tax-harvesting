@@ -1,5 +1,5 @@
 import { incomeTotal } from '../../engine/rules';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { longTermFrom } from '../../engine/dates';
 import type { Paise } from '../../engine/types';
 import { useApp } from '../app-context';
@@ -8,6 +8,8 @@ import { dateLabel, inr, possessive, RELATIONS, units } from '../format';
 import { Avatar, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow } from './Plan';
 import { reconcile } from '../../reconcile';
+import { effectiveTxns } from '../../engine/openingLots';
+import { unitMismatches } from '../units';
 import { cgSchedule, EXEMPT_NOTE, isSaleRow, SALE_SECTIONS } from '../../engine/cgSchedule';
 import { scheduleCsv, scheduleFileName } from '../csv';
 
@@ -86,6 +88,8 @@ const isSection = (k: string) => SALE_SECTIONS.includes(k as never);
 export function MemberScreen({ id }: { id: string }) {
   const { fam, state, update, indexOf, asOf } = useApp();
   const [view, setView] = useState<'now' | 'plan'>('now');
+  // Before any early return: hooks run in the same order every render.
+  const txns = useMemo(() => effectiveTxns(state.txns, state.positions, asOf), [state.txns, state.positions, asOf]);
   const v = fam.members.find((m) => m.member.id === id);
   if (!v) return <div className="sheet empty"><p>This member no longer exists.</p><a className="btn" href="#home">Back to family</a></div>;
 
@@ -107,13 +111,13 @@ export function MemberScreen({ id }: { id: string }) {
     .sort((a, b) => a.l.longTermOn.localeCompare(b.l.longTermOn))
     .slice(0, 6);
   const positions = state.positions.filter((p) => p.memberId === id);
-  const mismatches = positions
-    .map((p) => {
-      const h = holdings.find((x) => x.isin === p.isin);
-      const ltHeld = h ? h.lots.filter((l) => l.term === 'lt').reduce((a, l) => a + l.qty, 0) : 0;
-      return { p, held: h?.qty ?? 0, ltHeld, name: fam.securities.get(p.isin)?.name ?? p.isin };
-    })
-    .filter((x) => Math.abs(x.held - x.p.qty) > 10 || (x.p.ltQty != null && Math.abs(x.ltHeld - x.p.ltQty) > 10));
+  const mismatches = unitMismatches(
+    id,
+    holdings.map((h) => ({ isin: h.isin, qty: h.qty, ltQty: h.lots.filter((l) => l.term === 'lt').reduce((a, l) => a + l.qty, 0) })),
+    txns,
+    positions,
+    myWarnings,
+  );
   const imports = state.imports.filter((i) => i.memberId === id);
 
   const setSecurity = (isin: string, patch: { price?: Paise; fmv2018?: Paise }) =>
@@ -230,13 +234,17 @@ export function MemberScreen({ id }: { id: string }) {
       {mismatches.length > 0 && (
         <div className="banner warn">
           <ul className="warnlist grow">
-            {mismatches.map((x) => (
-              <li key={x.p.isin}>
-                {Math.abs(x.held - x.p.qty) > 10
-                  ? <>{x.name}: holdings show {units(x.p.qty)} units, trade history gives {units(x.held)}. Older purchases may be missing.</>
-                  : <>{x.name}: broker counts {units(x.p.ltQty ?? 0)} units as long-term, trade history gives {units(x.ltHeld)}.</>}
-              </li>
-            ))}
+            {mismatches.map((x, i) => {
+              const name = fam.securities.get(x.isin)?.name ?? x.isin;
+              const on = x.asOf ? ` on ${dateLabel(x.asOf)}` : '';
+              return (
+                <li key={`${x.isin}|${i}`}>
+                  {x.lt
+                    ? <>{name}: broker counts {units(x.lt.statement)} units as long-term, trade history gives {units(x.lt.history)}.</>
+                    : <>{name}: a statement shows {units(x.statement)} units{on}, trade history gives {units(x.history)}. Older purchases may be missing.</>}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
