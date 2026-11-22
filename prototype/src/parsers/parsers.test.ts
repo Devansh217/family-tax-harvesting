@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseDematCAS, parseMutualFundCAS, schemeDetails } from './cas';
-import { parseZerodhaHoldings } from './zerodhaTaxPnl';
+import { parseZerodhaHoldings, parseZerodhaTaxPnl } from './zerodhaTaxPnl';
 import { parseCSV, parseDate, parseNumber } from './common';
 import { parseStatementLines, parseTablePreview, previewTable } from './index';
 
@@ -148,5 +148,36 @@ describe('Zerodha holdings date', () => {
     const r = parseZerodhaHoldings(sheet([['Equity Holdings Statement']]));
     expect(r.prices).toHaveLength(1);
     expect(r.prices[0]!.priceDate).toBeUndefined();
+  });
+});
+
+describe('Zerodha tax P&L buybacks', () => {
+  const HEAD = [null, 'Symbol', 'ISIN', 'Entry Date', 'Exit Date', 'Quantity', 'Buy Value', 'Sell Value', 'Profit'];
+  const row = (entry: string, exit: string) => [null, 'TESTCO', 'INE000000001', entry, exit, 10, 1000, 1500, 500];
+  const book = (...rows: unknown[][]) => [{
+    sheet: 'Tradewise Exits from 2024-04-01',
+    data: [[null, 'Tradewise Exits from 2024-04-01 to 2026-11-14'], [null, 'Equity - Buyback'], HEAD, ...rows],
+  }];
+
+  it('books an exit from 1 Apr 2026 as a capital gain, like other long-term exits', () => {
+    const r = parseZerodhaTaxPnl(book(row('2022-01-10', '2026-06-10')));
+    expect(r.txns).toEqual([
+      expect.objectContaining({ date: '2022-01-10', isin: 'INE000000001', side: 'buy', amount: 1000_00 }),
+      expect.objectContaining({ date: '2026-06-10', isin: 'INE000000001', side: 'sell', amount: 1500_00 }),
+    ]);
+    expect(r.warnings.join(' ')).not.toMatch(/buyback/i);
+  });
+
+  it('leaves out an exit from 1 Oct 2024 to 31 Mar 2026 and says why', () => {
+    const r = parseZerodhaTaxPnl(book(row('2022-01-10', '2025-06-10')));
+    expect(r.txns).toHaveLength(0);
+    expect(r.warnings).toContain('1 buyback exits from 1 Oct 2024 to 31 Mar 2026 were left out: in that period buyback money was taxed as dividend income.');
+  });
+
+  it('keeps leaving out an exit before 1 Oct 2024, without the dividend-period wording', () => {
+    const r = parseZerodhaTaxPnl(book(row('2020-01-10', '2024-06-10')));
+    expect(r.txns).toHaveLength(0);
+    expect(r.warnings.join(' ')).not.toMatch(/1 Oct 2024 to 31 Mar 2026/);
+    expect(r.warnings.join(' ')).toMatch(/1 buyback exit before 1 Oct 2024/);
   });
 });

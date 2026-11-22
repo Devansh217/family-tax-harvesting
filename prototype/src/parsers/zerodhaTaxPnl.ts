@@ -1,3 +1,4 @@
+import { BUYBACK_DIVIDEND_FROM, rulesFor } from '../engine/rules';
 import type { ISODate, Paise } from '../engine/types';
 import { findIsin, parseDate, parseNumber, toPaise, toQty, type ParsedTxn, type ParseResult } from './common';
 
@@ -46,7 +47,7 @@ const SECTION = /^(Equity - Intraday|Equity - Short Term|Equity - Long Term|Equi
 /**
  * Zerodha Console "Tax P&L" workbook. Each exit becomes a buy at its entry date and a sell at its exit date, so the
  * engine recomputes the same gains (intraday exits share a date, so they are detected as intraday). F&O is taken from
- * the broker's totals; currency and commodity are skipped; buybacks are left out because they are taxed differently.
+ * the broker's totals; currency and commodity are skipped; buybacks are booked like other exits only when the exit date is a capital gain under that year's rules, else left out.
  */
 export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
   const tradewise = sheets.find((s) => /^Tradewise Exits/i.test(s.sheet))!;
@@ -72,10 +73,17 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
     const qty = num(r[cols['Quantity']!]);
     if (!symbol || qty == null || qty === 0) continue;
     if (/^(F&O|Currency|Commodity)$/i.test(section)) continue;
-    if (/Buyback/i.test(section)) { counts.buyback = (counts.buyback ?? 0) + 1; continue; }
-
     const isin = findIsin(text(r[cols['ISIN']!])) ?? `SYM:${symbol.toUpperCase()}`;
     const entry = date(r[cols['Entry Date']!]), exit = date(r[cols['Exit Date']!]);
+    if (/Buyback/i.test(section)) {
+      const rules = exit ? rulesFor(exit) : null;
+      // rulesFor falls back to the oldest known year for earlier dates, so the exit must also fall inside that year.
+      if (!exit || !rules || !(rules.buybackIsCapitalGain && exit >= rules.start)) {
+        const key = exit && exit < BUYBACK_DIVIDEND_FROM ? 'buybackBefore' : 'buyback';
+        counts[key] = (counts[key] ?? 0) + 1;
+        continue;
+      }
+    }
     const buy = num(r[cols['Buy Value']!]), sell = num(r[cols['Sell Value']!]);
     if (!entry || !exit || buy == null || sell == null) { skipped++; continue; }
     const units = Math.abs(qty);
@@ -105,7 +113,8 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
     fnoTurnover: sum(fo.get('options turnover'), fo.get('futures turnover')),
   };
 
-  if (counts.buyback) warnings.push(`${counts.buyback} buyback exits were left out: since Oct 2024 buyback money is taxed as dividend income, not capital gains.`);
+  if (counts.buyback) warnings.push(`${counts.buyback} buyback exits from 1 Oct 2024 to 31 Mar 2026 were left out: in that period buyback money was taxed as dividend income.`);
+  if (counts.buybackBefore) warnings.push(`${counts.buybackBefore} buyback exit${counts.buybackBefore === 1 ? '' : 's'} before 1 Oct 2024 ${counts.buybackBefore === 1 ? 'was' : 'were'} left out: they are not part of this year's plan.`);
   if (summary.fno != null) warnings.push('F&O profit or loss and turnover were taken from the report totals and set on this member.');
   warnings.push('This report covers exits only. Import holdings or the full tradebook as well to see what is still held and suggest moves.');
 

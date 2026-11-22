@@ -18,6 +18,8 @@ export interface TaxRules {
   otherLongTermMonths: number;
   /** Debt-fund units bought before this date are outside the specified-fund rule (s.76) and can be long-term. */
   specifiedFundCutoff: ISODate;
+  /** Buyback proceeds are capital gains for exits dated from `start` (Finance Act 2026); earlier years taxed them as dividend. */
+  buybackIsCapitalGain: boolean;
   /** Standard deduction on salary and pension (s.19), by regime. */
   standardDeduction: { new: Paise; old: Paise };
   /** Deduction on deposit interest for members aged 60+, old regime only (s.153). */
@@ -62,6 +64,7 @@ export const FY_2026_27: TaxRules = {
   basicExemptionOld: { below60: 2_50_000_00, from60: 3_00_000_00, from80: 5_00_000_00 },
   otherLongTermMonths: 24,
   specifiedFundCutoff: '2023-04-01',
+  buybackIsCapitalGain: true,
   standardDeduction: { new: 75_000_00, old: 50_000_00 },
   seniorInterestDeduction: 50_000_00,
   rentDeduction: 0.3,
@@ -79,6 +82,9 @@ export const FY_2026_27: TaxRules = {
     giftDp: 25_00,
   },
 };
+
+/** Buyback exits from this date until the capital-gain rule began were taxed as dividend income (Finance Act 2024). */
+export const BUYBACK_DIVIDEND_FROM: ISODate = '2024-10-01';
 
 /** Every tax year's rules the app knows, oldest first. Add a year here when a Budget changes the numbers. */
 export const RULES: TaxRules[] = [FY_2026_27];
