@@ -3,7 +3,7 @@ import { computeFamily } from './engine/family';
 import { FY_2026_27 } from './engine/rules';
 import { parseTablePreview, previewTable } from './parsers';
 import { sampleState } from './sample';
-import { applyImport, emptyState, normalizeState, backupHadSeasonHelp, parseBackup, removeImport, RESTORE_ALERTS_NOTE, type AppState } from './store';
+import { applyImport, emptyState, hasRealData, normalizeState, backupHadSeasonHelp, parseBackup, removeImport, RESTORE_ALERTS_NOTE, type AppState } from './store';
 import { ageOn } from './engine/dates';
 
 const withMember = (): AppState => ({ ...emptyState(), members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: 0 , from: 'manual' as const }]}] });
@@ -172,6 +172,19 @@ describe('review: restoring a backup', () => {
   it('rejects a file that is not a backup', () => {
     expect(parseBackup('{"hello":1}')).toBeNull();
     expect(parseBackup('not json')).toBeNull();
+  });
+  it('security review: rejects a backup whose lists or members have the wrong shape, instead of loading it and crashing', () => {
+    expect(parseBackup('{"version":1,"members":[{"id":"a","name":"x"}],"txns":"oops"}')).toBeNull();
+    expect(parseBackup('{"version":1,"members":[null]}')).toBeNull();
+    expect(parseBackup('{"version":1,"members":[{"id":1,"name":"x"}]}')).toBeNull();
+    expect(parseBackup('{"version":1,"members":[],"done":[]}')).toBeNull();
+    expect(parseBackup('[1]')).toBeNull();
+  });
+  it('security review: a backup without trade lists loads with empty ones', () => {
+    const s = parseBackup('{"version":1,"members":[{"id":"a","name":"A","relation":"self","age":40,"regime":"new"}]}')!;
+    expect(s.txns).toEqual([]);
+    expect(s.imports).toEqual([]);
+    expect(hasRealData(s)).toBe(false);
   });
 });
 

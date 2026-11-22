@@ -5,7 +5,8 @@ import { PostgrestClient } from '@supabase/postgrest-js';
 /**
  * Supabase project for sign-in and saving a family to an account. The publishable key is meant to ship in the web
  * app: it can only do what the database's row-level security allows, which is each person reading and writing their
- * own rows (see supabase/schema.sql). The secret key never goes in this code.
+ * own profile and admin-read log (see supabase/migrations/); families go only through the server functions. The secret
+ * key never goes in this code.
  */
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './cloud-config';
 

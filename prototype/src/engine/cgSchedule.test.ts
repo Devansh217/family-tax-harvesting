@@ -5,7 +5,7 @@ import { inRange } from './dates';
 import { summariseYear } from './tax';
 import { FY_2026_27 as R } from './rules';
 import { QTY_SCALE, type Member, type Security, type Txn } from './types';
-import { rupees2, scheduleCsv, scheduleFileName } from '../ui/csv';
+import { rupees2, scheduleCsv, scheduleFileName, textCell } from '../ui/csv';
 
 const q = (n: number) => Math.round(n * QTY_SCALE);
 const rs = (n: number) => Math.round(n * 100);
@@ -233,5 +233,13 @@ describe('scheduleCsv', () => {
     expect(scheduleFileName('Priya Sharma-Rao')).toBe('capital-gains-priya-sharma-rao-2026-27.csv');
     const f = run({ members: [person('a')], securities: [{ ...eq('MF'), listed: false }], txns: [tx('a', 'MF', '2024-01-01', 'buy', 10.5, 100), tx('a', 'MF', '2026-06-01', 'sell', 10.123, 150)] });
     expect(scheduleCsv(cgSchedule(f, 'a'))).toContain(',10.123,');
+  });
+});
+
+describe('security review: CSV formula guard', () => {
+  it('neutralises formula starters, including a leading tab or carriage return', () => {
+    for (const s of ['=1+1', '+1', '-1', '@SUM(A1)', '\t=1', '\r=1']) expect(textCell(s).startsWith("'")).toBe(true);
+    expect(textCell('INE002A01018')).toBe('INE002A01018');
+    expect(textCell('2026-06-01')).toBe('2026-06-01');
   });
 });
