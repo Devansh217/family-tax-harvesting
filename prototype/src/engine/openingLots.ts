@@ -59,5 +59,33 @@ export function effectiveTxns(txns: Txn[], positions: HeldPosition[], asOf: ISOD
     if (ltQty > 0) added.push({ ...base, id: `${key(p.memberId, p.isin, p.account)}|opening-lt`, date: ltDate, qty: ltQty, amount: Math.round(perUnit * ltQty), approx: true });
     if (stQty > 0) added.push({ ...base, id: `${key(p.memberId, p.isin, p.account)}|opening-st`, date: before, qty: stQty, amount: Math.round(perUnit * stQty), estimated: true });
   }
-  return added.length ? [...out, ...added] : out;
+  const all = added.length ? [...out, ...added] : out;
+  return withoutCounted(all);
+}
+
+const isGuessedOpening = (t: Txn) => !!t.estimated && t.source.startsWith('Opening balance');
+
+/**
+ * A guessed opening lot (a statement of current units, such as a demat CAS, with no history) for units another account
+ * already explains: a demat CAS lists the same shares the broker files do, under its own account name. Each guessed lot
+ * keeps only the units the member's other accounts do not hold, so they are not counted twice.
+ */
+function withoutCounted(txns: Txn[]): Txn[] {
+  const guessed = txns.filter(isGuessedOpening);
+  if (!guessed.length) return txns;
+  const net = new Map<string, Qty>();
+  for (const t of txns) {
+    if (isGuessedOpening(t)) continue;
+    const k = key(t.memberId, t.isin, t.account);
+    net.set(k, (net.get(k) ?? 0) + (t.side === 'buy' ? t.qty : -t.qty));
+  }
+  const elsewhere = (t: Txn) => [...net].reduce((a, [k, q]) => (k.startsWith(`${t.memberId}|${t.isin}|`) && k !== key(t.memberId, t.isin, t.account) ? a + Math.max(0, q) : a), 0);
+  const out: Txn[] = [];
+  for (const t of txns) {
+    if (!isGuessedOpening(t)) { out.push(t); continue; }
+    const keep = t.qty - elsewhere(t);
+    if (keep <= 0) continue;
+    out.push(keep === t.qty ? t : { ...t, qty: keep, amount: Math.round((t.amount * keep) / t.qty) });
+  }
+  return out;
 }

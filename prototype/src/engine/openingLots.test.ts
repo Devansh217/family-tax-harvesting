@@ -75,6 +75,29 @@ describe('opening lots from the holdings file', () => {
   });
 });
 
+describe('a demat CAS on top of broker files', () => {
+  const casLot = (units: number, over: Partial<Txn> = {}) => trade('buy', '2025-10-22', units, 500, {
+    id: `a|X|opening|cas${units}`, account: 'Demat (CAS)', estimated: true, source: 'Opening balance (estimated date)', ...over,
+  });
+
+  it('does not count shares again that the broker account already explains', () => {
+    // Zerodha: 63 held (tradebook 15 this year + 48 older from the holdings file). The CAS lists the same 63.
+    const out = effectiveTxns([trade('buy', '2026-05-04', 15, 1500), casLot(63)], [pos(63, 48, 1200)], ASOF);
+    expect(out.filter((t) => t.account === 'Demat (CAS)')).toHaveLength(0);
+    expect(out.filter((t) => t.side === 'buy').reduce((a, t) => a + t.qty, 0)).toBe(q(63));
+  });
+
+  it('keeps only the units the other accounts do not explain (shares in a second broker)', () => {
+    const out = effectiveTxns([trade('buy', '2024-01-10', 40, 1000), casLot(100)], [], ASOF);
+    expect(out.find((t) => t.account === 'Demat (CAS)')).toMatchObject({ qty: q(60), amount: rs(30_000), estimated: true });
+  });
+
+  it('leaves a guessed lot alone when nothing else holds that security', () => {
+    const lot = casLot(10);
+    expect(effectiveTxns([lot], [], ASOF)).toEqual([lot]);
+  });
+});
+
 describe('moves on lots from the holdings file', () => {
   const me: Member = { id: 'a', name: 'Asha', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other', amount: rs(20_00_000), from: 'manual' }] };
   const sec = { isin: 'X', name: 'X Ltd', taxType: 'equity' as const, listed: true, price: rs(2000) };
