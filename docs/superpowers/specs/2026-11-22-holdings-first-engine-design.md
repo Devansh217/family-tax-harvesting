@@ -1,6 +1,6 @@
 # Holdings-first engine: design
 
-Date: 22 Nov 2026. Status: approach approved (option 1, reconcile on every compute); research folded in; design awaiting approval.
+Date: 22 Nov 2026. Status: approach approved (option 1, reconcile on every compute); research folded in; design approved by the founder 22 Nov 2026.
 Source: the fresh import run on the live site, `notes/fresh-run-notes.md` (points 3, 4, 10, 11, 15, 16 and the "more data never spoils" rule).
 
 Paths are under `prototype/src/` unless they say otherwise.
