@@ -40,7 +40,38 @@ In rough priority order. Each needs a brainstorm before code.
 7. **Animations brainstorm:** show how a transfer between members changes tax.
 8. **Check:** why a long-term holding with room to spare (13 units, about ₹7.8k gain) wasn't suggested for a parent. Is it a minimum size, or the cushion counted differently?
 
-## 4. Known gaps carried over
+## 4. Every fresh-run finding and where it's handled
+
+From the founder's import run on the live site, 22 Nov 2026: 3 members on Zerodha (shares and Coin funds) and Angel One. Examples here are made up; the original notes, with real data, stay off git.
+
+| # | Finding | Handled in |
+|---|---|---|
+| 1 | No clear success feedback after an import, only a brief toast | §3 item 5 |
+| 2 | An old holdings file and the same tradebook year imported twice gave moves on shares sold months ago, with no warning | Engine: stale files never trim (design §1). Engine plan Task 7: the "Nothing new" card. Guided import (§3 item 1): flag old files and missing years, and **show the holdings file's date on its card** |
+| 3 | Shares that left an account (off-market gifts to a parent) stayed "held" and showed in Holdings, totals and Simulate ("held by 2") | Engine design §2; plan Task 2 |
+| 4 | About 45–60 "Sold N more units than the history shows" lines per member, one per lot and mostly from earlier years | Engine design §6; plan Task 6 |
+| 5 | The holdings card says "11 transactions"; they are guessed fund lots | §3 item 6 |
+| 6 | "1 lot have"; the intraday label differs in two places | §3 item 6 |
+| 7 | Family gifts aren't recognised, so the receiver's cost and dates are wrong | §3 item 4 |
+| 8 | Simulate shows "−₹X gain" for a loss | §3 item 6 |
+| 9 | Founder direction: holdings file decides what's held, Tax P&L decides what's booked, tradebooks optional; fewer files is worth the 10% cushion | The engine design as a whole |
+| 10 | Long-term units sold from the holdings-file lot were booked as short-term | Engine design §4; plan Task 4 |
+| 11 | The broker correction showed as "Losses set off" | Engine design §7; plan Task 6 |
+| 12 | IPO allotments get "Import older statements" advice. No such statement exists | Engine plan Task 6 hides them when the Tax P&L covers the sale. **Still open:** where it doesn't, the wording should say "possibly an IPO allotment or transfer in" (add to Task 6 or §3 item 6) |
+| 13 | A long-term holding with spare room wasn't suggested | §3 item 8 |
+| 14 | The Angel One holdings file is read as fund-only, and its shares and SGBs are dropped silently | §3 item 2 |
+| 15 | Funds counted twice when the holdings file went in before the MF tradebooks | Engine design §3; plan Task 3 |
+| 16 | An ELSS redemption was booked as short-term | Engine design §5; plan Task 4 |
+| 17a | Angel holdings show more units of one share than the trade history (missing older purchases) with no warning | §3 item 2 (needs the reader) |
+| 17b | The short-term section's "after set-off" is higher than its total, with no explanation | §3 item 6 |
+| 17c | A sold fund's tax type "needs checking" but there's no way to pick it | §3 item 6, and §2.1 removes most picks |
+| — | Founder rule: more data never spoils | Engine design §9 |
+| — | Founder rule: unknown-term sales assume long-term, and the user can answer Long-term / Short-term / add a buy date | Engine design §5; plan Task 4 and Task 6 |
+| — | Founder: guided import with "stop here" | §3 item 1 |
+| — | Founder: users can't be expected to pick fund tax types | §2.1 |
+| — | Founder: nudge for a tradebook instead of demanding files | Engine design §8; plan Task 7 |
+
+## 5. Known gaps carried over
 
 - The Import guide and the Plan send Zerodha Coin users to the fund CAS. Coin funds need MF tradebooks for every year.
 - The CAS password hint says "usually your PAN". MF Central and CAMS use a password the user chooses.
