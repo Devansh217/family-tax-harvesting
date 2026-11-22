@@ -7,12 +7,18 @@ const WINDOW_MS = 60_000;
 
 export interface ReloadDeps { now: () => number; get: () => string | null; set: (v: string) => void; reload: () => void }
 
-/** True when it reloaded. */
+/**
+ * True when it reloaded. The guard must be saved first: with storage blocked nothing survives the reload, so a
+ * missing file would reload forever. Then the page stays as it is and the person reloads by hand.
+ */
 export function reloadOnceForStaleBuild(d: ReloadDeps): boolean {
-  let last = 0;
-  try { last = Number(d.get() ?? 0); } catch { /* storage blocked: still reload once per page */ }
-  if (d.now() - last < WINDOW_MS) return false;
-  try { d.set(String(d.now())); } catch { /* ignore */ }
+  try {
+    if (d.now() - Number(d.get() ?? 0) < WINDOW_MS) return false;
+    d.set(String(d.now()));
+    if (d.get() !== String(d.now())) return false;
+  } catch {
+    return false;
+  }
   d.reload();
   return true;
 }

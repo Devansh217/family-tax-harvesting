@@ -21,10 +21,13 @@ describe('reload after a deploy', () => {
     expect(reloadOnceForStaleBuild(d)).toBe(true);
   });
 
-  it('still reloads once when storage is blocked', () => {
-    const d = { ...deps(null), get: () => { throw new Error('blocked'); }, set: () => { throw new Error('blocked'); } };
+  it('never reloads when storage is blocked, since a guard could not survive the reload', () => {
     let n = 0;
-    expect(reloadOnceForStaleBuild({ ...d, reload: () => { n++; } })).toBe(true);
-    expect(n).toBe(1);
+    const blocked = { now: () => 1_000_000, get: () => { throw new Error('blocked'); }, set: () => { throw new Error('blocked'); }, reload: () => { n++; } };
+    for (let i = 0; i < 3; i++) expect(reloadOnceForStaleBuild(blocked)).toBe(false);
+    // Storage that accepts writes but keeps nothing (some private modes) is treated the same.
+    const forgetful = { now: () => 1_000_000, get: () => null, set: () => {}, reload: () => { n++; } };
+    expect(reloadOnceForStaleBuild(forgetful)).toBe(false);
+    expect(n).toBe(0);
   });
 });

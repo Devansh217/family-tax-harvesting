@@ -76,25 +76,64 @@ describe('opening lots from the holdings file', () => {
 });
 
 describe('a demat CAS on top of broker files', () => {
-  const casLot = (units: number, over: Partial<Txn> = {}) => trade('buy', '2025-10-22', units, 500, {
-    id: `a|X|opening|cas${units}`, account: 'Demat (CAS)', estimated: true, source: 'Opening balance (estimated date)', ...over,
+  // As saved at import: a guessed lot per ISIN (id `member|isin|opening|importId`) and a position from the statement.
+  const CAS_DATE = '2026-11-01';
+  const casLot = (units: number, importId = 'cas1', over: Partial<Txn> = {}) => trade('buy', '2025-10-22', units, 500, {
+    id: `a|X|opening|${importId}`, account: 'Demat (CAS)', estimated: true, source: 'Opening balance (estimated date)', ...over,
   });
+  const casPos = (units: number, importId = 'cas1'): HeldPosition => ({
+    memberId: 'a', isin: 'X', account: 'Demat (CAS)', qty: q(units), asOf: CAS_DATE, source: 'Demat CAS (NSDL / CDSL)', importId,
+  });
+  const casUnits = (txns: Txn[]) => txns.filter((t) => t.account === 'Demat (CAS)').reduce((a, t) => a + (t.side === 'buy' ? t.qty : -t.qty), 0);
+  const held = (txns: Txn[]) => txns.reduce((a, t) => a + (t.side === 'buy' ? t.qty : -t.qty), 0);
 
   it('does not count shares again that the broker account already explains', () => {
     // Zerodha: 63 held (tradebook 15 this year + 48 older from the holdings file). The CAS lists the same 63.
-    const out = effectiveTxns([trade('buy', '2026-05-04', 15, 1500), casLot(63)], [pos(63, 48, 1200)], ASOF);
-    expect(out.filter((t) => t.account === 'Demat (CAS)')).toHaveLength(0);
-    expect(out.filter((t) => t.side === 'buy').reduce((a, t) => a + t.qty, 0)).toBe(q(63));
+    const out = effectiveTxns([trade('buy', '2026-05-04', 15, 1500), casLot(63)], [pos(63, 48, 1200), casPos(63)], ASOF);
+    expect(casUnits(out)).toBe(0);
+    expect(held(out)).toBe(q(63));
   });
 
-  it('keeps only the units the other accounts do not explain (shares in a second broker)', () => {
-    const out = effectiveTxns([trade('buy', '2024-01-10', 40, 1000), casLot(100)], [], ASOF);
+  it('keeps the units only the CAS shows (shares at a second broker), at the saved cost', () => {
+    const out = effectiveTxns([trade('buy', '2024-01-10', 40, 1000), casLot(100)], [casPos(100)], ASOF);
     expect(out.find((t) => t.account === 'Demat (CAS)')).toMatchObject({ qty: q(60), amount: rs(30_000), estimated: true });
   });
 
-  it('leaves a guessed lot alone when nothing else holds that security', () => {
-    const lot = casLot(10);
-    expect(effectiveTxns([lot], [], ASOF)).toEqual([lot]);
+  it('compares with the other accounts on the statement date: later sales do not bring the units back', () => {
+    const out = effectiveTxns([trade('buy', '2024-01-10', 63, 1000), trade('sell', '2026-11-10', 63, 1500), casLot(63)], [casPos(63)], ASOF);
+    expect(casUnits(out)).toBe(0);
+    expect(held(out)).toBe(0);
+  });
+
+  it('later buys at the broker do not take units from the second broker', () => {
+    const out = effectiveTxns([trade('buy', '2024-01-10', 40, 1000), trade('buy', '2026-11-10', 30, 1500), casLot(100)], [casPos(100)], ASOF);
+    expect(casUnits(out)).toBe(q(60));
+  });
+
+  it('counts other guessed lots as explained, so nothing is doubled', () => {
+    const groww = trade('buy', '2025-10-22', 60, 500, { id: 'a|X|opening|g1', account: 'Groww', estimated: true, source: 'Opening balance (estimated date)' });
+    const out = effectiveTxns([trade('buy', '2024-01-10', 40, 1000), groww, casLot(100)], [casPos(100)], ASOF);
+    expect(casUnits(out)).toBe(0);
+    expect(out).toContainEqual(groww);
+    expect(held(out)).toBe(q(100));
+  });
+
+  it('leaves guessed lots from a single-broker file alone', () => {
+    // Zerodha holds 50; a Groww holdings CSV says 100 there. Both are real.
+    const groww = trade('buy', '2025-10-22', 100, 500, { id: 'a|X|opening|g1', account: 'Groww', estimated: true, source: 'Opening balance (estimated date)' });
+    const out = effectiveTxns([trade('buy', '2024-01-10', 50, 1000), groww], [{ ...pos(100, undefined, 500), account: 'Groww', source: 'Holdings · groww.csv' }], ASOF);
+    expect(out).toContainEqual(groww);
+    expect(held(out)).toBe(q(150));
+  });
+
+  it('a newer CAS replaces the lots an older one saved', () => {
+    const out = effectiveTxns([casLot(100, 'old'), casLot(100, 'new')], [casPos(100, 'new')], ASOF);
+    expect(casUnits(out)).toBe(q(100));
+  });
+
+  it('leaves a CAS lot alone when nothing else holds that security', () => {
+    const out = effectiveTxns([casLot(10)], [casPos(10)], ASOF);
+    expect(casUnits(out)).toBe(q(10));
   });
 });
 

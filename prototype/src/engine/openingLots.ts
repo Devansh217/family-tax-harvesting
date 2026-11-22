@@ -7,6 +7,8 @@ import type { ISODate, Paise, Qty, Txn } from './types';
  */
 export interface HeldPosition {
   memberId: string; isin: string; account?: string; qty: Qty; ltQty?: Qty; cost?: Paise; asOf?: ISODate; source: string;
+  /** The import it came from: ties a statement to the guessed lots it saved. */
+  importId?: string;
 }
 
 /**
@@ -60,32 +62,42 @@ export function effectiveTxns(txns: Txn[], positions: HeldPosition[], asOf: ISOD
     if (stQty > 0) added.push({ ...base, id: `${key(p.memberId, p.isin, p.account)}|opening-st`, date: before, qty: stQty, amount: Math.round(perUnit * stQty), estimated: true });
   }
   const all = added.length ? [...out, ...added] : out;
-  return withoutCounted(all);
+  return withSnapshots(all, positions, asOf);
 }
 
-const isGuessedOpening = (t: Txn) => !!t.estimated && t.source.startsWith('Opening balance');
+/** A demat CAS (NSDL / CDSL) lists every demat holding of the PAN, across brokers: a snapshot, not one more account. */
+const isSnapshot = (p: HeldPosition) => p.source.startsWith('Demat CAS');
+const SNAPSHOT_ACCOUNT = 'Demat (CAS)';
 
 /**
- * A guessed opening lot (a statement of current units, such as a demat CAS, with no history) for units another account
- * already explains: a demat CAS lists the same shares the broker files do, under its own account name. Each guessed lot
- * keeps only the units the member's other accounts do not hold, so they are not counted twice.
+ * Units a demat CAS shows that no other account explains on the statement's date. Its guessed lots saved at import
+ * (ids `member|isin|opening|importId`) are dropped, older statements' too, and replaced by one guessed lot of the
+ * difference. Everything else held then counts: trades, holdings-file lots, other files' guessed lots.
+ * Known gap: units held in a fund folio outside demat also count, though a demat CAS does not list them.
  */
-function withoutCounted(txns: Txn[]): Txn[] {
-  const guessed = txns.filter(isGuessedOpening);
-  if (!guessed.length) return txns;
-  const net = new Map<string, Qty>();
+function withSnapshots(txns: Txn[], positions: HeldPosition[], asOf: ISODate): Txn[] {
+  const snaps = positions.filter((p) => isSnapshot(p) && p.qty > 0);
+  if (!snaps.length) return txns;
+  const snapOf = (t: Txn) => (t.estimated && t.id.includes('|opening|')
+    ? snaps.find((p) => p.memberId === t.memberId && p.isin === t.isin && ((t.account ?? '') === (p.account || SNAPSHOT_ACCOUNT) || t.id.endsWith(`|opening|${p.importId}`)))
+    : undefined);
+  const saved = new Map<HeldPosition, Txn>();
+  const rest: Txn[] = [];
   for (const t of txns) {
-    if (isGuessedOpening(t)) continue;
-    const k = key(t.memberId, t.isin, t.account);
-    net.set(k, (net.get(k) ?? 0) + (t.side === 'buy' ? t.qty : -t.qty));
+    const p = snapOf(t);
+    if (!p) { rest.push(t); continue; }
+    if (!saved.has(p) || t.id.endsWith(`|opening|${p.importId}`)) saved.set(p, t);
   }
-  const elsewhere = (t: Txn) => [...net].reduce((a, [k, q]) => (k.startsWith(`${t.memberId}|${t.isin}|`) && k !== key(t.memberId, t.isin, t.account) ? a + Math.max(0, q) : a), 0);
-  const out: Txn[] = [];
-  for (const t of txns) {
-    if (!isGuessedOpening(t)) { out.push(t); continue; }
-    const keep = t.qty - elsewhere(t);
-    if (keep <= 0) continue;
-    out.push(keep === t.qty ? t : { ...t, qty: keep, amount: Math.round((t.amount * keep) / t.qty) });
+  const added: Txn[] = [];
+  for (const p of snaps) {
+    const ref = p.asOf ?? asOf;
+    const explained = rest
+      .filter((t) => t.memberId === p.memberId && t.isin === p.isin && t.date <= ref)
+      .reduce((a, t) => a + (t.side === 'buy' ? t.qty : -t.qty), 0);
+    const keep = p.qty - Math.max(0, explained);
+    const lot = saved.get(p);
+    if (keep <= 0 || !lot) continue;
+    added.push({ ...lot, qty: keep, amount: Math.round((lot.amount * keep) / lot.qty) });
   }
-  return out;
+  return added.length ? [...rest, ...added] : rest;
 }
