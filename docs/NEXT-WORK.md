@@ -42,7 +42,7 @@ In rough priority order. Each needs a brainstorm before code.
 
 ## 4. Every fresh-run finding and where it's handled
 
-From the founder's import run on the live site, 22 Nov 2026: 3 members on Zerodha (shares and Coin funds) and Angel One. Examples here are made up; the original notes, with real data, stay off git.
+From the founder's import run on the live site, 22 Nov 2026: 3 members on Zerodha (shares and Coin funds) and Angel One. Full detail, anonymised: `docs/fresh-run-notes.md`. The original notes, with real data, stay off git.
 
 | # | Finding | Handled in |
 |---|---|---|
