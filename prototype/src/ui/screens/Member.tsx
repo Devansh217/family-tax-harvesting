@@ -1,5 +1,5 @@
 import { incomeTotal } from '../../engine/rules';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { longTermFrom } from '../../engine/dates';
 import type { Paise } from '../../engine/types';
 import { useApp } from '../app-context';
@@ -88,6 +88,8 @@ const isSection = (k: string) => SALE_SECTIONS.includes(k as never);
 export function MemberScreen({ id }: { id: string }) {
   const { fam, state, update, indexOf, asOf } = useApp();
   const [view, setView] = useState<'now' | 'plan'>('now');
+  // Before any early return: hooks run in the same order every render.
+  const txns = useMemo(() => effectiveTxns(state.txns, state.positions, asOf), [state.txns, state.positions, asOf]);
   const v = fam.members.find((m) => m.member.id === id);
   if (!v) return <div className="sheet empty"><p>This member no longer exists.</p><a className="btn" href="#home">Back to family</a></div>;
 
@@ -112,8 +114,9 @@ export function MemberScreen({ id }: { id: string }) {
   const mismatches = unitMismatches(
     id,
     holdings.map((h) => ({ isin: h.isin, qty: h.qty, ltQty: h.lots.filter((l) => l.term === 'lt').reduce((a, l) => a + l.qty, 0) })),
-    effectiveTxns(state.txns, state.positions, asOf),
+    txns,
     positions,
+    myWarnings,
   );
   const imports = state.imports.filter((i) => i.memberId === id);
 

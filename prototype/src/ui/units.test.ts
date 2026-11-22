@@ -31,6 +31,14 @@ describe('statement units against the history', () => {
     expect(unitMismatches('a', held(60, 20), [t('buy', '2026-11-10', 10)], [pos(50, '2026-10-31', 50)])).toEqual([]);
   });
 
+  it('skips a holding whose later sale the history could not match (its own warning says so)', () => {
+    // CAS on 31 Oct: 15 units. A tradebook sells 15 on 5 Nov in another account with no buys: the ledger warns and keeps 15.
+    const sell = t('sell', '2026-11-05', 15, { account: 'Zerodha' });
+    expect(unitMismatches('a', held(15), [sell], [pos(15, '2026-10-31')], [{ memberId: 'a', isin: 'X', date: '2026-11-05' }])).toEqual([]);
+    // A warning from before the statement date does not hide a real gap.
+    expect(unitMismatches('a', held(41), [t('buy', '2026-11-10', 9)], [pos(50, '2026-10-31')], [{ memberId: 'a', isin: 'X', date: '2026-06-01' }])).toHaveLength(1);
+  });
+
   it('ignores other members', () => {
     expect(unitMismatches('b', held(0), [], [pos(50)])).toEqual([]);
   });

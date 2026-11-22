@@ -13,16 +13,20 @@ const TOLERANCE = 10;
  * Statements whose units differ from what the history gives. A statement is a snapshot on its date, so trades after
  * that date are taken off today's units before comparing: a sale or purchase since then is not a mismatch.
  * Long-term units are compared only when nothing has traded since (the history cannot say which lots a later trade took).
+ * A holding with a sale after the statement that the history could not match is skipped: the ledger never applied that
+ * sale, so the count would be wrong, and its own warning already says older purchases are missing.
  */
 export function unitMismatches(
   memberId: string,
   holdings: Array<{ isin: string; qty: Qty; ltQty: Qty }>,
   txns: Txn[],
   positions: Array<{ memberId: string; isin: string; qty: Qty; ltQty?: Qty; asOf?: ISODate }>,
+  oversold: Array<{ memberId: string; isin: string; date: ISODate }> = [],
 ): UnitMismatch[] {
   const out: UnitMismatch[] = [];
   for (const p of positions) {
     if (p.memberId !== memberId) continue;
+    if (p.asOf && oversold.some((w) => w.memberId === memberId && w.isin === p.isin && w.date > p.asOf!)) continue;
     const h = holdings.find((x) => x.isin === p.isin);
     const since = p.asOf
       ? txns.filter((t) => t.memberId === memberId && t.isin === p.isin && t.date > p.asOf!).reduce((a, t) => a + (t.side === 'buy' ? t.qty : -t.qty), 0)
