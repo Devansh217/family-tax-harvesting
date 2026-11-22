@@ -151,7 +151,19 @@ export interface Realised {
   gain: Paise;
   term: Term;
   taxType: TaxType;
+  /**
+   * Sold from a guessed lot (`estimated`), so the buy date is unknown and the term was set the safe way for room: a
+   * gain long-term, a loss short-term; ELSS always long-term; non-equity keeps its own type. A `TermAnswer` clears it.
+   */
+  termUnknown?: true;
 }
+
+/**
+ * The family's answer for one sale whose buy date is unknown, keyed by member, account, ISIN and sale date: the term
+ * itself, or the buy date the term is worked out from. It only sets that past sale's term; a covering broker Tax P&L
+ * still wins.
+ */
+export interface TermAnswer { memberId: string; account: string; isin: string; sellDate: ISODate; term?: Term; buyDate?: ISODate }
 
 export interface LedgerWarning {
   memberId: string;

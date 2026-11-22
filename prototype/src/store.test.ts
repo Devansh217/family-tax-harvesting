@@ -172,6 +172,16 @@ describe('migrating saved families', () => {
       .toEqual({ 'FY 2026-27|harvest_gain|m1|INE1|': true, 'FY 2026-27|wait|m1|INE2|': true });
   });
 
+  it('normalizeState keeps termAnswers and defaults to none', () => {
+    expect(normalizeState(oldState({}))!.termAnswers).toEqual([]);
+    const termAnswers = [{ memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', term: 'st' as const }];
+    expect(normalizeState(oldState({}, { termAnswers }))!.termAnswers).toEqual(termAnswers);
+    // A backup with term answers that are not a list of objects is refused.
+    const backup = (termAnswers: unknown) => JSON.stringify({ version: 1, members: [{ id: 'm1', name: 'A', relation: 'self', age: 40, regime: 'new' }], termAnswers });
+    expect(parseBackup(backup(termAnswers))!.termAnswers).toEqual(termAnswers);
+    expect(parseBackup(backup('st'))).toBeNull();
+  });
+
   it('migrates saved security kinds to tax types', () => {
     const s = normalizeState(oldState({}, { securities: [
       { isin: 'INE1', name: 'S', kind: 'equity' }, { isin: 'INF1', name: 'F', kind: 'equity_mf' }, { isin: 'INF2', name: 'D', kind: 'other' },

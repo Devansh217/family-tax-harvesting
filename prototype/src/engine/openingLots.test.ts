@@ -39,9 +39,13 @@ describe('opening lots from the holdings file', () => {
     expect(o[0]!.date < '2026-05-04').toBe(true);
   });
 
-  it('counts this year’s sales of older units, so the sold units are long-term too', () => {
+  it('counts this year’s sales of older units in their own term-unknown lot, ahead of the held long-term units', () => {
     const out = effectiveTxns([trade('sell', '2026-06-01', 20, 900)], [pos(30, 30, 600)], ASOF);
-    expect(openings(out)).toMatchObject([{ qty: q(50), approx: true }]);
+    expect(openings(out)).toMatchObject([
+      { id: 'a|X|Zerodha|opening-sold', qty: q(20), amount: rs(12_000), approx: true, estimated: true },
+      { id: 'a|X|Zerodha|opening-lt', qty: q(30), amount: rs(18_000), approx: true },
+    ]);
+    expect(openings(out)[1]!.estimated).toBeFalsy();
   });
 
   it('replaces a guessed opening lot saved at import for the same holding', () => {

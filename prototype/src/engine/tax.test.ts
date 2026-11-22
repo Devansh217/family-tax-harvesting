@@ -138,3 +138,28 @@ describe('set-off', () => {
     expect(s.buckets).toEqual(b({}));
   });
 });
+
+describe('unknown-term sales', () => {
+  it('an unknown-term loss counts short-term', () => {
+    // ₹20,000 booked short-term gain on Y; a guessed lot of X (cost ₹25,000) sold for ₹20,000: a ₹5,000 loss, buy date unknown.
+    const t = (id: string, isin: string, date: string, side: 'buy' | 'sell', amount: number, estimated?: true) =>
+      ({ id, memberId: 'p', isin, date, side, qty: 10 * QTY_SCALE, amount: rs(amount), source: 't', ...(estimated ? { estimated } : {}) });
+    const sec = (isin: string): Security => ({ isin, name: isin, taxType: 'equity', listed: true });
+    const l = buildLedger([
+      t('1', 'Y', '2026-04-05', 'buy', 30_000), t('2', 'Y', '2026-06-01', 'sell', 50_000),
+      t('3', 'X', '2025-01-01', 'buy', 25_000, true), t('4', 'X', '2026-06-01', 'sell', 20_000),
+    ], [sec('X'), sec('Y')], R);
+    expect(l.realised.find((x) => x.isin === 'X')).toMatchObject({ gain: rs(-5_000), term: 'st', termUnknown: true });
+    const p = person({ income: [salary(30_00_000)] });
+    const s = summariseYear(p, l.realised, R);
+    const without = summariseYear(p, l.realised.filter((x) => x.isin === 'Y'), R);
+    // Long-term room unchanged (₹1,25,000 both ways); short-term after set-off ₹20,000 − ₹5,000 = ₹15,000.
+    expect(s.room.free).toBe(rs(1_25_000));
+    expect(s.room.free).toBe(without.room.free);
+    expect(s.ltNet).toBe(0);
+    expect(s.stNet).toBe(rs(15_000));
+    // ₹15,000 × 20% = ₹3,000, plus 4% cess: ₹3,120.
+    expect(s.tax).toBe(rs(3_120));
+    expect(taxForYear(p, normalIncomeOf(p, R, D)!, s.buckets, R, D).tax - tax(p, {})).toBe(rs(3_120));
+  });
+});

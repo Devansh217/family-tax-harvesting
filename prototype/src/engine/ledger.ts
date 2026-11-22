@@ -1,7 +1,8 @@
+import { isElssFund } from './categories';
 import { isLongTerm } from './dates';
 import { FY_2026_27, type TaxRules } from './rules';
 import { longTermMonthsFor, lotTaxType } from './tax';
-import { QTY_SCALE, type IntradayTrade, type Ledger, type ISODate, type Lot, type Paise, type Qty, type Realised, type Security, type Txn } from './types';
+import { QTY_SCALE, type IntradayTrade, type Ledger, type ISODate, type Lot, type Paise, type Qty, type Realised, type Security, type TermAnswer, type Txn } from './types';
 
 export const lotKey = (memberId: string, isin: string, account = '') => `${memberId}|${isin}|${account}`;
 
@@ -26,11 +27,6 @@ export function effectiveCost(
 }
 
 /**
- * Replays every transaction in date order and matches sells to buys first-in-first-out, per member, security and
- * account (demat or folio), as the depositories do.
- * Sells on a date are applied before buys on that date, so a same-day buyback is never consumed by its own sale.
- */
-/**
  * Tax type and term of a sold lot. The type is per lot (debt units bought before April 2023 are other long-term);
  * unknown securities are treated as listed shares, as before.
  */
@@ -40,8 +36,34 @@ export function lotTerms(sec: Security | undefined, buyDate: ISODate, sellDate: 
   return { taxType, term: months != null && isLongTerm(buyDate, sellDate, months) ? 'lt' : 'st' };
 }
 
-export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules = FY_2026_27): Ledger {
+/**
+ * Tax type and term of a sale from a guessed lot (`estimated`): the buy date is unknown, so the term is set the safe
+ * way for room. ELSS is always long-term (its units sell only after the lock-in); non-equity keeps its own type and the
+ * term from the guessed date; anything else counts a gain long-term (it uses room) and a loss short-term (it is set
+ * off against short-term gains first). The family's answer for the sale, a term or a buy date, overrides the guess.
+ */
+function unknownTerms(
+  sec: Security | undefined, lotDate: ISODate, sellDate: ISODate, gain: Paise, rules: TaxRules, answer: TermAnswer | undefined,
+): Pick<Realised, 'taxType' | 'term' | 'termUnknown'> & Partial<Pick<Realised, 'buyDate'>> {
+  if (answer?.buyDate) return { ...lotTerms(sec, answer.buyDate, sellDate, rules), buyDate: answer.buyDate };
+  const own = lotTerms(sec, lotDate, sellDate, rules);
+  if (answer?.term) return { taxType: own.taxType, term: answer.term };
+  if (sec && isElssFund(sec)) return { taxType: own.taxType, term: 'lt', termUnknown: true };
+  if (own.taxType !== 'equity') return { ...own, termUnknown: true };
+  return { taxType: own.taxType, term: gain >= 0 ? 'lt' : 'st', termUnknown: true };
+}
+
+const sameAccount = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * Replays every transaction in date order and matches sells to buys first-in-first-out, per member, security and
+ * account (demat or folio), as the depositories do. Sales from guessed lots get their term from `unknownTerms`.
+ * Sells on a date are applied before buys on that date, so a same-day buyback is never consumed by its own sale.
+ */
+export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules = FY_2026_27, answers: TermAnswer[] = []): Ledger {
   const bySec = new Map(securities.map((s) => [s.isin, s]));
+  const answerFor = (t: Txn, account: string) =>
+    answers.find((a) => a.memberId === t.memberId && a.isin === t.isin && a.sellDate === t.date && sameAccount(a.account, account) && (a.term || a.buyDate));
   const { delivery, intraday } = splitIntraday(txns);
   // Units that left the account go last on their date: the holdings file shows the end of that day.
   const rank = (t: Txn) => (t.left ? 2 : t.side === 'sell' ? 0 : 1);
@@ -82,7 +104,8 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
       const take = Math.min(lot.qty, remaining);
       const actualCost = take === lot.qty ? lot.cost : prorate(lot.cost, take, lot.qty);
       const proceeds = take === remaining ? proceedsLeft : prorate(t.amount, take, t.qty);
-      const cost = effectiveCost(lot, actualCost, take, proceeds, bySec.get(t.isin), rules);
+      const sec = bySec.get(t.isin);
+      const cost = effectiveCost(lot, actualCost, take, proceeds, sec, rules);
       realised.push({
         memberId: t.memberId,
         isin: t.isin,
@@ -93,7 +116,7 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
         proceeds,
         cost,
         gain: proceeds - cost,
-        ...lotTerms(bySec.get(t.isin), lot.date, t.date, rules),
+        ...(lot.estimated ? unknownTerms(sec, lot.date, t.date, proceeds - cost, rules, answerFor(t, account)) : lotTerms(sec, lot.date, t.date, rules)),
       });
       lot.qty -= take;
       lot.cost -= actualCost;

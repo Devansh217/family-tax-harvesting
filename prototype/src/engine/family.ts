@@ -12,7 +12,7 @@ import { NSE_HOLIDAYS_2027, buybackDate } from './season';
 import { longTermMonthsFor, lotTaxType, summariseYear, type BusinessIncome, type YearSummary } from './tax';
 import { inRange } from './dates';
 import {
-  QTY_SCALE, type ISODate, type Ledger, type Lot, type Member, type Paise, type Qty, type Realised, type Security, type Term, type Txn,
+  QTY_SCALE, type ISODate, type Ledger, type Lot, type Member, type Paise, type Qty, type Realised, type Security, type Term, type TermAnswer, type Txn,
 } from './types';
 
 export interface PlannedSale { id: string; memberId: string; isin: string; qty: Qty }
@@ -35,6 +35,8 @@ export interface FamilyState {
   datedMoves?: DatedMove[];
   /** The family's records. A dated move that is done (marked or seen in a statement) is retired: no longer sized first. */
   recommendations?: RecommendationRecord[];
+  /** The family's answers for sales whose buy date is unknown (see `Realised.termUnknown`). */
+  termAnswers?: TermAnswer[];
 }
 
 export interface DatedMove { moveId: string; date: ISODate }
@@ -302,7 +304,7 @@ function harvestableQty(lots: Lot[], sec: Security, asOf: ISODate, rules: TaxRul
 }
 
 export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules): FamilyView {
-  const ledger = buildLedger(effectiveTxns(state.txns, state.positions ?? [], asOf, state.securities), state.securities, rules);
+  const ledger = buildLedger(effectiveTxns(state.txns, state.positions ?? [], asOf, state.securities), state.securities, rules, state.termAnswers);
   const secs = new Map(state.securities.map((s) => [s.isin, s]));
   const moves: Move[] = [];
   // Dated moves: the family's picked days, by move id. Later entries for the same id win.

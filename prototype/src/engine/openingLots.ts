@@ -197,7 +197,8 @@ function capHeldCost(lots: HeldPart[], keep: Qty, fileCost: Paise): Map<Txn, Pai
  * - **Otherwise** the cost left over, `file cost − history's held cost`, goes to the units held. With a long-term count:
  *   long-term units at that cost, marked `approx`, and any short-term rest guessed (`opening-lt` / `opening-st`).
  *   Without one (funds): one guessed lot (`opening-est`). Units sold from before the history take the lower of the
- *   file's average and that cost.
+ *   file's average and that cost; with a long-term count they get their own guessed lot (`opening-sold`), whose
+ *   sales are term unknown (`buildLedger`).
  *
  * Fill-in lots take the account label of the history's trades in that account, so one account is one ledger queue.
  */
@@ -281,7 +282,12 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
       const stQty = held - ltHeld;
       const ltDate = [addMonths(ref, -13), before].sort()[0]!;
       const ltAmount = prorate(total, ltQty, units);
-      if (ltQty > 0) lots.unshift({ ...base, id: id('opening-lt'), date: ltDate, qty: ltQty, amount: ltAmount, approx: true });
+      const soldAmount = prorate(total, sale, units);
+      if (ltHeld > 0) lots.unshift({ ...base, id: id('opening-lt'), date: ltDate, qty: ltHeld, amount: ltAmount - soldAmount, approx: true });
+      // Units sold before the file: it proves what is long-term now, not at that sale, so their term is unknown
+      // (`estimated`). First in the queue, so the sales take them and never the held long-term units: dated with the
+      // long-term part (the day before the history, or earlier when that is under 13 months before the file).
+      if (sale > 0) lots.unshift({ ...guessed('opening-sold', sale, soldAmount), date: ltDate, approx: true });
       if (stQty > 0) lots.push(guessed('opening-st', stQty, total - ltAmount));
     }
   }

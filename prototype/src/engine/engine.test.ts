@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { addMonths, isLongTerm, longTermFrom, todayISO } from './dates';
+import { computeFamily, type FamilyState } from './family';
 import { buildLedger } from './ledger';
+import { effectiveTxns, type HeldPosition } from './openingLots';
 import { FY_2026_27 as R, roundTripCost } from './rules';
 import { classifyByIsin } from '../parsers/common';
 import { summariseYear } from './tax';
-import { QTY_SCALE, type Member, type Security, type Txn } from './types';
+import { QTY_SCALE, type Member, type Security, type TermAnswer, type Txn } from './types';
 
 const q = (n: number) => Math.round(n * QTY_SCALE);
 const rs = (n: number) => Math.round(n * 100);
@@ -276,5 +278,125 @@ describe('intraday and F&O', () => {
   it('trading profit uses up basic exemption that would otherwise be bonus room', () => {
     const s = summariseYear(member({ income: [{ kind: 'other' as const, amount: rs(1_00_000) , from: 'manual' as const }]}), [], R, { speculative: 0, nonSpeculative: rs(2_00_000) });
     expect(s.bonus.total).toBe(rs(1_00_000));
+  });
+});
+
+describe('units sold from the opening lot', () => {
+  // History starts 2025-08-01 (10 bought at ₹500); the holdings file (22 Nov 2026) shows 30 long-term at ₹600 average
+  // (₹18,000). On 10 Apr 2026, 8 units were sold at ₹900: they came from before the history, so their buy date is unknown.
+  const FILE = '2026-11-22';
+  const acct = { account: 'Zerodha', source: 'Trade history · tb.xlsx' };
+  const history = (): Txn[] => [
+    { ...tx('a', 'X', '2025-08-01', 'buy', 10, 500), ...acct },
+    { ...tx('a', 'X', '2026-04-10', 'sell', 8, 900), ...acct },
+  ];
+  const file: HeldPosition = { memberId: 'a', isin: 'X', account: 'Zerodha', qty: q(30), ltQty: q(30), cost: rs(18_000), asOf: FILE, source: 'Zerodha holdings', canTrim: true };
+  const ledger = (answers?: TermAnswer[]) => buildLedger(effectiveTxns(history(), [file], FILE), [sec('X')], R, answers);
+  const who = member({ id: 'a' });
+
+  it('units sold from the opening lot are term unknown', () => {
+    const out = effectiveTxns(history(), [file], FILE);
+    const sold = out.find((t) => t.id.endsWith('|opening-sold'))!;
+    // The 8 sold units at the file's ₹600 average: ₹4,800, dated the day before the history starts.
+    expect(sold).toMatchObject({ qty: q(8), amount: rs(4_800), estimated: true, approx: true, date: '2025-07-31' });
+    expect(out.find((t) => t.id.endsWith('|opening-lt'))).toMatchObject({ qty: q(20), amount: rs(12_000), approx: true });
+    const [r] = ledger().realised;
+    // Proceeds ₹7,200 less ₹4,800: a ₹2,400 gain, counted long-term (the safe way for room).
+    expect(r).toMatchObject({ qty: q(8), gain: rs(2_400), term: 'lt', taxType: 'equity', termUnknown: true });
+    const s = summariseYear(who, ledger().realised, R);
+    expect(s.room.used).toBe(rs(2_400));
+    expect(s.room.free).toBe(rs(1_22_600));
+  });
+
+  it('a sale takes the term-unknown units, not the held long-term ones, when the history starts within 13 months', () => {
+    // History starts 10 Jan 2026 (5 bought); the file shows 30, 25 long-term. Long-term units are dated 22 Oct 2025.
+    const txns = [{ ...tx('a', 'X', '2026-01-10', 'buy', 5, 500), ...acct }, { ...tx('a', 'X', '2026-06-01', 'sell', 8, 900), ...acct }];
+    const out = effectiveTxns(txns, [{ ...file, ltQty: q(25) }], FILE);
+    const l = buildLedger(out, [sec('X')], R);
+    expect(l.realised).toMatchObject([{ qty: q(8), term: 'lt', termUnknown: true }]);
+    expect(l.lots.get('a|X|Zerodha')!.map((x) => [x.qty, !!x.estimated])).toEqual([[q(25), false], [q(5), false]]);
+  });
+
+  it("answer term 'st' makes the gain short-term", () => {
+    const answer: TermAnswer = { memberId: 'a', account: 'Zerodha', isin: 'X', sellDate: '2026-04-10', term: 'st' };
+    const [r] = ledger([answer]).realised;
+    expect(r).toMatchObject({ term: 'st', gain: rs(2_400) });
+    expect(r!.termUnknown).toBeUndefined();
+    // Room rises by the gain: ₹1,22,600 → ₹1,25,000. Tax: ₹2,400 × 20% = ₹480, plus 4% cess = ₹499.20, rounded ₹499.
+    const s = summariseYear(who, ledger([answer]).realised, R);
+    expect(s.room.free).toBe(rs(1_25_000));
+    expect(s.stNet).toBe(rs(2_400));
+    expect(s.tax).toBe(rs(499));
+    // An answer for another sale date changes nothing.
+    expect(ledger([{ ...answer, sellDate: '2026-04-11' }]).realised[0]).toMatchObject({ term: 'lt', termUnknown: true });
+  });
+
+  it('answer buyDate: the term comes from the holding period', () => {
+    const at = (buyDate: string) => ledger([{ memberId: 'a', account: 'Zerodha', isin: 'X', sellDate: '2026-04-10', buyDate }]).realised[0]!;
+    expect(at('2025-03-01')).toMatchObject({ term: 'lt', buyDate: '2025-03-01' });
+    expect(at('2025-09-01')).toMatchObject({ term: 'st', buyDate: '2025-09-01' });
+    expect(at('2025-09-01').termUnknown).toBeUndefined();
+  });
+
+  it('a fund guessed lot (no long-term count) is term unknown too', () => {
+    // A fund statement with no long-term count: one guessed lot of 30 at ₹600. A sale of 8 at ₹500 after the file: a loss.
+    const fund = { ...file, ltQty: undefined };
+    const sell = { ...tx('a', 'X', '2026-11-25', 'sell', 8, 500), ...acct };
+    const out = effectiveTxns([sell], [fund], FILE);
+    expect(out.find((t) => t.id.endsWith('|opening-est'))).toMatchObject({ estimated: true });
+    expect(buildLedger(out, [sec('X')], R).realised[0]).toMatchObject({ gain: rs(-800), term: 'st', termUnknown: true });
+  });
+
+  it('a bonus lot (cost 0, guessed) sold later is term unknown', () => {
+    // 10 bought at ₹1,000 in 2024; the file shows 20 at ₹500 (a 1:1 bonus, not a split: only 10 long-term). The 10 bonus
+    // units come in at cost 0, dated the day before the history. A sale of 15 at ₹1,200 after the file takes them first.
+    const old = { ...tx('a', 'X', '2024-01-10', 'buy', 10, 1000), ...acct };
+    const bonus = { ...file, qty: q(20), ltQty: q(10), cost: rs(10_000) };
+    const sell = { ...tx('a', 'X', '2026-11-25', 'sell', 15, 1200), ...acct };
+    const r = buildLedger(effectiveTxns([old, sell], [bonus], FILE), [sec('X')], R).realised;
+    expect(r[0]).toMatchObject({ qty: q(10), cost: 0, gain: rs(12_000), term: 'lt', termUnknown: true });
+    expect(r[1]).toMatchObject({ qty: q(5), gain: rs(1_000), term: 'lt' });
+    expect(r[1]!.termUnknown).toBeUndefined();
+  });
+
+  it('ELSS unknown-term is long-term', () => {
+    const elss = sec('E', { listed: false, category: 'Equity Scheme - ELSS' });
+    const guess: Txn = { ...tx('a', 'E', '2026-03-01', 'buy', 10, 100), estimated: true };
+    const r = buildLedger([guess, tx('a', 'E', '2026-06-01', 'sell', 10, 80)], [elss], R).realised[0]!;
+    // A ₹200 loss would count short-term for other shares; ELSS units are always past the 3-year lock-in.
+    expect(r).toMatchObject({ gain: rs(-200), term: 'lt', taxType: 'equity', termUnknown: true });
+  });
+
+  it('a debt fund keeps slab rate', () => {
+    const debt = sec('D', { taxType: 'slab', listed: false });
+    const guess: Txn = { ...tx('a', 'D', '2024-01-01', 'buy', 100, 100), estimated: true };
+    const r = buildLedger([guess, tx('a', 'D', '2026-06-01', 'sell', 100, 150)], [debt], R).realised[0]!;
+    expect(r).toMatchObject({ gain: rs(5_000), taxType: 'slab', term: 'st', termUnknown: true });
+    // The ₹5,000 is slab income, not long-term: room untouched. At ₹20 L income it falls in the 25% slab: ₹1,250 + 4% cess = ₹1,300.
+    const s = summariseYear(who, [{ ...r, memberId: 'a' }], R);
+    expect(s.room.free).toBe(rs(1_25_000));
+    expect(s.buckets.slab).toBe(rs(5_000));
+    expect(s.tax).toBe(rs(1_300));
+    // A debt lot guessed before April 2023 keeps its own type: other long-term after 24 months.
+    const old: Txn = { ...guess, id: 'old', date: '2023-01-01' };
+    expect(buildLedger([old, tx('a', 'D', '2026-06-01', 'sell', 100, 150)], [debt], R).realised[0]).toMatchObject({ taxType: 'other_lt', term: 'lt' });
+  });
+
+  it('a covering broker Tax P&L wins over the unknown term and the answer', () => {
+    // The broker says the ₹2,400 was short-term. Engine and answer both say long-term: the broker's totals win.
+    const state = (termAnswers?: TermAnswer[]): FamilyState => ({
+      members: [who], securities: [sec('X')], txns: history(), positions: [file], termAnswers,
+      brokerSummaries: [{ memberId: 'a', account: 'Zerodha', summary: { broker: 'Zerodha', from: '2026-04-01', to: '2026-11-20', equityShortTerm: rs(2_400), equityLongTerm: 0, mfShortTerm: null, mfLongTerm: null } }],
+    });
+    for (const answers of [undefined, [{ memberId: 'a', account: 'Zerodha', isin: 'X', sellDate: '2026-04-10', term: 'lt' as const }]]) {
+      const fam = computeFamily(state(answers), FILE, R);
+      const y = fam.members[0]!.year;
+      expect([y.stNet, y.ltNet, y.room.free]).toEqual([rs(2_400), 0, rs(1_25_000)]);
+      expect(y.tax).toBe(rs(499));
+    }
+    // Without the P&L, the state's answer reaches the ledger.
+    const st = computeFamily({ ...state([{ memberId: 'a', account: 'Zerodha', isin: 'X', sellDate: '2026-04-10', term: 'st' }]), brokerSummaries: [] }, FILE, R);
+    expect(st.members[0]!.year.room.free).toBe(rs(1_25_000));
+    expect(computeFamily({ ...state(), brokerSummaries: [] }, FILE, R).members[0]!.year.room.free).toBe(rs(1_22_600));
   });
 });
