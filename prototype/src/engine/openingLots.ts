@@ -26,6 +26,41 @@ const isTradebook = (t: Txn) => t.source.startsWith('Trade history');
 const isTaxPnl = (t: Txn) => t.source.startsWith('Zerodha Tax P&L');
 const key = (memberId: string, isin: string, account = '') => `${memberId}|${isin}|${account}`;
 
+/** Account labels are free text: one account matches whatever the spaces and case. */
+export const normAccount = (a?: string): string => (a ?? '').trim().toLowerCase();
+
+/** The holdings file that decides what a member holds in one account. */
+export interface DecidingFile { importId: string; asOf: ISODate; canTrim: boolean; positions: HeldPosition[] }
+
+/**
+ * Per member and account (`member|normAccount(account)`), the holdings file that decides what is held there: the one
+ * with the latest date, and on a tie the import that came last. Only that file's positions count for the account.
+ * Undated files never decide. A blank account label never trims.
+ */
+export function decidingFiles(positions: HeldPosition[]): Map<string, DecidingFile> {
+  const best = new Map<string, { importId: string; asOf: ISODate }>();
+  for (const p of positions) {
+    if (!TRIMMING_HOLDINGS_SOURCES.includes(p.source) || !p.asOf) continue;
+    const k = `${p.memberId}|${normAccount(p.account)}`;
+    const b = best.get(k);
+    if (!b || p.asOf >= b.asOf) best.set(k, { importId: p.importId ?? '', asOf: p.asOf });
+  }
+  const out = new Map<string, DecidingFile>();
+  for (const [k, b] of best) {
+    const mine = positions.filter((p) => TRIMMING_HOLDINGS_SOURCES.includes(p.source) && `${p.memberId}|${normAccount(p.account)}` === k && (p.importId ?? '') === b.importId && p.asOf === b.asOf);
+    out.set(k, { ...b, canTrim: !k.endsWith('|') && mine.every((p) => p.canTrim === true), positions: mine });
+  }
+  return out;
+}
+
+/** Shares in an account's history that its newest holdings file doesn't list (or lists fewer of): they left the account. */
+export interface TrimNote { memberId: string; account: string; asOf: ISODate; isins: string[] }
+
+/** The transactions the ledger should replay. See `effectiveTxnsWithNotes`. */
+export function effectiveTxns(txns: Txn[], positions: HeldPosition[], asOf: ISODate): Txn[] {
+  return effectiveTxnsWithNotes(txns, positions, asOf).txns;
+}
+
 /**
  * The transactions the ledger should replay, worked out fresh on every compute so import order never matters:
  *
@@ -33,13 +68,26 @@ const key = (memberId: string, isin: string, account = '') => `${memberId}|${isi
  * 2. Where a holdings file gives cost and long-term units, the units the history cannot explain (bought before the
  *    oldest tradebook) become an opening lot dated before that history: long-term units at average cost, marked
  *    `approx` (usable for moves, with a cushion), and any short-term rest as a guessed lot. A guessed opening lot
- *    saved at import for the same holding is replaced.
+ *    saved at import for the same holding is replaced. Where an account has a deciding holdings file, only its
+ *    positions fill in.
+ * 3. Units the history holds on the deciding file's date beyond what the file lists left the account: a `left` sell
+ *    removes them, oldest first, with no gain. Only when the file may trim and is not older than the account's last
+ *    trade (Tax P&L exits aside); a file older than that is returned in `staleFiles` instead.
  */
-export function effectiveTxns(txns: Txn[], positions: HeldPosition[], asOf: ISODate): Txn[] {
+export function effectiveTxnsWithNotes(
+  txns: Txn[], positions: HeldPosition[], asOf: ISODate,
+): { txns: Txn[]; trimmed: TrimNote[]; staleFiles: Array<{ memberId: string; account: string; asOf: ISODate }> } {
   const tradebookAccounts = new Set(txns.filter(isTradebook).map((t) => `${t.memberId}|${t.account ?? ''}`));
   let out = txns.filter((t) => !(isTaxPnl(t) && tradebookAccounts.has(`${t.memberId}|${t.account ?? ''}`)));
 
-  const usable = positions.filter((p) => p.cost != null && p.ltQty != null && p.qty > 0);
+  const files = decidingFiles(positions);
+  const acctKey = (memberId: string, account?: string) => `${memberId}|${normAccount(account)}`;
+  // An older file's positions for an account with a newer dated file count for nothing.
+  const counts = (p: HeldPosition) => {
+    const f = TRIMMING_HOLDINGS_SOURCES.includes(p.source) ? files.get(acctKey(p.memberId, p.account)) : undefined;
+    return !f || f.positions.includes(p);
+  };
+  const usable = positions.filter((p) => p.cost != null && p.ltQty != null && p.qty > 0 && counts(p));
   const replaced = new Set(usable.map((p) => key(p.memberId, p.isin, p.account)));
   out = out.filter((t) => !(t.estimated && replaced.has(key(t.memberId, t.isin, t.account))));
 
@@ -66,8 +114,59 @@ export function effectiveTxns(txns: Txn[], positions: HeldPosition[], asOf: ISOD
     if (ltQty > 0) added.push({ ...base, id: `${key(p.memberId, p.isin, p.account)}|opening-lt`, date: ltDate, qty: ltQty, amount: Math.round(perUnit * ltQty), approx: true });
     if (stQty > 0) added.push({ ...base, id: `${key(p.memberId, p.isin, p.account)}|opening-st`, date: before, qty: stQty, amount: Math.round(perUnit * stQty), estimated: true });
   }
-  const all = added.length ? [...out, ...added] : out;
-  return withSnapshots(all, positions, asOf);
+  const filled = added.length ? [...out, ...added] : out;
+  const { left, trimmed, staleFiles } = unitsThatLeft(out, filled, files);
+  return { txns: withSnapshots(left.length ? [...filled, ...left] : filled, positions, asOf), trimmed, staleFiles };
+}
+
+/** A trade the family made: not a saved guess, not a Tax P&L exit. These date the account's last trade. */
+const isRealTrade = (t: Txn) => !isTaxPnl(t) && !t.id.includes('|opening') && !t.left;
+
+/**
+ * The `left` sells that bring each account down to its deciding file. `trades` are the imported transactions (to
+ * find the account's last trade), `held` the same plus the units filled in from holdings files.
+ */
+function unitsThatLeft(trades: Txn[], held: Txn[], files: Map<string, DecidingFile>) {
+  const left: Txn[] = [];
+  const trimmed: TrimNote[] = [];
+  const staleFiles: Array<{ memberId: string; account: string; asOf: ISODate }> = [];
+  for (const [k, f] of files) {
+    if (!f.canTrim) continue;
+    const memberId = f.positions[0]!.memberId;
+    const account = f.positions[0]!.account ?? '';
+    const inAccount = (t: Txn) => `${t.memberId}|${normAccount(t.account)}` === k;
+    const last = trades.filter((t) => inAccount(t) && isRealTrade(t)).reduce<ISODate>((a, t) => (t.date > a ? t.date : a), '');
+    if (last > f.asOf) { staleFiles.push({ memberId, account, asOf: f.asOf }); continue; }
+    // Units held on the file's date, per security and exact account label (the ledger keeps one queue per label).
+    const units = new Map<string, Map<string, { qty: Qty; first: ISODate }>>();
+    for (const t of held) {
+      if (!inAccount(t) || t.date > f.asOf) continue;
+      const byLabel = units.get(t.isin) ?? new Map<string, { qty: Qty; first: ISODate }>();
+      units.set(t.isin, byLabel);
+      const label = t.account ?? '';
+      const u = byLabel.get(label) ?? { qty: 0, first: t.date };
+      u.qty += t.side === 'buy' ? t.qty : -t.qty;
+      if (t.side === 'buy' && t.date < u.first) u.first = t.date;
+      byLabel.set(label, u);
+    }
+    const isins: string[] = [];
+    for (const [isin, byLabel] of units) {
+      const listed = f.positions.filter((p) => p.isin === isin).reduce((a, p) => a + p.qty, 0);
+      let extra = [...byLabel.values()].reduce((a, u) => a + u.qty, 0) - listed;
+      if (extra <= 0) continue;
+      isins.push(isin);
+      // Oldest units first, across labels that differ only in spaces or case.
+      for (const [label, u] of [...byLabel].sort((a, b) => a[1].first.localeCompare(b[1].first))) {
+        const qty = Math.min(extra, u.qty);
+        if (qty <= 0) continue;
+        left.push({ id: `${memberId}|${isin}|${label}|left|${f.asOf}`, memberId, isin, account: label, side: 'sell', left: true, qty, amount: 0, date: f.asOf, source: 'Left the account' });
+        extra -= qty;
+        if (extra <= 0) break;
+      }
+    }
+    if (isins.length) trimmed.push({ memberId, account, asOf: f.asOf, isins });
+  }
+  return { left, trimmed, staleFiles };
 }
 
 /** A demat CAS (NSDL / CDSL) lists every demat holding of the PAN, across brokers: a snapshot, not one more account. */

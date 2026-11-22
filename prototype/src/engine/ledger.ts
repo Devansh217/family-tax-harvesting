@@ -43,9 +43,9 @@ export function lotTerms(sec: Security | undefined, buyDate: ISODate, sellDate: 
 export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules = FY_2026_27): Ledger {
   const bySec = new Map(securities.map((s) => [s.isin, s]));
   const { delivery, intraday } = splitIntraday(txns);
-  const ordered = [...delivery].sort(
-    (a, b) => a.date.localeCompare(b.date) || (a.side === b.side ? 0 : a.side === 'sell' ? -1 : 1),
-  );
+  // Units that left the account go last on their date: the holdings file shows the end of that day.
+  const rank = (t: Txn) => (t.left ? 2 : t.side === 'sell' ? 0 : 1);
+  const ordered = [...delivery].sort((a, b) => a.date.localeCompare(b.date) || rank(a) - rank(b));
   const lots = new Map<string, Lot[]>();
   const realised: Realised[] = [];
   const warnings: Ledger['warnings'] = [];
@@ -58,6 +58,20 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
 
     if (t.side === 'buy') {
       queue.push({ memberId: t.memberId, isin: t.isin, account, date: t.date, qty: t.qty, cost: t.amount, source: t.source, estimated: t.estimated, ...(t.approx ? { approx: true } : {}) });
+      continue;
+    }
+
+    if (t.left) {
+      // Not a sale: the oldest units stop being held, and nothing is booked.
+      let remaining = t.qty;
+      while (remaining > 0 && queue.length > 0) {
+        const lot = queue[0]!;
+        const take = Math.min(lot.qty, remaining);
+        lot.cost -= take === lot.qty ? lot.cost : prorate(lot.cost, take, lot.qty);
+        lot.qty -= take;
+        remaining -= take;
+        if (lot.qty === 0) queue.shift();
+      }
       continue;
     }
 
@@ -103,17 +117,19 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
  * Buys and sells of the same security on the same day in the same account square off: that matched quantity is
  * intraday (speculative business income at slab rates), not a capital gain. Only the unmatched rest goes to lots.
  * This also catches a same-day sell-and-buy-back, which is why harvest moves say to buy back the next trading day.
+ * Units that left the account are not a sale and go straight to delivery.
  */
 export function splitIntraday(txns: Txn[]): { delivery: Txn[]; intraday: IntradayTrade[] } {
   const groups = new Map<string, Txn[]>();
+  const delivery: Txn[] = [];
+  const intraday: IntradayTrade[] = [];
   for (const t of txns) {
+    if (t.left) { delivery.push(t); continue; }
     const k = `${t.memberId}|${t.account ?? ''}|${t.isin}|${t.date}`;
     const g = groups.get(k) ?? [];
     g.push(t);
     groups.set(k, g);
   }
-  const delivery: Txn[] = [];
-  const intraday: IntradayTrade[] = [];
   for (const g of groups.values()) {
     const buys = g.filter((t) => t.side === 'buy'), sells = g.filter((t) => t.side === 'sell');
     const bq = buys.reduce((a, t) => a + t.qty, 0), sq = sells.reduce((a, t) => a + t.qty, 0);

@@ -113,6 +113,29 @@ describe('ledger FIFO', () => {
   });
 });
 
+describe('units that left the account', () => {
+  const gone = (date: string, units: number): Txn => ({ ...tx('m1', 'A', date, 'sell', units, 0), left: true });
+
+  it('removes the oldest units with no gain and no warning', () => {
+    const l = buildLedger([tx('m1', 'A', '2024-01-10', 'buy', 10, 100), tx('m1', 'A', '2026-05-01', 'buy', 10, 300), gone('2026-11-22', 15)], [sec('A')]);
+    expect(l.realised).toHaveLength(0);
+    expect(l.warnings).toHaveLength(0);
+    expect(l.lots.get('m1|A|')).toMatchObject([{ date: '2026-05-01', qty: q(5), cost: rs(1_500) }]);
+  });
+
+  it('never warns, even with nothing left to remove', () => {
+    const l = buildLedger([gone('2026-11-22', 5)], [sec('A')]);
+    expect(l.warnings).toHaveLength(0);
+    expect(l.realised).toHaveLength(0);
+  });
+
+  it('comes after a buy on the same day, and is never intraday', () => {
+    const l = buildLedger([tx('m1', 'A', '2026-11-22', 'buy', 10, 100), gone('2026-11-22', 4)], [sec('A')]);
+    expect(l.intraday).toHaveLength(0);
+    expect(l.lots.get('m1|A|')).toMatchObject([{ qty: q(6), cost: rs(600) }]);
+  });
+});
+
 describe('tax year summary', () => {
   const sell = (buy: string, sellDate: string, cost: number, proceeds: number) =>
     buildLedger([tx('m1', 'A', buy, 'buy', 1, cost), tx('m1', 'A', sellDate, 'sell', 1, proceeds)], [sec('A')]).realised;

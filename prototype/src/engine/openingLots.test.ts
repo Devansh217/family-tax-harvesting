@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeFamily } from './family';
-import { APPROX_MARGIN, effectiveTxns, type HeldPosition } from './openingLots';
+import { buildLedger, splitIntraday } from './ledger';
+import { APPROX_MARGIN, decidingFiles, effectiveTxns, effectiveTxnsWithNotes, normAccount, type HeldPosition } from './openingLots';
 import { FY_2026_27 as R } from './rules';
 import { QTY_SCALE, type Member, type Txn } from './types';
 
@@ -189,5 +190,121 @@ describe('moves on lots from the holdings file', () => {
     const m = fam.moves.find((x) => x.kind === 'harvest_gain')!;
     expect(m).toMatchObject({ gain: rs(1_25_000) });
     expect(m.approx).toBeFalsy();
+  });
+});
+
+describe('the newest holdings file trims units that left the account', () => {
+  // A dated, fully read Zerodha holdings file: it may trim.
+  const file = (units: number, over: Partial<HeldPosition> = {}) => pos(units, units, 1000, { canTrim: true, importId: 'h1', ...over });
+  const left = (txns: Txn[]) => txns.filter((t) => t.left);
+  const ledgerOf = (txns: Txn[]) => buildLedger(txns, [{ isin: 'X', name: 'X', taxType: 'equity', listed: true }]);
+  const heldX = (txns: Txn[]) => (ledgerOf(txns).lots.get('a|X|Zerodha') ?? []).reduce((a, l) => a + l.qty, 0);
+
+  it('trims units the newest file doesn\u2019t list', () => {
+    const { txns, trimmed, staleFiles } = effectiveTxnsWithNotes([trade('buy', '2025-01-10', 10, 1000)], [file(0)], ASOF);
+    expect(left(txns)).toEqual([{
+      id: `a|X|Zerodha|left|${ASOF}`, memberId: 'a', isin: 'X', account: 'Zerodha', side: 'sell', left: true, qty: q(10), amount: 0, date: ASOF, source: 'Left the account',
+    }]);
+    const l = ledgerOf(txns);
+    expect(l.lots.get('a|X|Zerodha') ?? []).toHaveLength(0);
+    expect(l.realised).toHaveLength(0);
+    expect(l.warnings).toHaveLength(0);
+    expect(trimmed).toEqual([{ memberId: 'a', account: 'Zerodha', asOf: ASOF, isins: ['X'] }]);
+    expect(staleFiles).toEqual([]);
+  });
+
+  it('removes the oldest units first and keeps the newest', () => {
+    const { txns } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 10, 500), trade('buy', '2026-05-04', 5, 1500)], [file(5)], ASOF);
+    expect(left(txns)).toMatchObject([{ qty: q(10) }]);
+    expect(ledgerOf(txns).lots.get('a|X|Zerodha')).toMatchObject([{ date: '2026-05-04', qty: q(5), cost: rs(7_500) }]);
+  });
+
+  it('an ISIN missing from the newest file is held at 0, even if an older file listed it', () => {
+    const older = file(10, { importId: 'h0', asOf: '2026-03-31' });
+    const newer = file(5, { isin: 'Y', importId: 'h1' });
+    const { txns, trimmed } = effectiveTxnsWithNotes([trade('buy', '2025-01-10', 10, 1000)], [older, newer], ASOF);
+    expect(heldX(txns)).toBe(0);
+    expect(trimmed).toMatchObject([{ isins: ['X'] }]);
+  });
+
+  it('never trims from a file older than the last trade in that account', () => {
+    const trades = [trade('buy', '2025-01-10', 10, 1000), trade('buy', '2026-11-01', 1, 1000, { isin: 'Y' })];
+    const { txns, trimmed, staleFiles } = effectiveTxnsWithNotes(trades, [file(0, { asOf: '2026-10-31' })], ASOF);
+    expect(left(txns)).toHaveLength(0);
+    expect(trimmed).toEqual([]);
+    expect(staleFiles).toEqual([{ memberId: 'a', account: 'Zerodha', asOf: '2026-10-31' }]);
+  });
+
+  it('a Tax P&L exit after the file date does not make it stale', () => {
+    const pnl = trade('sell', '2026-11-20', 1, 900, { isin: 'Y', source: 'Zerodha Tax P&L · 2026-04-01 to 2026-11-20' });
+    const { txns, staleFiles } = effectiveTxnsWithNotes([trade('buy', '2025-01-10', 10, 1000), pnl], [file(0, { asOf: '2026-11-15' })], ASOF);
+    expect(staleFiles).toEqual([]);
+    expect(left(txns)).toMatchObject([{ qty: q(10) }]);
+  });
+
+  it('never trims when canTrim is false or the account label is blank', () => {
+    const b = trade('buy', '2025-01-10', 10, 1000);
+    expect(left(effectiveTxns([b], [file(0, { canTrim: false })], ASOF))).toHaveLength(0);
+    expect(left(effectiveTxns([b], [{ ...file(0), canTrim: undefined }], ASOF))).toHaveLength(0);
+    const blank = { ...b, account: '' };
+    expect(left(effectiveTxns([blank], [file(0, { account: '  ' })], ASOF))).toHaveLength(0);
+    expect(left(effectiveTxns([blank], [file(0, { account: undefined })], ASOF))).toHaveLength(0);
+  });
+
+  it('never trims from a file with no date', () => {
+    expect(left(effectiveTxns([trade('buy', '2025-01-10', 10, 1000)], [file(0, { asOf: undefined })], ASOF))).toHaveLength(0);
+  });
+
+  it('" Zerodha " and "zerodha" match', () => {
+    expect(normAccount(' Zerodha ')).toBe('zerodha');
+    expect(normAccount(undefined)).toBe('');
+    const { txns } = effectiveTxnsWithNotes([trade('buy', '2025-01-10', 10, 1000, { account: 'zerodha' })], [file(0, { account: ' Zerodha ' })], ASOF);
+    expect(left(txns)).toMatchObject([{ account: 'zerodha', qty: q(10) }]);
+  });
+
+  it('same asOf twice: the later importId decides, with no double fill-in', () => {
+    const first = file(30, { importId: 'h1' });
+    const second = file(20, { importId: 'h2' });
+    const files = decidingFiles([first, second]);
+    expect([...files.keys()]).toEqual(['a|zerodha']);
+    expect(files.get('a|zerodha')).toMatchObject({ importId: 'h2', asOf: ASOF, canTrim: true, positions: [second] });
+    const { txns } = effectiveTxnsWithNotes([], [first, second], ASOF);
+    expect(openings(txns)).toMatchObject([{ qty: q(20) }]);
+    expect(left(txns)).toHaveLength(0);
+    expect(heldX(txns)).toBe(q(20));
+  });
+
+  it('the newest file decides whatever order the files came in', () => {
+    const older = file(30, { importId: 'h1', asOf: '2026-03-31' });
+    const newer = file(20, { importId: 'h0' });
+    expect(decidingFiles([newer, older]).get('a|zerodha')).toMatchObject({ importId: 'h0' });
+    expect(decidingFiles([older, newer]).get('a|zerodha')).toMatchObject({ importId: 'h0' });
+  });
+
+  it('only account-level holdings files decide', () => {
+    expect(decidingFiles([{ ...file(10), source: 'Demat CAS (NSDL / CDSL)' }]).size).toBe(0);
+  });
+
+  it('a buy after the file date is not trimmed', () => {
+    const trades = [trade('buy', '2025-01-10', 10, 1000), trade('buy', '2026-11-21', 5, 1200)];
+    const { txns } = effectiveTxnsWithNotes(trades, [file(10, { asOf: '2026-11-20' })], ASOF);
+    expect(left(txns)).toHaveLength(0);
+    expect(heldX(txns)).toBe(q(15));
+  });
+
+  it('counts the units filled in from the file before trimming', () => {
+    // History explains 10 of the file's 30: 20 are filled in, nothing left over to trim.
+    const { txns } = effectiveTxnsWithNotes([trade('buy', '2026-05-04', 10, 1500)], [file(30)], ASOF);
+    expect(left(txns)).toHaveLength(0);
+    expect(heldX(txns)).toBe(q(30));
+  });
+
+  it('a left sell is never intraday', () => {
+    const buy = trade('buy', ASOF, 10, 1000);
+    const out = { ...trade('sell', ASOF, 10, 0), left: true as const, amount: 0 };
+    const { delivery, intraday } = splitIntraday([buy, out]);
+    expect(intraday).toHaveLength(0);
+    expect(delivery).toHaveLength(2);
+    expect(delivery).toEqual(expect.arrayContaining([buy, out]));
   });
 });

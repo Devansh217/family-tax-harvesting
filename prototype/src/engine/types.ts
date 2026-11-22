@@ -117,6 +117,11 @@ export interface Txn {
   estimated?: boolean;
   /** Long-term for sure, but the date is before the history and the cost is the broker's average (openingLots.ts). */
   approx?: boolean;
+  /**
+   * On a sell: the units left the account (a transfer, gift or buyback the history doesn't show), found by comparing
+   * the newest holdings file with the history (openingLots.ts). Not a sale: no gain, no warning, never intraday.
+   */
+  left?: true;
 }
 
 export interface Lot {

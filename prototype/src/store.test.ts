@@ -5,6 +5,7 @@ import { parseTablePreview, previewTable } from './parsers';
 import { sampleState } from './sample';
 import { applyImport, emptyState, hasRealData, normalizeState, backupHadSeasonHelp, parseBackup, removeImport, RESTORE_ALERTS_NOTE, type AppState } from './store';
 import { ageOn } from './engine/dates';
+import { QTY_SCALE } from './engine/types';
 
 const withMember = (): AppState => ({ ...emptyState(), members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: 0 , from: 'manual' as const }]}] });
 const parse = (csv: string) => { const p = previewTable(csv); return parseTablePreview(p, p.mapping, 'f.csv'); };
@@ -192,6 +193,18 @@ describe('migrating saved families', () => {
     const fam = computeFamily(normalizeState(saved)!, '2026-11-15', FY_2026_27);
     const got = fam.members.map((v) => [v.member.id, v.year.tax, v.year.room.free, v.year.bonus.free, v.plan.tax]);
     expect(got).toEqual([['a', 0, 15_000_00, 0, 0], ['m', 0, 1_05_000_00, 0, 0], ['r', 2_579_00, 1_25_000_00, 0, 2_579_00], ['s', 0, 1_25_000_00, 0, 0], ['k', 0, 1_25_000_00, 4_00_000_00, 0]]);
+  });
+
+  it('holdings saved before files were dated never trim', () => {
+    // Saved before canTrim / asOf: a Zerodha holdings file lists only Y, the history also holds X.
+    const saved = oldState({}, {
+      members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new' }],
+      securities: [{ isin: 'INE000000001', name: 'X', kind: 'equity' }, { isin: 'INE000000002', name: 'Y', kind: 'equity' }],
+      txns: [{ id: 't1', memberId: 'a', isin: 'INE000000001', date: '2025-01-10', side: 'buy', qty: 10 * QTY_SCALE, amount: rs(10_000), source: 'Trade history · tb.xlsx', account: 'Zerodha', importId: 'i1' }],
+      positions: [{ memberId: 'a', isin: 'INE000000002', qty: 5 * QTY_SCALE, ltQty: 5 * QTY_SCALE, cost: rs(5_000), account: 'Zerodha', source: 'Zerodha holdings', importId: 'i2' }],
+    });
+    const fam = computeFamily(normalizeState(saved)!, '2026-11-22', FY_2026_27);
+    expect(fam.members[0]!.holdings.find((h) => h.isin === 'INE000000001')!.qty).toBe(10 * QTY_SCALE);
   });
 
   it('works out age on a date from date of birth, else the stored age', () => {
