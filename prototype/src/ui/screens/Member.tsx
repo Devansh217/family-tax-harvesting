@@ -147,8 +147,8 @@ export function MemberScreen({ id }: { id: string }) {
           <div className="legend">
             <span><i style={{ background: 'var(--used)' }} />Used {inr(year.room.used)}</span>
             <span><i style={{ background: 'var(--plan)' }} />Planned {inr(plannedSale.roomUsed + plannedShown)}</span>
-            <span><i style={{ background: 'var(--room)' }} />Free {inr(freeShown)}</span>
-            {year.bonus.total > 0 && <span><i style={{ background: 'color-mix(in srgb, var(--room) 45%, var(--track))' }} />Bonus {inr(bonusShown)}</span>}
+            <span><i className="seg-free" />Free {inr(freeShown)}</span>
+            {year.bonus.total > 0 && <span><i className="seg-bonus" />Bonus {inr(bonusShown)}</span>}
           </div>
           <p className="small muted">
             {incomeTotal(member) == null

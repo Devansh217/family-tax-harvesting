@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { canGift } from '../../engine/relations';
+import { autoLink, linkProblems } from '../../engine/links';
 import { todayISO } from '../../engine/dates';
 import type { Member } from '../../engine/types';
 import { sampleState } from '../../sample';
@@ -38,6 +39,9 @@ function MemberForm({ initial, onSave, onCancel }: { initial: Member; onSave: (m
       className="stack pad"
       onSubmit={(e) => {
         e.preventDefault();
+        // Link problems are shown next to the fields; don't save until they are fixed.
+        const linked = autoLink(others.map((x) => (x.id === m.id ? m : x)));
+        if (linkProblems(linked.find((x) => x.id === m.id)!, linked).length) return;
         const business = { intraday: toSignedPaise(intraday), fno: toSignedPaise(fno), fnoTurnover: toOptionalPaise(turnover) };
         onSave({ ...m, name: m.name.trim() || 'Member', business });
       }}

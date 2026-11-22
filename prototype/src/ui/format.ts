@@ -29,7 +29,7 @@ export function dateLabel(d: ISODate, withYear = true): string {
 }
 
 export const RELATIONS: Record<Member['relation'], string> = {
-  self: 'You', spouse: 'Spouse', parent: 'Parent', child_adult: 'Adult child', child_minor: 'Minor child',
+  self: 'You', spouse: 'Spouse', parent: 'Parent', grandparent: 'Grandparent', child_adult: 'Adult child', child_minor: 'Minor child',
   sibling: 'Sibling', daughter_in_law: "Son's wife", other: 'Other relative',
 };
 
@@ -40,3 +40,6 @@ const TINTS: Array<[string, string]> = [
 export const tint = (index: number) => TINTS[index % TINTS.length]!;
 
 export const possessive = (name: string) => (name.trim().toLowerCase() === 'you' ? 'Your' : `${name}'s`);
+
+/** Unsold long-term gain for the Room by member line; a net loss reads as a loss, not a negative gain. */
+export const ltLabel = (lt: Paise) => (lt < 0 ? ` · ${inrShort(-lt)} long-term loss (not yet booked)` : ` · ${inrShort(lt)} long-term gains`);

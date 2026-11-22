@@ -27,6 +27,11 @@ function fromManager(a: Member, b: Member): PairRelation {
     'daughter_in_law>self': 'parent_in_law', 'daughter_in_law>spouse': 'parent_in_law',
     'parent>spouse': 'child_in_law', 'spouse>parent': 'parent_in_law',
     'parent>child_adult': 'grandchild', 'parent>child_minor': 'grandchild', 'child_adult>parent': 'grandparent', 'child_minor>parent': 'grandparent',
+    // Siblings share the manager's parents. Two parents are handled in pairRelation, which can count them.
+    'sibling>sibling': 'sibling', 'parent>sibling': 'child', 'sibling>parent': 'parent',
+    'child_adult>child_adult': 'sibling', 'child_adult>child_minor': 'sibling', 'child_minor>child_adult': 'sibling', 'child_minor>child_minor': 'sibling',
+    // The manager's own grandparent. Which parent's parent they are can't be told without a link, so parent>grandparent stays 'other'.
+    'self>grandparent': 'grandparent', 'grandparent>self': 'grandchild',
   };
   return table[pair] ?? 'other';
 }
@@ -38,7 +43,10 @@ function fromManager(a: Member, b: Member): PairRelation {
 export function pairRelation(a: Member, b: Member, members: Member[]): PairRelation {
   if (a.id === b.id) return 'self';
   const linked = fromLinks(a, b, members);
-  return linked === 'other' ? fromManager(a, b) : linked;
+  if (linked !== 'other') return linked;
+  // The manager's two parents are each other's spouse. With three or more (a step-parent), don't guess.
+  if (a.relation === 'parent' && b.relation === 'parent') return members.filter((x) => x.relation === 'parent').length === 2 ? 'spouse' : 'other';
+  return fromManager(a, b);
 }
 
 function fromLinks(a: Member, b: Member, members: Member[]): PairRelation {
