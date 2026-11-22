@@ -7,7 +7,7 @@ import { Avatar, Disclaimer, Svg, Icon } from '../parts';
 import { SampleBanner } from './Home';
 import { NSE_HOLIDAYS_2027, lastSafeDay } from '../../engine/season';
 import { buildIcs } from '../calendar';
-import { datePickerBounds, dateVerb, planView } from '../plan';
+import { datePickerBounds, dateVerb, planGaps, planView, type PlanGap } from '../plan';
 
 export const movesNotDone = (moves: Move[], done: Record<string, boolean>) => moves.filter((m) => !done[m.id]);
 
@@ -115,6 +115,7 @@ export function MoveRow({ move }: { move: Move }) {
         </p>
         )}
         {move.noRoom && <p className="tiny" style={{ color: 'var(--time)' }}>{move.reasons[0]}</p>}
+        {move.approx && !move.noRoom && <p className="tiny muted">Some units were bought before your trade history, so this uses their average cost and leaves 10% of the room spare. After selling, check the gain in your broker&rsquo;s tax P&amp;L.</p>}
         {move.date && !move.noRoom && <p className="tiny">{`${move.kind === 'gift' ? 'Gift and sell' : 'Sell'} on ${dateLabel(move.date)}`}{move.buyOn && ` · ${move.kind === 'switch_direct' ? 'Buy the direct plan' : 'Buy back'} on ${dateLabel(move.buyOn)}`}</p>}
         {move.date && !move.noRoom && <p className="tiny muted">Units for today&rsquo;s prices; check again on the day</p>}
         {!done && isDatable(move) && <DatePicker move={move} />}
@@ -124,6 +125,22 @@ export function MoveRow({ move }: { move: Move }) {
         <span className="tiny muted">{switching ? 'less in fees a year' : later ? 'made tax-free' : 'less tax now'}</span>
       </span>}
     </div>
+  );
+}
+
+/** What keeps the plan from being complete, each with the file or step that fixes it. */
+function PlanGaps({ gaps, empty }: { gaps: PlanGap[]; empty: boolean }) {
+  if (gaps.length === 0) return null;
+  return (
+    <section className="sheet pad stack" aria-labelledby="gaps-h" style={{ borderColor: 'var(--time)' }}>
+      <h2 id="gaps-h">{empty ? 'Why there are no moves yet' : 'Make this plan complete'}</h2>
+      <p className="small muted" style={{ maxWidth: '72ch' }}>Moves need long-term holdings with known buy dates. These holdings are left out until the files below are imported.</p>
+      <ul className="stack" style={{ gap: 8, margin: 0, paddingLeft: 18 }}>
+        {gaps.map((g) => (
+          <li key={`${g.memberId}|${g.key}`} className="small">{g.text} <a href={g.href}>{g.action}</a></li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -155,6 +172,8 @@ function CalendarButton() {
 export function Plan() {
   const { fam, state, update, nameOf } = useApp();
   const { open, done, gainDone, gainTotal, nowDone, nowTotal, doneCount, liveCount } = planView(fam, state.recommendations);
+  const gaps = state.isSample ? [] : planGaps(fam, state.positions);
+  const empty = fam.moves.length === 0 && done.length === 0;
 
   return (
     <>
@@ -174,14 +193,15 @@ export function Plan() {
         <p className="note" style={{ maxWidth: '72ch' }}>
           <strong style={{ color: 'var(--ink)' }}>Not a recommendation to buy or sell.</strong> Each move shows the tax effect of an action on holdings you already own. Whether to act is your decision; check large moves with a CA. <a href="#about">How to read this</a>
         </p>
-        {fam.totals.uncertainLots > 0 && (
+        {fam.totals.uncertainLots > 0 && gaps.length === 0 && (
           <p className="small" style={{ color: 'var(--time)' }}>{fam.totals.uncertainLots} {fam.totals.uncertainLots === 1 ? 'lot is' : 'lots are'} left out because the purchase date was estimated or the 31 Jan 2018 value is missing. Fix them on the member pages.</p>
         )}
       </header>
 
-      {fam.moves.length === 0 && done.length === 0 && (
+      <PlanGaps gaps={gaps} empty={empty} />
+      {empty && gaps.length === 0 && (
         <div className="sheet empty">
-          <p>Nothing to suggest yet. Moves appear once members have priced long-term holdings with known purchase dates, and free room.</p>
+          <p>Nothing to suggest yet. {fam.totals.freeRoom > 0 ? `There is ${inr(fam.totals.freeRoom)} of tax-free room, but no long-term gains big enough to be worth the trading costs.` : 'Every member has used their tax-free room this year.'}</p>
           <a className="btn" href="#import">Import statements</a>
         </div>
       )}

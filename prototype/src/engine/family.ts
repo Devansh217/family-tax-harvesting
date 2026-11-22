@@ -1,6 +1,7 @@
 import { isElssFund } from './categories';
 import { addMonths, daysBetween, isLongTerm, longTermFrom } from './dates';
 import { buildLedger, effectiveCost, lotKey, lotTerms, prorate } from './ledger';
+import { APPROX_MARGIN, effectiveTxns, type HeldPosition } from './openingLots';
 import { terGapFor } from './data/ter-gap';
 import { directTwin, type FundsMap } from './directTwin';
 import { giftTransferCost, ltRate, roundTripCost, slabRate, stRate, type TaxRules } from './rules';
@@ -28,6 +29,8 @@ export interface FamilyState {
   brokerSummaries?: Array<{ memberId: string; account: string; summary: BrokerTotals }>;
   /** Nightly funds.json (ISIN → name and category), used to find the direct twin of a regular plan. */
   funds?: FundsMap;
+  /** Units holdings files say each member holds: fill in lots bought before the trade history (openingLots.ts). */
+  positions?: HeldPosition[];
   /** Moves the family picked a day for. They are sized first, in date order, and hold their room. */
   datedMoves?: DatedMove[];
   /** The family's records. A dated move that is done (marked or seen in a statement) is retired: no longer sized first. */
@@ -62,6 +65,8 @@ export interface HoldingLot {
   certain: boolean;
   /** ELSS only: the date the three-year lock-in ends. Shown even after it has passed. */
   lockedUntil?: ISODate;
+  /** Bought before the trade history: long-term, at the broker's average cost. */
+  approx?: boolean;
 }
 
 export interface Holding {
@@ -95,6 +100,8 @@ interface MoveBase {
   buyOn?: ISODate;
   /** A dated move whose room or units are gone: shown with nothing to do. */
   noRoom?: boolean;
+  /** Sized from lots at the broker's average cost (bought before the trade history), with a cushion left in the room. */
+  approx?: boolean;
 }
 export type Move =
   | (MoveBase & { kind: 'harvest_gain'; memberId: string; gain: Paise })
@@ -256,7 +263,9 @@ export function previewSale(lots: Lot[], qty: Qty, sec: Security, saleDate: ISOD
  * long-term lots with known data, without the cumulative gain exceeding `room`.
  */
 function harvestableQty(lots: Lot[], sec: Security, asOf: ISODate, rules: TaxRules, room: Paise, skip: Qty) {
-  let qty = 0, gain = 0, toSkip = skip;
+  // `used` is the room the gain takes: an approx lot's gain counts (1 + margin) times, a loss on one (1 − margin) times.
+  let qty = 0, gain = 0, used = 0, approx = false, toSkip = skip;
+  const weight = (lot: Lot, g: Paise) => (lot.approx ? (g > 0 ? 1 + APPROX_MARGIN : 1 - APPROX_MARGIN) : 1);
   const unit = unitStep(sec);
   for (const lot of lots) {
     let avail = lot.qty;
@@ -269,25 +278,31 @@ function harvestableQty(lots: Lot[], sec: Security, asOf: ISODate, rules: TaxRul
     if (!isLongTerm(lot.date, asOf, rules.longTermMonths) || !isCertain(lot, sec, rules) || isLocked(lot, sec, asOf)) break;
     const view = { date: lot.date, qty: avail, cost: avail === lot.qty ? lot.cost : prorate(lot.cost, avail, lot.qty) };
     const whole = lotGain(view, avail, sec, rules);
-    if (whole <= room - gain) {
+    const w = weight(lot, whole);
+    if (whole * w <= room - used) {
       qty += avail;
       gain += whole;
+      used += whole * w;
+      approx ||= !!lot.approx;
       continue;
     }
-    const perUnit = whole / avail;
-    let take = Math.floor((room - gain) / perUnit / unit) * unit;
-    while (take > 0 && lotGain(view, take, sec, rules) > room - gain) take -= unit;
+    const perUnit = (whole * w) / avail;
+    let take = Math.floor((room - used) / perUnit / unit) * unit;
+    while (take > 0 && lotGain(view, take, sec, rules) * w > room - used) take -= unit;
     if (take > 0) {
+      const g = lotGain(view, take, sec, rules);
       qty += take;
-      gain += lotGain(view, take, sec, rules);
+      gain += g;
+      used += g * w;
+      approx ||= !!lot.approx;
     }
     break;
   }
-  return { qty, gain };
+  return { qty, gain, used: Math.round(used), approx };
 }
 
 export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules): FamilyView {
-  const ledger = buildLedger(state.txns, state.securities, rules);
+  const ledger = buildLedger(effectiveTxns(state.txns, state.positions ?? [], asOf), state.securities, rules);
   const secs = new Map(state.securities.map((s) => [s.isin, s]));
   const moves: Move[] = [];
   // Dated moves: the family's picked days, by move id. Later entries for the same id win.
@@ -315,6 +330,10 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   const nameOf = (memberId: string) => views.find((v) => v.member.id === memberId)?.member.name ?? 'This member';
   const rupees = (p: Paise) => `₹${Math.round(p / 100).toLocaleString('en-IN')}`;
   const LT = ltRate(rules), ST = stRate(rules);
+  const approxOf = (r: { approx: boolean }) => (r.approx ? { approx: true as const } : {});
+  const approxWhy = (r: { approx: boolean }) => (r.approx
+    ? [`Some units were bought before your trade history, so their cost is the broker's average cost: this leaves ${Math.round(APPROX_MARGIN * 100)}% of the room spare in case the real gain is higher. After selling, check the gain in your broker's tax P&L; import the full tradebook or a CAS for exact figures`]
+    : []);
 
   // Where history is incomplete, trust the broker's booked totals so room and tax are right.
   const brokerAdjustments: BrokerAdjustment[] = [];
@@ -368,6 +387,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
           term: lotTerms(sec, l.date, asOf, rules).term,
           longTermOn: longTermFrom(l.date, longTermMonthsFor(lotTaxType(sec, l.date, rules), sec.listed, rules) ?? rules.longTermMonths),
           certain: isCertain(l, sec, rules),
+          ...(l.approx ? { approx: true } : {}),
           ...(locked ? { lockedUntil: locked } : {}),
         } satisfies HoldingLot;
       }));
@@ -450,10 +470,10 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
     const costs = giftTransferCost(value, rules) + roundTripCost(sec, value, rules);
     const taxAvoided = Math.round(r.gain * LT);
     if (!isDated && taxAvoided - costs < MIN_NET_SAVING) return;
-    push({ kind: 'gift', fromId: giver.member.id, toId: rec.member.id, isin: h.isin, name: h.name, account: q.account, qty: r.qty, value, gain: r.gain, taxAvoided, costs, saving: taxAvoided - costs,
-      reasons: [`${giver.member.name} has no tax-free room left; ${rec.member.name} has ${rupees(rec.roomAfterPlan)} unused`, `A gift between these relatives is not taxed and is not added back to ${giver.member.name}'s income`, `It becomes ${rec.member.name}'s money for good`] });
+    push({ kind: 'gift', fromId: giver.member.id, toId: rec.member.id, isin: h.isin, name: h.name, account: q.account, qty: r.qty, value, gain: r.gain, taxAvoided, costs, saving: taxAvoided - costs, ...approxOf(r),
+      reasons: [...approxWhy(r), `${giver.member.name} has no tax-free room left; ${rec.member.name} has ${rupees(rec.roomAfterPlan)} unused`, `A gift between these relatives is not taxed and is not added back to ${giver.member.name}'s income`, `It becomes ${rec.member.name}'s money for good`] });
     usedQty.set(key, (usedQty.get(key) ?? 0) + r.qty);
-    rec.roomAfterPlan -= r.gain;
+    rec.roomAfterPlan -= r.used;
     bookLt(rec.member.id, h.isin, r.gain);
   };
   for (const [id] of [...dated].sort((a, b) => a[1].localeCompare(b[1]))) {
@@ -488,7 +508,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
         [`Uses ${rupees(r.gain)} of ${v.member.name}'s ${rupees(rules.ltcgExemption)} tax-free room, which lapses on 31 March`]);
       usedQty.set(takenKey(h.isin, q.account), (usedQty.get(takenKey(h.isin, q.account)) ?? 0) + r.qty);
       switched.add(`${h.isin}|${q.account}`);
-      room -= r.gain;
+      room -= r.used;
       bookLt(v.member.id, h.isin, r.gain);
     };
     const tryHarvest = (h: Holding, q: Q) => {
@@ -502,10 +522,10 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
       const costs = roundTripCost(sec, value, rules);
       const taxAvoided = Math.round(r.gain * LT);
       if (!isDated && taxAvoided - costs < MIN_NET_SAVING) return;
-      push({ kind: 'harvest_gain', memberId: v.member.id, isin: h.isin, name: h.name, account: q.account, qty: r.qty, value, gain: r.gain, taxAvoided, costs, saving: taxAvoided - costs,
-        reasons: [`Uses ${rupees(r.gain)} of ${v.member.name}'s ${rupees(rules.ltcgExemption)} tax-free room for this year, which lapses on 31 March`, `Selling and buying back the next day resets the cost, so ${rupees(taxAvoided)} less tax when sold later`] });
+      push({ kind: 'harvest_gain', memberId: v.member.id, isin: h.isin, name: h.name, account: q.account, qty: r.qty, value, gain: r.gain, taxAvoided, costs, saving: taxAvoided - costs, ...approxOf(r),
+        reasons: [`Uses ${rupees(r.gain)} of ${v.member.name}'s ${rupees(rules.ltcgExemption)} tax-free room for this year, which lapses on 31 March`, `Selling and buying back the next day resets the cost, so ${rupees(taxAvoided)} less tax when sold later`, ...approxWhy(r)] });
       usedQty.set(takenKey(h.isin, q.account), (usedQty.get(takenKey(h.isin, q.account)) ?? 0) + r.qty);
-      room -= r.gain;
+      room -= r.used;
       bookLt(v.member.id, h.isin, r.gain);
     };
     const regularQs = v.holdings

@@ -44,6 +44,22 @@ describe('importing', () => {
     expect(opening[0]!.amount).toBe(15_000_00);
   });
 
+  it('a Zerodha holdings file alone gives a plan, whichever order the files come in', () => {
+    const zerodha = {
+      format: 'Zerodha holdings', txns: [], warnings: [], skipped: 0,
+      prices: [{ isin: 'INE009A01021', name: 'INFY', price: 2000_00, qty: 5000_0000, ltQty: 5000_0000, cost: 50_00_000_00 }],
+    };
+    const tb = { format: 'Trade history · tb.xlsx', warnings: [], skipped: 0, prices: [],
+      txns: [{ isin: 'INE009A01021', name: 'INFY', date: '2026-06-01', side: 'buy' as const, qty: 10_0000, amount: 18_000_00 }] };
+    const opts = { account: 'Zerodha', openingDate: '2025-10-01' };
+    const a = applyImport(applyImport(withMember(), 'a', 'h.xlsx', zerodha, opts), 'a', 'tb.xlsx', tb, opts);
+    const b = applyImport(applyImport(withMember(), 'a', 'tb.xlsx', tb, opts), 'a', 'h.xlsx', zerodha, opts);
+    expect(a.positions[0]).toMatchObject({ cost: 50_00_000_00, account: 'Zerodha' });
+    const movesOf = (s: AppState) => computeFamily(s, '2026-11-22', FY_2026_27).moves.map((m) => [m.kind, m.qty, m.approx]);
+    expect(movesOf(a)).toEqual(movesOf(b));
+    expect(movesOf(a)[0]).toEqual(['harvest_gain', expect.any(Number), true]);
+  });
+
   it('removing an import removes its transactions', () => {
     let s = applyImport(withMember(), 'a', 'tb.csv', parse(tradebook));
     s = removeImport(s, s.imports[0]!.id);

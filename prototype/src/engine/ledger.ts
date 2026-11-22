@@ -57,7 +57,7 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
     lots.set(key, queue);
 
     if (t.side === 'buy') {
-      queue.push({ memberId: t.memberId, isin: t.isin, account, date: t.date, qty: t.qty, cost: t.amount, source: t.source, estimated: t.estimated });
+      queue.push({ memberId: t.memberId, isin: t.isin, account, date: t.date, qty: t.qty, cost: t.amount, source: t.source, estimated: t.estimated, ...(t.approx ? { approx: true } : {}) });
       continue;
     }
 

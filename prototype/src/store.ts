@@ -19,7 +19,11 @@ export interface ImportRecord {
 }
 
 /** Units a statement says a member holds, to check the trade history against. */
-export interface Position { memberId: string; isin: string; qty: Qty; ltQty?: Qty; asOf?: ISODate; source: string }
+export interface Position {
+  memberId: string; isin: string; qty: Qty; ltQty?: Qty; asOf?: ISODate; source: string;
+  /** Total cost at the broker's average price, and the account: together with `ltQty` they fill in lots bought before the trade history. */
+  cost?: Paise; account?: string;
+}
 
 export interface AppState {
   version: 1;
@@ -207,10 +211,15 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
     upsertSecurity(s.securities, { ...p, isin }, p);
     if (p.qty != null) {
       s.positions = s.positions.filter((x) => !(x.memberId === memberId && x.isin === isin && x.source === r.format));
-      s.positions.push({ memberId, isin, qty: p.qty, ltQty: p.ltQty, asOf: p.priceDate, source: r.format, importId });
+      s.positions.push({
+        memberId, isin, qty: p.qty, ltQty: p.ltQty, asOf: p.priceDate, source: r.format, importId,
+        ...(p.cost != null ? { cost: p.cost } : {}), account: opts.account ?? '',
+      });
     }
     const hasHistory = s.txns.some((t) => t.memberId === memberId && t.isin === isin && (t.account ?? '') === (opts.account ?? ''));
-    if (opts.openingDate && p.qty && p.qty > 0 && !hasHistory) {
+    // A holdings file with cost and long-term units needs no guessed lot: the engine fills in older units (openingLots.ts).
+    const filledByEngine = p.ltQty != null && p.cost != null;
+    if (opts.openingDate && p.qty && p.qty > 0 && !hasHistory && !filledByEngine) {
       const cost = p.cost ?? Math.round((p.price * p.qty) / 10_000);
       s.txns.push({
         id: `${memberId}|${isin}|opening|${importId}`, memberId, isin, date: opts.openingDate, side: 'buy', qty: p.qty, amount: cost,
