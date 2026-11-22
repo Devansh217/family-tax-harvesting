@@ -92,11 +92,23 @@ export function effectiveTxnsWithNotes(
   const files = decidingFiles(positions);
   const acctKey = (memberId: string, account?: string) => `${memberId}|${normAccount(account)}`;
   const isHoldingsFile = (p: HeldPosition) => TRIMMING_HOLDINGS_SOURCES.includes(p.source);
+  // Per share and account, one holdings-file position at most: the newest (latest date, undated oldest; on a tie the
+  // last import), so several files listing the same share never fill it in twice.
+  const newest = new Map<string, HeldPosition>();
+  for (const p of positions) {
+    if (!isHoldingsFile(p)) continue;
+    const k = `${acctKey(p.memberId, p.account)}|${p.isin}`;
+    const b = newest.get(k);
+    if (!b || (p.asOf ?? '') >= (b.asOf ?? '')) newest.set(k, p);
+  }
   // An older file's positions for an account with a newer dated file count for nothing, unless that file can't trim
   // and doesn't list the share: a file only drops units when it may trim.
   const counts = (p: HeldPosition) => {
-    const f = isHoldingsFile(p) ? files.get(acctKey(p.memberId, p.account)) : undefined;
-    return !f || f.positions.includes(p) || (!f.canTrim && !f.positions.some((x) => x.isin === p.isin));
+    if (!isHoldingsFile(p)) return true;
+    const f = files.get(acctKey(p.memberId, p.account));
+    if (f?.positions.includes(p)) return true;
+    const onlyOne = newest.get(`${acctKey(p.memberId, p.account)}|${p.isin}`) === p;
+    return onlyOne && (!f || (!f.canTrim && !f.positions.some((x) => x.isin === p.isin)));
   };
   // Holdings files fill in every row; other statements only rows with cost and long-term units.
   const fills = positions.filter((p) => p.qty > 0 && counts(p) && (isHoldingsFile(p) || (p.cost != null && p.ltQty != null)));

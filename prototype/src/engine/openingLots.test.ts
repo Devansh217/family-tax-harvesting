@@ -382,6 +382,24 @@ describe('fill-in on every compute: cost never stacks', () => {
     expect(heldQty(out, 'Y')).toBe(q(10));
   });
 
+  it('two older files listing a share the non-trimming newest file omits fill it in once', () => {
+    // Both older files show X 100 at ₹5,000; only the newest of them counts: 100 held at ₹5,000, not 200 at ₹10,000.
+    const older = [file(100, 100, 5_000, { importId: 'i0', asOf: '2026-01-31' }), file(100, 100, 5_000, { importId: 'i1', asOf: '2026-03-31' })];
+    const newer = file(10, 10, 1_000, { isin: 'Y', importId: 'i2', canTrim: false });
+    for (const files of [[...older, newer], [older[1]!, older[0]!, newer]]) {
+      const out = effectiveTxns([], files, ASOF);
+      expect(heldQty(out)).toBe(q(100));
+      expect(heldCost(out)).toBe(rs(5_000));
+    }
+  });
+
+  it('two undated imports listing the same share fill it in once', () => {
+    const undated = (importId: string) => file(100, 100, 5_000, { importId, asOf: undefined, canTrim: undefined });
+    const out = effectiveTxns([], [undated('i0'), undated('i1')], ASOF);
+    expect(heldQty(out)).toBe(q(100));
+    expect(heldCost(out)).toBe(rs(5_000));
+  });
+
   it('1:1 bonus on a holding still all short-term is not taken for a split', () => {
     // Bought 10 at ₹1,000 in March 2026; the file shows 20, none long-term, ₹10,000 in all. A split would show the same,
     // so the 10 new units take cost 0 and an unknown term rather than the March date.
