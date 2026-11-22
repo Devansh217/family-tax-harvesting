@@ -28,6 +28,24 @@ function resultOf(item: Item): ParseResult | null {
   return null;
 }
 
+/** Which statements to download, best first, with why and where. Shown beside the drop zone. */
+const GUIDE: Array<{ title: string; files: Array<{ name: string; level: 'Start here' | 'More exact' | 'Checks the numbers'; why: string; where: string }> }> = [
+  {
+    title: 'Shares',
+    files: [
+      { name: 'Holdings file', level: 'Start here', why: 'Every share you hold, with long-term units and average cost: enough for a first plan.', where: 'Zerodha: Console → Portfolio → Holdings → Download (.xlsx). Other brokers: holdings export, or the NSDL / CDSL CAS.' },
+      { name: 'Tradebook, every year', level: 'More exact', why: 'The exact date and price of each purchase, so moves use the full room instead of keeping 10% spare.', where: 'Zerodha: Console → Reports → Tradebook, one download per tax year back to your first purchase. Groww, Angel One: trade history.' },
+      { name: 'Tax P&L', level: 'Checks the numbers', why: 'Your broker’s own gains booked this year: the app matches its room to them, and reads F&O profit or loss. Use Tax P&L, not the plain P&L report.', where: 'Zerodha: Console → Reports → Tax P&L → this tax year → Download (.xlsx).' },
+    ],
+  },
+  {
+    title: 'Mutual funds',
+    files: [
+      { name: 'Detailed CAS', level: 'Start here', why: 'Every purchase in every fund, on any platform (Zerodha Coin, Groww, ET Money, direct). Without it, funds get no moves.', where: 'MF Central, CAMS or KFintech: ask for the detailed statement from the first purchase till today. It comes by email as a PDF.' },
+    ],
+  },
+];
+
 export function Import() {
   const { state, update, toast, go, asOf, fam } = useApp();
   const [items, setItems] = useState<Item[]>([]);
@@ -135,14 +153,25 @@ export function Import() {
           </details>
         </section>
 
-        <aside className="stack">
-          <h2>What to import</h2>
-          <div className="sheet">
-            <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Mutual funds</strong><span className="small muted">Detailed CAS PDF from CAMS or KFintech, from the first purchase till today. Covers ET Money, Groww, Zerodha Coin and every other platform.</span></span></div>
-            <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Shares</strong><span className="small muted">Trade history from the broker: Zerodha Console tradebook, Groww order history, Angel One trade history. All years. For shares, import your broker&rsquo;s tradebook.</span></span></div>
-            <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Zerodha Tax P&amp;L</strong><span className="small muted">Console → Reports → Tax P&amp;L → download the .xlsx. Brings in this year&rsquo;s exits, F&amp;O profit or loss, and Zerodha&rsquo;s totals to check against.</span></span></div>
-            <div className="li"><span className="grow stack" style={{ gap: 0 }}><strong>Current prices</strong><span className="small muted">Holdings file from the broker, or the NSDL / CDSL CAS. Also checks units against the trade history.</span></span></div>
-          </div>
+        <aside className="stack" aria-labelledby="what-h">
+          <h2 id="what-h">What to import</h2>
+          <p className="small muted">One file is enough for a first plan. Each extra file makes the figures more exact.</p>
+          {GUIDE.map((g) => (
+            <div key={g.title} className="stack" style={{ gap: 6 }}>
+              <h3 style={{ fontSize: 15, margin: 0 }}>{g.title}</h3>
+              <div className="sheet">
+                {g.files.map((f) => (
+                  <div className="li" key={f.name}>
+                    <span className="grow stack" style={{ gap: 0 }}>
+                      <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}><strong>{f.name}</strong><span className={`chip ${f.level === 'Start here' ? 'room' : ''}`} style={{ fontSize: 12, padding: '1px 8px' }}>{f.level}</span></span>
+                      <span className="small muted">{f.why}</span>
+                      <span className="tiny muted">{f.where}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
           <p className="tiny muted">CAS PDFs are usually locked with your PAN in capitals. Files are read on this device and never uploaded.</p>
         </aside>
       </div>
@@ -151,7 +180,7 @@ export function Import() {
         <section className="stack" aria-label="Files">
           <label className="row small" style={{ gap: 8 }}>
             <input type="checkbox" checked={opening} onChange={(e) => setOpening(e.target.checked)} />
-            <span>For holdings with no trade history, record them as bought on (estimated, never used for moves)</span>
+            <span>For holdings with no trade history and no long-term count, record them as bought on (estimated, never used for moves)</span>
             <input type="date" value={openingDate} onChange={(e) => setOpeningDate(e.target.value)} style={{ width: 160 }} disabled={!opening} />
           </label>
           {items.map((it) => <ItemCard key={it.id} item={it} memberName={member?.name ?? ''} onChange={(n) => set(it.id, n)} onAdd={(acct, checkOnly) => add(it, acct, checkOnly)}
@@ -190,7 +219,7 @@ function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDismiss, ha
   const hasFolios = !!r?.txns.some((t) => t.account);
   const isPnl = !!r?.brokerSummary;
   const [importExits, setImportExits] = useState<boolean | null>(null);
-  const exits = importExits ?? !hasTradebook;
+  const exits = !hasTradebook && (importExits ?? true);
   const added = (item.status === 'pdf' || item.status === 'table' || item.status === 'statement') && item.added;
 
   return (
@@ -264,10 +293,13 @@ function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDismiss, ha
               <pre className="lines">{item.lines.slice(0, 200).join('\n')}</pre>
             </details>
           )}
-          {isPnl && (
+          {isPnl && hasTradebook && (
+            <p className="small muted">Sales come from {memberName}&rsquo;s tradebooks, so this report is used to check the year&rsquo;s gains and for F&amp;O, not as trades.</p>
+          )}
+          {isPnl && !hasTradebook && (
             <label className="row small" style={{ gap: 8 }}>
               <input type="checkbox" checked={exits} onChange={(e) => setImportExits(e.target.checked)} disabled={added} />
-              <span>Also import its exits as trades. Leave off when you import tradebooks for the same dates, or sales are counted twice; the report is then used only to check the numbers and for F&amp;O.</span>
+              <span>Also import its exits as trades. If you import tradebooks for this account later, they replace these exits.</span>
             </label>
           )}
           <div className="row wrap" style={{ alignItems: 'flex-end' }}>

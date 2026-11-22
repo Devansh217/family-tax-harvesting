@@ -115,6 +115,8 @@ export interface Txn {
   account?: string;
   /** Date or cost was guessed (holdings with no trade history). Never used for suggested moves. */
   estimated?: boolean;
+  /** Long-term for sure, but the date is before the history and the cost is the broker's average (openingLots.ts). */
+  approx?: boolean;
 }
 
 export interface Lot {
@@ -122,6 +124,8 @@ export interface Lot {
   isin: string;
   account: string;
   estimated?: boolean;
+  /** See Txn.approx: moves on it keep a cushion in the room. */
+  approx?: boolean;
   date: ISODate;
   qty: Qty;
   cost: Paise;
