@@ -3,6 +3,7 @@ import { autoLink } from './engine/links';
 import type { DatedMove, PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
 import type { RecommendationRecord } from './engine/records';
+import { TRIMMING_HOLDINGS_SOURCES } from './engine/openingLots';
 import { FY_2026_27 } from './engine/rules';
 import type { ISODate, Member, Paise, Qty, Security, TaxType, Txn } from './engine/types';
 import type { BrokerSummary, ParsedPrice, ParseResult } from './parsers';
@@ -23,6 +24,8 @@ export interface Position {
   memberId: string; isin: string; qty: Qty; ltQty?: Qty; asOf?: ISODate; source: string;
   /** Total cost at the broker's average price, and the account: together with `ltQty` they fill in lots bought before the trade history. */
   cost?: Paise; account?: string;
+  /** A holdings file that was dated and fully read: the engine may trim lots to its units (see HeldPosition). */
+  canTrim?: boolean;
 }
 
 export interface AppState {
@@ -192,6 +195,8 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
   const s: AppState = structuredClone(state);
   const importId = uid('imp');
   const seen = new Map<string, number>();
+  // A holdings file may trim lots only when every row was read and matched to an ISIN.
+  const fileComplete = r.skipped === 0 && !r.prices.some((x) => x.isin.startsWith('SYM:'));
   const existing = new Map(s.txns.map((t) => [t.id, t]));
   let added = 0;
 
@@ -226,6 +231,7 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
       s.positions.push({
         memberId, isin, qty: p.qty, ltQty: p.ltQty, asOf: p.priceDate, source, importId,
         ...(p.cost != null ? { cost: p.cost } : {}), account: opts.account ?? '',
+        ...(TRIMMING_HOLDINGS_SOURCES.includes(r.format) ? { canTrim: !!p.priceDate && fileComplete } : {}),
       });
     }
     const hasHistory = s.txns.some((t) => t.memberId === memberId && t.isin === isin && (t.account ?? '') === (opts.account ?? ''));

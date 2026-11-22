@@ -129,6 +129,7 @@ export function parseZerodhaHoldings(sheets: Sheet[]): ParseResult {
     if (hi < 0) continue;
     const head = s.data[hi]!.map(text);
     const col = (name: string) => head.indexOf(name);
+    const priceDate = s.data.flat().map((c) => /as on (\d{4}-\d{2}-\d{2})/i.exec(text(c))?.[1]).find(Boolean);
     const qtyCols = head.map((h, i) => (/^Quantity (Available|Discrepant|Pledged)/i.test(h) ? i : -1)).filter((i) => i >= 0);
     for (const r of s.data.slice(hi + 1)) {
       const symbol = text(r[col('Symbol')]);
@@ -140,7 +141,7 @@ export function parseZerodhaHoldings(sheets: Sheet[]): ParseResult {
       const lt = col('Quantity Long Term') >= 0 ? num(r[col('Quantity Long Term')]) : null;
       prices.push({
         isin, name: symbol, 
-        price: toPaise(close), qty: toQty(units), cost: avg != null ? toPaise(avg * units) : undefined,
+        price: toPaise(close), ...(priceDate ? { priceDate } : {}), qty: toQty(units), cost: avg != null ? toPaise(avg * units) : undefined,
         ltQty: lt != null ? toQty(lt) : undefined,
       });
     }

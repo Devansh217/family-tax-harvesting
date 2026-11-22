@@ -236,5 +236,17 @@ describe('review: restoring a backup', () => {
     expect(s.imports).toEqual([]);
     expect(hasRealData(s)).toBe(false);
   });
+
+  it('applyImport marks holdings positions canTrim only when dated, complete and ISIN-matched', () => {
+    const file = (priceDate: string | undefined, skipped = 0, isin = 'INE000000001') => ({
+      format: 'Zerodha holdings', txns: [], warnings: [], skipped,
+      prices: [{ isin, name: 'EXAMPLE', price: 120_00, priceDate, qty: 5_0000, ltQty: 5_0000, cost: 500_00 }],
+    });
+    const trim = (f: ReturnType<typeof file>) => applyImport(withMember(), 'a', 'h.xlsx', f, { account: 'Zerodha' }).positions.map((p) => [p.asOf, p.canTrim]);
+    expect(trim(file('2026-11-22'))).toEqual([['2026-11-22', true]]);
+    expect(trim(file(undefined))).toEqual([[undefined, false]]);
+    expect(trim(file('2026-11-22', 1))).toEqual([['2026-11-22', false]]);
+    expect(trim(file('2026-11-22', 0, 'SYM:EXAMPLE'))).toEqual([['2026-11-22', false]]);
+  });
 });
 

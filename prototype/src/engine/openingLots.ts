@@ -9,7 +9,12 @@ export interface HeldPosition {
   memberId: string; isin: string; account?: string; qty: Qty; ltQty?: Qty; cost?: Paise; asOf?: ISODate; source: string;
   /** The import it came from: ties a statement to the guessed lots it saved. */
   importId?: string;
+  /** True when the file may trim lots: it had a readable date and no row was skipped or left without an ISIN. */
+  canTrim?: boolean;
 }
+
+/** Holdings files that list every unit held, so the engine may trim lots to match them. */
+export const TRIMMING_HOLDINGS_SOURCES = ['Zerodha holdings'];
 
 /**
  * Lots built from a holdings file's average cost are sized so their gain times (1 + this) fits the room: the average

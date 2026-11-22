@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseDematCAS, parseMutualFundCAS, schemeDetails } from './cas';
+import { parseZerodhaHoldings } from './zerodhaTaxPnl';
 import { parseCSV, parseDate, parseNumber } from './common';
 import { parseStatementLines, parseTablePreview, previewTable } from './index';
 
@@ -132,5 +133,20 @@ describe('CAS PDFs (text lines)', () => {
 
   it('routes an unknown PDF to a helpful message', () => {
     expect(parseStatementLines(['Contract note', 'Brokerage']).warnings[0]).toMatch(/does not look like a CAS/);
+  });
+});
+
+describe('Zerodha holdings date', () => {
+  const header = ['Symbol', 'ISIN', 'Quantity Available', 'Quantity Long Term', 'Average Price', 'Previous Closing Price'];
+  const row = ['EXAMPLE', 'INE000000001', 5, 5, 100, 120];
+  const sheet = (above: unknown[][]) => [{ sheet: 'Equity', data: [...above, header, row] }];
+  it('parseZerodhaHoldings reads the statement date', () => {
+    const r = parseZerodhaHoldings(sheet([['Equity Holdings Statement as on 2026-11-22']]));
+    expect(r.prices.map((p) => p.priceDate)).toEqual(['2026-11-22']);
+  });
+  it('parseZerodhaHoldings without a date leaves priceDate undefined', () => {
+    const r = parseZerodhaHoldings(sheet([['Equity Holdings Statement']]));
+    expect(r.prices).toHaveLength(1);
+    expect(r.prices[0]!.priceDate).toBeUndefined();
   });
 });
