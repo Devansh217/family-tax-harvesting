@@ -33,8 +33,8 @@ const GUIDE: Array<{ title: string; files: Array<{ name: string; level: 'Start h
   {
     title: 'Shares',
     files: [
-      { name: 'Holdings file', level: 'Start here', why: 'Every share you hold, with long-term units and average cost: enough for a first plan.', where: 'Zerodha: Console → Portfolio → Holdings → Download (.xlsx). Other brokers: holdings export, or the NSDL / CDSL CAS.' },
-      { name: 'Tradebook, every year', level: 'More exact', why: 'The exact date and price of each purchase, so moves use the full room instead of keeping 10% spare.', where: 'Zerodha: Console → Reports → Tradebook, one download per tax year back to your first purchase. Groww, Angel One: trade history.' },
+      { name: 'Holdings file', level: 'Start here', why: 'Every share you hold, with long-term units and average cost: enough for a first plan.', where: 'Zerodha: Console → Portfolio → Holdings → Download (.xlsx). Angel One’s holdings file has a password: open it, save a copy as .xlsx, import the copy. Other brokers: holdings export, or the NSDL / CDSL CAS.' },
+      { name: 'Tradebook, every year', level: 'More exact', why: 'The exact date and price of each purchase, so moves use the full room instead of keeping 10% spare.', where: 'Zerodha: Console → Reports → Tradebook, one download per tax year back to your first purchase. Angel One: Reports → Trade history (Excel), one per tax year. Groww: order history.' },
       { name: 'Tax P&L', level: 'Checks the numbers', why: 'Your broker’s own gains booked this year: the app matches its room to them, and reads F&O profit or loss. Use Tax P&L, not the plain P&L report.', where: 'Zerodha: Console → Reports → Tax P&L → this tax year → Download (.xlsx).' },
     ],
   },

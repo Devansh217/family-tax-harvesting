@@ -1,5 +1,5 @@
 import type { ISODate, Paise } from '../engine/types';
-import { parseCSV, parseDate } from '../parsers/common';
+import { nameKey, parseCSV, parseDate } from '../parsers/common';
 
 /** Published nightly at `prices/latest.json` (and the day before at `prices/previous.json`). Prices in paise. */
 export interface PriceFile {
@@ -89,4 +89,36 @@ export function mergePriceFiles(parts: Array<{ date: ISODate | null; prices: Map
     for (const [isin, v] of p.prices) if (!(isin in prices)) prices[isin] = v;
   });
   return date ? { date, source: used.join(', '), prices } : null;
+}
+
+/**
+ * Published nightly at `prices/shares.json`: listed shares by name and by symbol, for statements that name a company
+ * but give no ISIN (Angel One's trade history). Names are `nameKey`s; former names come from NSE's name changes.
+ */
+export interface SharesFile { date: ISODate; byName: Record<string, string>; bySymbol: Record<string, string> }
+
+/** Names and symbols from NSE and BSE bhavcopies (NSE first), plus former names from NSE's namechange.csv. */
+export function parseShareNames(bhavcopies: string[], nameChanges?: string): Pick<SharesFile, 'byName' | 'bySymbol'> {
+  const byName: Record<string, string> = {}, bySymbol: Record<string, string> = {};
+  for (const csv of bhavcopies) {
+    const rows = parseCSV(csv);
+    const head = rows[0] ?? [];
+    const iIsin = head.indexOf('ISIN'), iSym = head.indexOf('TckrSymb'), iName = head.indexOf('FinInstrmNm'), iSeg = head.indexOf('Sgmt');
+    if (iIsin < 0) continue;
+    for (const r of rows.slice(1)) {
+      const isin = r[iIsin] ?? '';
+      if (!/^IN[A-Z0-9]{10}$/.test(isin) || (iSeg >= 0 && r[iSeg] !== 'CM')) continue;
+      const sym = nameKey(r[iSym] ?? ''), name = nameKey(r[iName] ?? '');
+      if (sym && !(sym in bySymbol)) bySymbol[sym] = isin;
+      if (name && !(name in byName)) byName[name] = isin;
+    }
+  }
+  if (nameChanges) {
+    for (const r of parseCSV(nameChanges).slice(1)) {
+      const isin = bySymbol[nameKey(r[0] ?? '')];
+      const old = nameKey(r[1] ?? '');
+      if (isin && old && !(old in byName)) byName[old] = isin;
+    }
+  }
+  return { byName, bySymbol };
 }

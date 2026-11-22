@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergePriceFiles, parseAmfiFunds, parseAmfiNav, parseBhavcopy } from './parse';
+import { mergePriceFiles, parseAmfiFunds, parseAmfiNav, parseBhavcopy, parseShareNames } from './parse';
 import { securitiesForCompare, withFunds } from '../ui/market';
 
 const HEAD = 'TradDt,BizDt,Sgmt,Src,FinInstrmTp,FinInstrmId,ISIN,TckrSymb,SctySrs,XpryDt,FininstrmActlXpryDt,StrkPric,OptnTp,FinInstrmNm,OpnPric,HghPric,LwPric,ClsPric,LastPric,PrvsClsgPric,UndrlygPric,SttlmPric,OpnIntrst,ChngInOpnIntrst,TtlTradgVol,TtlTrfVal,TtlNbOfTxsExctd,SsnId,NewBrdLotQty,Rmks,Rsvd1,Rsvd2,Rsvd3,Rsvd4';
@@ -84,3 +84,15 @@ describe('price files', () => {
   });
 });
 
+
+describe('share names file', () => {
+  it('maps each company name and symbol to its ISIN, NSE first, plus former names', () => {
+    const nse = [HEAD, row('INE009A01021', 'INFY', '1910.25'), row('INE00FF01025', 'ACUTAAS', '3900')].join('\n');
+    const bse = [HEAD, row('INE009A01021', 'INFOSYS', '1910.00', 'BSE'), row('INE111A01011', 'BSEONLY', '10', 'BSE')].join('\n');
+    const changes = 'SYMBOL,OLD NAME OF THE COMPANY,NEW NAME OF THE COMPANY,EFFECTIVE DATE\nACUTAAS,Ami Organics Limited,Acutaas Chemicals Limited,02-JUN-2025\nGONE,Old Co,New Co,01-JAN-2020';
+    const r = parseShareNames([nse, bse], changes);
+    expect(r.bySymbol).toMatchObject({ INFY: 'INE009A01021', ACUTAAS: 'INE00FF01025', BSEONLY: 'INE111A01011' });
+    expect(r.byName).toMatchObject({ INFYLTD: 'INE009A01021', AMIORGANICSLIMITED: 'INE00FF01025', BSEONLYLTD: 'INE111A01011' });
+    expect(r.byName).not.toHaveProperty('OLDCO'); // symbol no longer listed
+  });
+});

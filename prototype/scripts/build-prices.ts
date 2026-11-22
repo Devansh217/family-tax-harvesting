@@ -8,7 +8,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { mergePriceFiles, parseAmfiFunds, parseAmfiNav, parseBhavcopy, type FundsFile, type PriceFile } from '../src/prices/parse';
+import { mergePriceFiles, parseAmfiFunds, parseAmfiNav, parseBhavcopy, parseShareNames, type FundsFile, type PriceFile, type SharesFile } from '../src/prices/parse';
 
 const [inDir, siteDir] = process.argv.slice(2);
 if (!inDir || !siteDir) throw new Error('usage: build-prices.ts <download dir> <site dir>');
@@ -50,5 +50,12 @@ if (navText && nav?.date) {
   const funds: FundsFile = { date: nav.date, funds: parseAmfiFunds(navText) };
   writeFileSync(join(out, 'funds.json'), JSON.stringify(funds));
   console.log(`funds: ${Object.keys(funds.funds).length} with categories`);
+}
+// Share names and symbols for statements without ISINs. Only written when a bhavcopy came in today.
+const bhav = [nseCsv ? readFileSync(join(nseDir, nseCsv), 'utf8') : null, bseText].filter((x): x is string => !!x);
+if (bhav.length && fresh) {
+  const shares: SharesFile = { date: fresh.date, ...parseShareNames(bhav, read(join(inDir, 'namechange.csv')) ?? undefined) };
+  writeFileSync(join(out, 'shares.json'), JSON.stringify(shares));
+  console.log(`shares: ${Object.keys(shares.byName).length} names, ${Object.keys(shares.bySymbol).length} symbols`);
 }
 console.log(latest ? `prices: ${latest.date} from ${latest.source}, ${Object.keys(latest.prices).length} securities; previous ${previous?.date ?? 'none'}` : 'prices: none available');

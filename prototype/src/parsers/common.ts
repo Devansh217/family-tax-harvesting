@@ -79,6 +79,9 @@ export function classifyByIsin(isin: string): Pick<Security, 'taxType' | 'listed
 }
 
 /** A stable key for securities that arrive without an ISIN, matched by symbol. */
+/** A company name or symbol for matching: capitals and digits only, so "Ami Organics Ltd." and "AMI ORGANICS LTD" meet. */
+export const nameKey = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
 export const symbolKey = (symbol: string) => `SYM:${symbol.trim().toUpperCase().replace(/[-\s]+(EQ|BE|BZ)$/, '')}`;
 
 export interface ParsedTxn {

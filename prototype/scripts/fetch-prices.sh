@@ -28,5 +28,9 @@ for i in 0 1 2 3 4 5 6; do
   rm -f "$out/bse.csv"
 done
 
+# Former company names, for statements that name a share instead of giving its ISIN.
+curl -sfL -m 60 -A "$ua" -o "$out/namechange.csv" "https://nsearchives.nseindia.com/content/equities/namechange.csv" \
+  && head -c 6 "$out/namechange.csv" | grep -q "SYMBOL" && echo "NSE name changes" || rm -f "$out/namechange.csv"
+
 curl -sfL -m 120 -A "$ua" -o "$out/nav.txt" "https://www.amfiindia.com/spages/NAVAll.txt" && echo "AMFI NAVs" || rm -f "$out/nav.txt"
 exit 0
