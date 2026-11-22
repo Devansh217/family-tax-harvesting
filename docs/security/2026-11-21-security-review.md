@@ -11,11 +11,17 @@ How it was checked:
 - Read-only checks of the live system: anonymous `GET`s to the REST API with the public key, the live site's response
   headers, and the repo's settings through `gh`.
 
-Not checked:
-- **Supabase advisors:** the Supabase MCP connection reaches only two unrelated projects, so `get_advisors` and
-  `list_tables` could not run against this app's project (`iaesqhisslztykbglcck`). The database findings come from
-  reading the SQL, plus the anonymous probes.
-- **Settings only the dashboards show:** the Google OAuth redirect allow-list, function secrets, and Vault.
+Live project checks (added 22 Nov 2026, read-only through the Supabase MCP on `iaesqhisslztykbglcck`):
+- the security and performance advisors;
+- `list_tables`, `list_migrations` and `list_edge_functions`;
+- the deployed source of `family` and `admin`;
+- one catalog query covering grants, policies, function ACLs, views, cron jobs, Vault secret *names*, extensions, the
+  count of verified admin TOTP factors, and storage buckets.
+
+No family data was read and nothing was changed. The results are folded into the findings below and summarised in
+"Live project check" at the end.
+
+Not checked: settings only the dashboards show, namely the Google OAuth redirect allow-list and function secrets.
 
 The short version: nobody outside can reach family data today. Every table and view refuses anonymous reads. The
 functions check the sign-in, the invite and, for admin, two-factor. The production bundle has no known-vulnerable
@@ -38,7 +44,8 @@ dependency. No secret has ever been committed. The real risks are:
 | M4 | Medium | Sign-out wipes the browser copy even when the last save failed | Open |
 | M5 | Medium | Admin two-factor: whoever enrols first wins; enforcement not yet tested end to end | Open |
 | M6 | Medium | A malformed backup file restores, crashes the screens and is saved over the family | **Fixed** |
-| L1 | Low | `profiles`: `authenticated` keeps Supabase's default INSERT/DELETE/TRUNCATE grants | Open |
+| M7 | Medium | Live project is one migration behind; season cron runs daily with no `alerts` function or Vault secrets | Open |
+| L1 | Low | `profiles`: `authenticated` keeps Supabase's default INSERT/DELETE/TRUNCATE grants; `handle_new_user` executable by `anon` | Open |
 | L2 | Low | `season_alert_families` view (emails and envelopes) lives in the API-exposed `public` schema | Open |
 | L3 | Low | No rate limits on the functions; sign-ups are open | Open |
 | L4 | Low | Account delete needs only a current access token, with no recent sign-in | Open |
@@ -61,7 +68,8 @@ dependency. No secret has ever been committed. The real risks are:
 **Where:** `prototype/supabase/schema.sql:1-2` (the old setup), `docs/guides/secure-storage-setup.md:85` (the drop step).
 
 **Evidence:** an anonymous `GET /rest/v1/family_data` on `iaesqhisslztykbglcck` returns `42501 permission denied`,
-not "relation does not exist". So the table is still there. The secure-storage spec (§5.5) says it is dropped once
+not "relation does not exist". The live check confirms it: `family_data` has **1 row**. `authenticated` still holds
+every privilege on it, under the old "read / insert / update / delete own" policies. The secure-storage spec (§5.5) says it is dropped once
 the founder's family is in `families`, and the project memory notes guide Part B is still owed.
 
 **Scenario:** the founder's whole family sits in the database unencrypted: members, trades, holdings and plan ticks.
@@ -255,8 +263,10 @@ Not done here: it changes sync behaviour, so it should get the founder's eye.
   founder's Google account can enrol their own authenticator from the Admin screen and reach `aal2`.
 - *(b)* PR #6's notes say admin 2FA was never exercised against the live project.
 
+**Live check (22 Nov):** the one admin has **1 verified TOTP factor**, so gap (a) is closed. Gap (b) remains.
+
 **Fix:**
-1. Enrol and verify TOTP on the live project now, then delete any unverified factors.
+1. ~~Enrol and verify TOTP on the live project now~~ (done). Delete any unverified factors.
 2. Run the manual checks: list and read without 2FA return 403; with 2FA they work, and the read shows on that
    family's Account page.
 3. Optionally, in `handleAdmin`, also require `amr` to include `totp` and the session to be younger than about
@@ -285,6 +295,30 @@ Missing `txns` and `imports` default to empty. Tests are in `store.test.ts`.
 **Still open:** add a top-level React error boundary with a "download your data / start over" screen, so any future
 shape bug cannot brick the app.
 
+### M7. The live project is one migration behind, and the season cron runs with nothing to call
+
+**Where:** `prototype/supabase/migrations/20261215000400_season_alerts_invited.sql`,
+`prototype/supabase/migrations/20261215000100_season_cron.sql:15`; live project.
+
+**Evidence (live):**
+- `list_migrations` stops at `20261215000300`. The invite-only view `20261215000400` (merged in PR #6) is **not
+  applied**, so `season_alert_families` is still the older version that ignores `beta_invites`.
+- `list_edge_functions` shows only `family` and `admin`. `alerts` is not deployed.
+- The `season-alerts` cron job is **active** (daily at 05:30 UTC).
+- `vault.secrets` is empty, so each run posts to a null URL and fails quietly.
+
+**Scenario:** the day `alerts` is deployed with its Vault secrets but without `000400`, a family whose invite was
+removed keeps getting season reads and emails, and cannot switch them off, because its saves are refused. That is the
+exact bug PR #6 fixed. Until then, a failing cron job runs every day and fills the `cron.job_run_details` and `net`
+logs.
+
+**Fix:**
+1. Apply `20261215000400` now, with `npx supabase@2 db push` from `prototype/`, and confirm `list_migrations` shows it.
+2. Either deploy `alerts` and set the Vault secrets per `docs/guides/beta-setup.md`, or run
+   `select cron.unschedule('season-alerts');` until the season work goes live.
+
+The beta-setup guide's deploy order should say "migrations before functions".
+
 ---
 
 ## Low
@@ -299,12 +333,22 @@ insert and delete (there are no policies for them), and PostgREST has no TRUNCAT
 it is one policy mistake from being reachable. The update policy also lets a user rewrite `created_at` and
 `updated_at` on their own row.
 
+**Live check:** confirmed. `authenticated` has
+`DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE` on `profiles`.
+
+The Security Advisor also flags the trigger function `public.handle_new_user()` (`security definer`): it is
+executable by `anon` and `authenticated` through `/rest/v1/rpc/handle_new_user`, from the default `PUBLIC` grant.
+Postgres refuses to run a trigger function outside a trigger, so it can't be abused today, but it should not be on the
+API surface. `touch_updated_at()` has the same grant; it is `security invoker`, so that is harmless.
+
 **Fix (new migration, not applied):**
 
 ```sql
 revoke all on public.profiles from authenticated;
 grant select on public.profiles to authenticated;
 grant update (first_name, last_name) on public.profiles to authenticated;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function public.touch_updated_at() from public, anon, authenticated;
 ```
 
 ### L2. `season_alert_families` sits in the API-exposed `public` schema
@@ -500,6 +544,23 @@ served from the app's origin again.
 - No test credentials.
 - The admin routes (`list`, `read`, `invites`, `season`) are all live and all gated.
 
+## Live project check (22 Nov 2026)
+
+| Check | Result |
+|---|---|
+| Tables (public) | 8, all with RLS on: `profiles` (2 rows), `family_data` (**1**), `families` (2), `admin_reads` (2), `admins` (1), `beta_invites` (1), `season_log` (0), `season_stats` (0) |
+| Advisor: RLS enabled, no policy (INFO) | `admins`, `beta_invites`, `families`, `season_stats`. Intended: server-only tables, no grants |
+| Advisor: SECURITY DEFINER executable (WARN) | `handle_new_user` (anon, authenticated) → L1; `is_admin` (authenticated). Intended: returns only "am I an admin" |
+| Advisor: extension in public (WARN) | `pg_net` is in `public`. Low: move it to `extensions` when convenient (needs the cron job recreated) |
+| Advisor: leaked password protection off (WARN) | Not applicable: email/password sign-in is off (Google only), and the check is a paid-plan feature |
+| Performance advisor | No findings |
+| Migrations | Up to `20261215000300`; **`000400` missing** → M7 |
+| Edge functions | `family` v3, `admin` v3, both `verify_jwt: true`; deployed source matches `main`. `alerts` not deployed → M7 |
+| Cron / Vault | `season-alerts` active daily; Vault has no secrets → M7 |
+| Admin 2FA | 1 verified TOTP factor for the 1 admin → M5(a) closed |
+| Storage | No buckets |
+| Grants | `anon` has no table grants. `authenticated`: `admin_reads` and `season_log` SELECT; `profiles` and `family_data` all → L1, H1 |
+
 ## Fixes made on this branch
 
 All are covered by tests. `npm test` passes (392 tests), and so does `tsc --noEmit`.
@@ -513,10 +574,11 @@ All are covered by tests. `npm test` passes (392 tests), and so does `tsc --noEm
 ## Founder to-do, in order
 
 1. **H1:** drop `family_data` (5 minutes, SQL editor).
-2. **M5:** enrol TOTP on the live admin account and run the 2FA checks.
-3. **M2:** turn on branch protection for `main`, and move `SUPABASE_DB_URL` into a `backup` environment.
-4. **H3:** fix the About and meta wording (a small copy change; can ride on PR #7).
-5. **M1:** run `npm audit fix` once the Playwright PR has merged.
-6. **M3:** move the Pages permissions onto the deploy job (coordinate with the CI session).
-7. **H2:** decide on hosting (Cloudflare Pages free tier) before inviting more beta families.
-8. **M4**, then the L items, as time allows.
+2. **M7:** apply migration `000400`, and unschedule `season-alerts` until `alerts` is deployed.
+3. **M5:** run the 2FA checks (TOTP is already enrolled).
+4. **M2:** turn on branch protection for `main`, and move `SUPABASE_DB_URL` into a `backup` environment.
+5. **H3:** fix the About and meta wording (a small copy change; can ride on PR #7).
+6. **M1:** run `npm audit fix` once the Playwright PR has merged.
+7. **M3:** move the Pages permissions onto the deploy job (coordinate with the CI session).
+8. **H2:** decide on hosting (Cloudflare Pages free tier) before inviting more beta families.
+9. **M4**, then the L items, as time allows.
