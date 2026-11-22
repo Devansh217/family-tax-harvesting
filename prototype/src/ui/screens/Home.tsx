@@ -14,7 +14,7 @@ export function SampleBanner() {
   if (!state.isSample) return null;
   return (
     <div className="banner" role="status">
-      <span className="grow">You are looking at a <strong>sample family</strong>. Start your own to import your statements; nothing leaves this browser.</span>
+      <span className="grow">You are looking at a <strong>sample family</strong>. Start your own to import your statements; the files are read in this browser and never uploaded.</span>
       <button className="btn sm primary" type="button" onClick={() => { update(() => startOwnFamily()); go('family'); toast('Sample cleared. Add your family, then import.'); }}>
         Start my own family
       </button>
