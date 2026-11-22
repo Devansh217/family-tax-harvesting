@@ -144,7 +144,7 @@ function Main({ initial }: { initial: AppState }) {
   else if (route === 'setup') screen = <Setup />;
   else if (route === 'admin') screen = <Admin onView={(s, name) => { setViewed({ state: s, name }); location.hash = 'home'; }} />;
   else if (route === 'family') screen = <Family />;
-  else if (route === 'import' || importMemberOf(route)) screen = <Import key={route} memberId={importMemberOf(route)} />;
+  else if (route === 'import' || importMemberOf(route)) screen = <Import memberId={importMemberOf(route)} />;
   else if (route === 'about') screen = <About />;
   else if (route === 'account') screen = <Account />;
   else screen = <Home days={days} />;
