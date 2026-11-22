@@ -199,6 +199,8 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
   for (const t of r.txns) upsertSecurity(s.securities, t);
   for (const t of txns) {
     const isin = resolveIsin(t.isin, t.name, s.securities);
+    // A name matched now also matches this member's trades saved earlier by that name, from any file.
+    if (t.ref && !isin.startsWith('SYM:')) for (const x of s.txns) if (x.memberId === memberId && x.isin === t.ref) x.isin = isin;
     const base = `${memberId}|${t.ref ?? isin}|${t.date}|${t.side}|${t.qty}|${t.amount}`;
     const n = (seen.get(base) ?? 0) + 1;
     seen.set(base, n);

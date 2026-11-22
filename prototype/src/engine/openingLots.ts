@@ -97,7 +97,7 @@ function withSnapshots(txns: Txn[], positions: HeldPosition[], asOf: ISODate): T
   for (const p of snaps) {
     const ref = p.asOf ?? asOf;
     const explained = rest
-      .filter((t) => t.memberId === p.memberId && t.isin === p.isin && t.date <= ref && !(isDematSnapshot(p) && isFolio(t)))
+      .filter((t) => t.memberId === p.memberId && t.isin === p.isin && t.date <= ref && (isDematSnapshot(p) ? !isFolio(t) : isFolio(t)))
       .reduce((a, t) => a + (t.side === 'buy' ? t.qty : -t.qty), 0);
     const keep = p.qty - Math.max(0, explained);
     const lot = saved.get(p);

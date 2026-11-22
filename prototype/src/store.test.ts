@@ -86,6 +86,14 @@ describe('importing', () => {
     expect(s.txns.map((t) => t.isin)).toEqual(['INE000A01011']);
   });
 
+  it('a later file that matches a name also upgrades trades another file saved by that name', () => {
+    const t = (isin: string, side: 'buy' | 'sell', date: string) => ({ date, isin, ref: 'SYM:EXAMPLE LTD', name: 'EXAMPLE LTD', side, qty: 10_0000, amount: 10_000_00 });
+    const file = (txns: ReturnType<typeof t>[]) => ({ format: 'Trade history · Angel One', warnings: [], skipped: 0, prices: [], txns });
+    let s = applyImport(withMember(), 'a', 'fy24.xlsx', file([t('SYM:EXAMPLE LTD', 'buy', '2024-06-01')]), { account: 'Angel One' });
+    s = applyImport(s, 'a', 'fy26.xlsx', file([t('INE000A01011', 'sell', '2026-06-01')]), { account: 'Angel One' });
+    expect(s.txns.map((x) => x.isin)).toEqual(['INE000A01011', 'INE000A01011']);
+  });
+
   it('removing an import removes its transactions', () => {
     let s = applyImport(withMember(), 'a', 'tb.csv', parse(tradebook));
     s = removeImport(s, s.imports[0]!.id);

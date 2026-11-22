@@ -152,6 +152,9 @@ describe('a demat CAS on top of broker files', () => {
     const angelUnits = (txns: Txn[]) => txns.filter((t) => t.account === 'Angel One').reduce((a, t) => a + t.qty, 0);
     expect(angelUnits(effectiveTxns([folio(100), angelLot(100)], [angelPos(100)], ASOF))).toBe(0);
     expect(angelUnits(effectiveTxns([folio(40), angelLot(100)], [angelPos(100)], ASOF))).toBe(q(60));
+    // Units of the same fund on another platform (Zerodha Coin, in demat) are not the Angel folios' units.
+    const coin = trade('buy', '2023-04-10', 100, 40, { account: 'Zerodha', source: 'Trade history · coin.xlsx' });
+    expect(angelUnits(effectiveTxns([coin, angelLot(50)], [angelPos(50)], ASOF))).toBe(q(50));
   });
 
   it('leaves a CAS lot alone when nothing else holds that security', () => {
