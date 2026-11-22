@@ -171,13 +171,30 @@ describe('Zerodha tax P&L buybacks', () => {
   it('leaves out an exit from 1 Oct 2024 to 31 Mar 2026 and says why', () => {
     const r = parseZerodhaTaxPnl(book(row('2022-01-10', '2025-06-10')));
     expect(r.txns).toHaveLength(0);
-    expect(r.warnings).toContain('1 buyback exits from 1 Oct 2024 to 31 Mar 2026 were left out: in that period buyback money was taxed as dividend income.');
+    expect(r.warnings).toContain('1 buyback exit from 1 Oct 2024 to 31 Mar 2026 was left out: in that period buyback money was taxed as dividend income.');
   });
 
-  it('keeps leaving out an exit before 1 Oct 2024, without the dividend-period wording', () => {
+  it('pluralises the dividend-period warning', () => {
+    const r = parseZerodhaTaxPnl(book(row('2022-01-10', '2025-06-10'), row('2022-01-10', '2026-03-31')));
+    expect(r.warnings).toContain('2 buyback exits from 1 Oct 2024 to 31 Mar 2026 were left out: in that period buyback money was taxed as dividend income.');
+  });
+
+  it('leaves out an exit before 1 Oct 2024 and says the company paid the tax', () => {
     const r = parseZerodhaTaxPnl(book(row('2020-01-10', '2024-06-10')));
     expect(r.txns).toHaveLength(0);
-    expect(r.warnings.join(' ')).not.toMatch(/1 Oct 2024 to 31 Mar 2026/);
-    expect(r.warnings.join(' ')).toMatch(/1 buyback exit before 1 Oct 2024/);
+    expect(r.warnings).toContain('1 buyback exit before 1 Oct 2024 was left out: the company paid the tax on those.');
+    expect(r.warnings.join(' ')).not.toMatch(/dividend/);
+  });
+
+  it('pluralises the before-Oct-2024 warning', () => {
+    const r = parseZerodhaTaxPnl(book(row('2020-01-10', '2024-06-10'), row('2020-01-10', '2024-09-30')));
+    expect(r.warnings).toContain('2 buyback exits before 1 Oct 2024 were left out: the company paid the tax on those.');
+  });
+
+  it('counts an unreadable exit date as skipped, with no dividend warning', () => {
+    const r = parseZerodhaTaxPnl(book(row('2022-01-10', 'n/a')));
+    expect(r.txns).toHaveLength(0);
+    expect(r.skipped).toBe(1);
+    expect(r.warnings.join(' ')).not.toMatch(/buyback/i);
   });
 });

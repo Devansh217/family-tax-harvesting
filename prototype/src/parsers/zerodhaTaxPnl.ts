@@ -75,11 +75,11 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
     if (/^(F&O|Currency|Commodity)$/i.test(section)) continue;
     const isin = findIsin(text(r[cols['ISIN']!])) ?? `SYM:${symbol.toUpperCase()}`;
     const entry = date(r[cols['Entry Date']!]), exit = date(r[cols['Exit Date']!]);
-    if (/Buyback/i.test(section)) {
-      const rules = exit ? rulesFor(exit) : null;
+    if (/Buyback/i.test(section) && exit) {
+      const rules = rulesFor(exit);
       // rulesFor falls back to the oldest known year for earlier dates, so the exit must also fall inside that year.
-      if (!exit || !rules || !(rules.buybackIsCapitalGain && exit >= rules.start)) {
-        const key = exit && exit < BUYBACK_DIVIDEND_FROM ? 'buybackBefore' : 'buyback';
+      if (!(rules.buybackIsCapitalGain && exit >= rules.start)) {
+        const key = exit < BUYBACK_DIVIDEND_FROM ? 'buybackBefore' : 'buyback';
         counts[key] = (counts[key] ?? 0) + 1;
         continue;
       }
@@ -113,8 +113,9 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
     fnoTurnover: sum(fo.get('options turnover'), fo.get('futures turnover')),
   };
 
-  if (counts.buyback) warnings.push(`${counts.buyback} buyback exits from 1 Oct 2024 to 31 Mar 2026 were left out: in that period buyback money was taxed as dividend income.`);
-  if (counts.buybackBefore) warnings.push(`${counts.buybackBefore} buyback exit${counts.buybackBefore === 1 ? '' : 's'} before 1 Oct 2024 ${counts.buybackBefore === 1 ? 'was' : 'were'} left out: they are not part of this year's plan.`);
+  const nb = counts.buyback, nbb = counts.buybackBefore;
+  if (nb) warnings.push(`${nb} buyback ${nb === 1 ? 'exit' : 'exits'} from 1 Oct 2024 to 31 Mar 2026 ${nb === 1 ? 'was' : 'were'} left out: in that period buyback money was taxed as dividend income.`);
+  if (nbb) warnings.push(`${nbb} buyback ${nbb === 1 ? 'exit' : 'exits'} before 1 Oct 2024 ${nbb === 1 ? 'was' : 'were'} left out: the company paid the tax on those.`);
   if (summary.fno != null) warnings.push('F&O profit or loss and turnover were taken from the report totals and set on this member.');
   warnings.push('This report covers exits only. Import holdings or the full tradebook as well to see what is still held and suggest moves.');
 
