@@ -1,5 +1,5 @@
 import { addDays, addMonths, isLongTerm } from './dates';
-import { prorate } from './ledger';
+import { normAccount, prorate } from './ledger';
 import { rulesFor } from './rules';
 import { QTY_SCALE, type ISODate, type Paise, type Qty, type Txn } from './types';
 
@@ -28,8 +28,8 @@ const isTradebook = (t: Txn) => t.source.startsWith('Trade history');
 const isTaxPnl = (t: Txn) => t.source.startsWith('Zerodha Tax P&L');
 const key = (memberId: string, isin: string, account = '') => `${memberId}|${isin}|${account}`;
 
-/** Account labels are free text: one account matches whatever the spaces and case. */
-export const normAccount = (a?: string): string => (a ?? '').trim().toLowerCase();
+/** Account labels are free text: one account matches whatever the spaces and case (defined in ledger.ts). */
+export { normAccount };
 
 /** The holdings file that decides what a member holds in one account. */
 export interface DecidingFile { importId: string; asOf: ISODate; canTrim: boolean; positions: HeldPosition[] }

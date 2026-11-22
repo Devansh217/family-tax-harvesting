@@ -176,6 +176,15 @@ describe('migrating saved families', () => {
     expect(normalizeState(oldState({}))!.termAnswers).toEqual([]);
     const termAnswers = [{ memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', term: 'st' as const }];
     expect(normalizeState(oldState({}, { termAnswers }))!.termAnswers).toEqual(termAnswers);
+    // Answers with no account, no valid term or buy date, or no sale date are dropped.
+    const bad = [
+      { memberId: 'm1', isin: 'INE1', sellDate: '2026-04-10', term: 'st' },
+      { memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', term: 'short' },
+      { memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', buyDate: 'soon' },
+      { memberId: 'm1', account: 'Zerodha', isin: 'INE1', term: 'lt' },
+    ];
+    const dated = { memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', buyDate: '2025-01-02' };
+    expect(normalizeState(oldState({}, { termAnswers: [...bad, ...termAnswers, dated] }))!.termAnswers).toEqual([...termAnswers, dated]);
     // A backup with term answers that are not a list of objects is refused.
     const backup = (termAnswers: unknown) => JSON.stringify({ version: 1, members: [{ id: 'm1', name: 'A', relation: 'self', age: 40, regime: 'new' }], termAnswers });
     expect(parseBackup(backup(termAnswers))!.termAnswers).toEqual(termAnswers);

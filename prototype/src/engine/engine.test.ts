@@ -331,6 +331,38 @@ describe('units sold from the opening lot', () => {
     expect(ledger([{ ...answer, sellDate: '2026-04-11' }]).realised[0]).toMatchObject({ term: 'lt', termUnknown: true });
   });
 
+  it('an answer matches its account whatever the case and spaces, and only its own member and share', () => {
+    const answer: TermAnswer = { memberId: 'a', account: ' zerodha ', isin: 'X', sellDate: '2026-04-10', term: 'st' };
+    expect(ledger([answer]).realised[0]).toMatchObject({ term: 'st' });
+    expect(ledger([answer]).realised[0]!.termUnknown).toBeUndefined();
+    expect(ledger([{ ...answer, memberId: 'b' }]).realised[0]).toMatchObject({ term: 'lt', termUnknown: true });
+    expect(ledger([{ ...answer, isin: 'Y' }]).realised[0]).toMatchObject({ term: 'lt', termUnknown: true });
+    expect(ledger([{ ...answer, account: 'Groww' }]).realised[0]).toMatchObject({ term: 'lt', termUnknown: true });
+  });
+
+  it('a malformed answer (no account, no term) is ignored, never a crash', () => {
+    const noAccount = { memberId: 'a', isin: 'X', sellDate: '2026-04-10', term: 'st' } as unknown as TermAnswer;
+    const noTerm = { memberId: 'a', account: 'Zerodha', isin: 'X', sellDate: '2026-04-10' } as TermAnswer;
+    expect(ledger([noAccount, noTerm]).realised[0]).toMatchObject({ term: 'lt', termUnknown: true });
+    const state: FamilyState = { members: [who], securities: [sec('X')], txns: history(), positions: [file], termAnswers: [noAccount] };
+    expect(computeFamily(state, FILE, R).members[0]!.year.room.free).toBe(rs(1_22_600));
+  });
+
+  it('a planned sale from a guessed lot at a gain uses long-term room', () => {
+    // A guessed lot: 10 units at ₹500, dated 1 Mar 2026 (under 12 months before today). The price is ₹900, so a
+    // planned sale of all 10 gains ₹4,000. Its buy date is unknown: the gain counts long-term, so room falls
+    // ₹1,25,000 → ₹1,21,000 and no tax is added (inside the exemption). By the guessed date it would read short-term
+    // (₹800 + cess) and leave the room at ₹1,25,000, more than the truth may allow.
+    const guess: Txn = { ...tx('a', 'G', '2026-03-01', 'buy', 10, 500), estimated: true };
+    const fam = computeFamily({
+      members: [who], securities: [sec('G', { price: rs(900) })], txns: [guess], plannedSales: [{ id: 'p1', memberId: 'a', isin: 'G', qty: q(10) }],
+    }, FILE, R);
+    expect(fam.plannedRealised).toMatchObject([{ gain: rs(4_000), term: 'lt', termUnknown: true }]);
+    const v = fam.members[0]!;
+    expect(v.plan.room.free).toBe(rs(1_21_000));
+    expect(v.planned).toMatchObject({ gain: rs(4_000), tax: 0, roomUsed: rs(4_000) });
+  });
+
   it('answer buyDate: the term comes from the holding period', () => {
     const at = (buyDate: string) => ledger([{ memberId: 'a', account: 'Zerodha', isin: 'X', sellDate: '2026-04-10', buyDate }]).realised[0]!;
     expect(at('2025-03-01')).toMatchObject({ term: 'lt', buyDate: '2025-03-01' });

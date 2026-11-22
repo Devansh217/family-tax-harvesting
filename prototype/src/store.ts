@@ -87,6 +87,12 @@ function migrateSecurity(x: LegacySecurity): Security {
   return { ...rest, ...classifyByIsin(rest.isin) };
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const isDate = (v: unknown) => typeof v === 'string' && ISO_DATE.test(v);
+/** A saved or restored term answer the engine can use: every key present, and a term or a buy date. */
+const validAnswer = (a: TermAnswer) => typeof a.memberId === 'string' && typeof a.account === 'string' && typeof a.isin === 'string'
+  && isDate(a.sellDate) && (a.term === 'lt' || a.term === 'st' || isDate(a.buyDate));
+
 /** Fills fields added after a copy was saved (older browser data or an account copy). Null if unusable. */
 export function normalizeState(s: AppState | null | undefined): AppState | null {
   if (!s || s.version !== 1 || !Array.isArray(s.members)) return null;
@@ -96,7 +102,7 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
     members: autoLink((s.members as LegacyMember[]).map(migrateMember)),
     securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
     plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
-    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [], datedMoves: s.datedMoves ?? [], termAnswers: s.termAnswers ?? [],
+    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [], datedMoves: s.datedMoves ?? [], termAnswers: (s.termAnswers ?? []).filter(validAnswer),
     alerts: { seasonHelp: s.alerts?.seasonHelp === true, chosen: s.alerts?.chosen === true },
   };
 }

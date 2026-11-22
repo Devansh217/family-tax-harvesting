@@ -1,6 +1,6 @@
 import { isElssFund } from './categories';
 import { addMonths, daysBetween, isLongTerm, longTermFrom } from './dates';
-import { buildLedger, effectiveCost, lotKey, lotTerms, prorate } from './ledger';
+import { buildLedger, effectiveCost, lotKey, lotTerms, prorate, saleTerms } from './ledger';
 import { APPROX_MARGIN, effectiveTxns, type HeldPosition } from './openingLots';
 import { terGapFor } from './data/ter-gap';
 import { directTwin, type FundsMap } from './directTwin';
@@ -241,7 +241,7 @@ function sellAcrossAccounts(ledger: Ledger, memberId: string, sec: Security, qty
   return out;
 }
 
-/** What selling `qty` units now would realise, first-in-first-out. Does not mutate the lots. */
+/** What selling `qty` units now would realise, first-in-first-out. Does not mutate the lots. Guessed lots get the unknown-term rule. */
 export function previewSale(lots: Lot[], qty: Qty, sec: Security, saleDate: ISODate, rules: TaxRules): Realised[] {
   const out: Realised[] = [];
   let left = qty;
@@ -253,7 +253,7 @@ export function previewSale(lots: Lot[], qty: Qty, sec: Security, saleDate: ISOD
     const cost = effectiveCost(lot, actual, take, value, sec, rules);
     out.push({
       memberId: lot.memberId, isin: lot.isin, account: lot.account, buyDate: lot.date, sellDate: saleDate, qty: take, proceeds: value, cost,
-      gain: value - cost, ...lotTerms(sec, lot.date, saleDate, rules),
+      gain: value - cost, ...saleTerms(sec, lot, saleDate, value - cost, rules),
     });
     left -= take;
   }

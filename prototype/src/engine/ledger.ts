@@ -53,7 +53,18 @@ function unknownTerms(
   return { taxType: own.taxType, term: gain >= 0 ? 'lt' : 'st', termUnknown: true };
 }
 
-const sameAccount = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+/**
+ * Tax type and term of a sale from `lot`: from its buy date, or by `unknownTerms` when the lot is guessed. Booked,
+ * planned and simulated sales all go through here.
+ */
+export function saleTerms(
+  sec: Security | undefined, lot: Pick<Lot, 'date' | 'estimated'>, sellDate: ISODate, gain: Paise, rules: TaxRules, answer?: TermAnswer,
+): Pick<Realised, 'taxType' | 'term' | 'termUnknown'> & Partial<Pick<Realised, 'buyDate'>> {
+  return lot.estimated ? unknownTerms(sec, lot.date, sellDate, gain, rules, answer) : lotTerms(sec, lot.date, sellDate, rules);
+}
+
+/** Account labels are free text: one account matches whatever the spaces and case. */
+export const normAccount = (a?: string): string => (a ?? '').trim().toLowerCase();
 
 /**
  * Replays every transaction in date order and matches sells to buys first-in-first-out, per member, security and
@@ -63,7 +74,7 @@ const sameAccount = (a: string, b: string) => a.trim().toLowerCase() === b.trim(
 export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules = FY_2026_27, answers: TermAnswer[] = []): Ledger {
   const bySec = new Map(securities.map((s) => [s.isin, s]));
   const answerFor = (t: Txn, account: string) =>
-    answers.find((a) => a.memberId === t.memberId && a.isin === t.isin && a.sellDate === t.date && sameAccount(a.account, account) && (a.term || a.buyDate));
+    answers.find((a) => a.memberId === t.memberId && a.isin === t.isin && a.sellDate === t.date && normAccount(a.account) === normAccount(account) && (a.term || a.buyDate));
   const { delivery, intraday } = splitIntraday(txns);
   // Units that left the account go last on their date: the holdings file shows the end of that day.
   const rank = (t: Txn) => (t.left ? 2 : t.side === 'sell' ? 0 : 1);
@@ -116,7 +127,7 @@ export function buildLedger(txns: Txn[], securities: Security[], rules: TaxRules
         proceeds,
         cost,
         gain: proceeds - cost,
-        ...(lot.estimated ? unknownTerms(sec, lot.date, t.date, proceeds - cost, rules, answerFor(t, account)) : lotTerms(sec, lot.date, t.date, rules)),
+        ...saleTerms(sec, lot, t.date, proceeds - cost, rules, lot.estimated ? answerFor(t, account) : undefined),
       });
       lot.qty -= take;
       lot.cost -= actualCost;
