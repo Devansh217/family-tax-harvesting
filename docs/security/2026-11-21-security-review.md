@@ -35,7 +35,7 @@ dependency. No secret has ever been committed. The real risks are:
 
 | # | Severity | Finding | Status |
 |---|---|---|---|
-| H1 | High | Old plain-text `family_data` table still exists on the live project | Open: founder (guide Part B) |
+| H1 | High | Old plain-text `family_data` table still exists on the live project | **Fixed on live** (22 Nov) |
 | H2 | High | App shares the `devansh217.github.io` origin, and nothing stops it being framed | Open |
 | H3 | High | Privacy copy says only the family can read its account copy; the server holds the keys | Open |
 | M1 | Medium | Dev toolchain advisories: vite 6.3.5, vitest 3.1.4, tinypool (2 critical, 1 high) | Open (lockfile; see note) |
@@ -88,6 +88,17 @@ The old row-level-security policy also still lets the founder's own session read
 
 Older backup artifacts that hold the plain table expire within 30 days. Delete them by hand if you want them gone
 sooner.
+
+**Done (22 Nov 2026, with the founder's go-ahead).** The checks first, on metadata only:
+- The single row belonged to the admin account.
+- It was a stale early draft: 1 member, no trades, no imports, 540 characters, last saved 15 Nov.
+- The same account's encrypted copy in `families` is at version 35, saved 22 Nov, and about 77 KB.
+- That night's backup (22 Nov 01:28 UTC) had succeeded, so the row can be restored until 22 Dec.
+
+Then `drop table public.family_data;` ran, without `cascade`, and nothing depended on it. The API now answers
+`PGRST205` (table not found). `prototype/supabase/schema.sql` is deleted on this branch.
+
+The backups made before the drop still hold the plain row until they expire, between 17 Dec and 22 Dec.
 
 ### H2. The app shares the `devansh217.github.io` origin, and nothing stops it being framed
 
@@ -561,7 +572,7 @@ served from the app's origin again.
 
 | Check | Result |
 |---|---|
-| Tables (public) | 8, all with RLS on: `profiles` (2 rows), `family_data` (**1**), `families` (2), `admin_reads` (2), `admins` (1), `beta_invites` (1), `season_log` (0), `season_stats` (0) |
+| Tables (public) | 8 before the drop, all with RLS on: `profiles` (2 rows), `family_data` (**1**, dropped 22 Nov), `families` (2), `admin_reads` (2), `admins` (1), `beta_invites` (1), `season_log` (0), `season_stats` (0) |
 | Advisor: RLS enabled, no policy (INFO) | `admins`, `beta_invites`, `families`, `season_stats`. Intended: server-only tables, no grants |
 | Advisor: SECURITY DEFINER executable (WARN) | `handle_new_user` (anon, authenticated) → L1; `is_admin` (authenticated). Intended: returns only "am I an admin" |
 | Advisor: extension in public (WARN) | `pg_net` is in `public`. Low: move it to `extensions` when convenient (needs the cron job recreated) |
@@ -583,10 +594,11 @@ All are covered by tests. `npm test` passes (392 tests), and so does `tsc --noEm
 3. `prototype/src/parsers/pdfText.ts`: `isEvalSupported: false` (L9).
 4. `prototype/src/secrets.test.ts`: more secret patterns, and a "no data files tracked" test (L10).
 5. `.gitignore`: spreadsheets, backups, `.env.*` and editor folders (L10).
+6. `prototype/supabase/schema.sql`: deleted, now that `family_data` is dropped (H1).
 
 ## Founder to-do, in order
 
-1. **H1:** drop `family_data` (5 minutes, SQL editor).
+1. ~~**H1:** drop `family_data`.~~ Done 22 Nov.
 2. ~~**M7:** apply migration `000400`, and unschedule `season-alerts` until `alerts` is deployed.~~ Done 22 Nov.
 3. **M5:** run the 2FA checks (TOTP is already enrolled).
 4. **M2:** turn on branch protection for `main`, and move `SUPABASE_DB_URL` into a `backup` environment.
