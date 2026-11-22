@@ -1,6 +1,6 @@
 # Holdings-first engine: design
 
-Date: 22 Nov 2026. Status: approach approved (option 1, reconcile on every compute); design awaiting approval.
+Date: 22 Nov 2026. Status: approach approved (option 1, reconcile on every compute); research folded in; design awaiting approval.
 Source: the fresh import run on the live site, `notes/fresh-run-notes.md` (points 3, 4, 10, 11, 15, 16 and the "more data never spoils" rule).
 
 Paths are under `prototype/src/` unless they say otherwise.
@@ -20,7 +20,7 @@ The founder's direction: **the holdings file decides what is held; this year's T
 
 1. **The newest holdings file for an account caps and fills what is held** in that account, on every compute.
 2. **Import order and extra files never make figures wrong** ("more data never spoils"). Re-importing, duplicates, overlapping years and older files change nothing they shouldn't.
-3. **Units filled in from a holdings file get a holding period that is right for every sale they feed.**
+3. **Units filled in from a holdings file never make a sale look safer than it is.** Their cost never stacks above the broker's own figure. A sale whose holding period can't be proved is marked "term unknown" and counted the safe way.
 4. **A sale from a guessed-date lot is never booked as short-term by guesswork.**
 5. **Warnings show only what affects this year**, grouped by share, in a calm style.
 6. **The broker correction shows as a correction**, not as a loss.
@@ -72,6 +72,7 @@ The founder's direction: **the holdings file decides what is held; this year's T
 - ids are derived (`<member>|<isin>|<account>|left|<asOf>`), so the same inputs always give the same transaction.
 - One quiet line per member when anything was trimmed: "N shares in your trade history aren't in <broker>'s holdings on <date>, so they're left out." No per-share warning. It's a neutral note, not a warning.
 - Effect: the held units match the file; Holdings, totals, Plan, Simulate and Compare all stop showing them.
+- **Buybacks (research C6).** From 1 Apr 2026 a buyback tender is a taxable capital gain again. A tender may show only in the Tax P&L or the external tradebook, so trimming could drop a real gain. If an account has trimmed units and **no Tax P&L for the current year**, the quiet line adds: "If any of these left in a buyback this year, that gain counts: import <broker>'s tax P&L." The Plan lists it in "Make this plan complete" until the P&L is in. The law treats gifts and moves between your own accounts as no sale (research G2, G5), so trimming books nothing for them, which is right.
 
 ### 3. Fill-in: units the history can't explain
 
@@ -79,6 +80,12 @@ The founder's direction: **the holdings file decides what is held; this year's T
 - **Funds and anything without a long-term count:** the guessed lot is **computed on every compute** as `file units − units the history explains on asOf`, marked `estimated`, dated the day before the account's first trade (or `asOf − 1 day` with no history). It gets no moves (unchanged rule).
 - The guessed lots that imports **saved** for holdings-file positions (ids `<member>|<isin>|opening|<importId>`, source `Opening balance (estimated date)`, created in `store.ts` when the import had no history) are **dropped at compute** whenever their import is a holdings file. This is the repair for families saved before the change. `store.ts` stops saving them for holdings files going forward. Other formats that save guessed lots keep their current behaviour.
 - Result: any import order gives the same units. Fund units can no longer exceed the file.
+- **Cost never stacks (research C3–C5, F2).** Bonus issues, splits, demergers and IPO allotments don't appear in the regular tradebook. The broker restates units and average cost without telling the history. Filling the extra units at the file's average, on top of history lots still at their pre-event cost, overstates cost. Example: 10 shares bought at ₹1,000, then a 1:1 bonus. The file shows 20 at ₹500 (₹10,000). History plus fill-in would be 10 × ₹1,000 + 10 × ₹500 = ₹15,000, so the gain is understated by ₹5,000 and the room overstated, far past the cushion. Rules:
+  - **Invariant:** for each (member, account, ISIN) with a dated holdings file, the cost of the held lots is **never more than the file's total cost** (units × average). Fill-in cost = file total cost − cost of the history lots still held on `asOf`, floored at 0.
+  - **Split or consolidation:** when the file's units are a whole-number multiple (or fraction) of the history's held units and its total cost matches the history's held cost within 1%, scale the history lots' units. Dates and cost stay the same, and nothing is filled in.
+  - **Anything else unexplained with leftover cost 0 or less** (a bonus, a demerger credit): fill-in units take cost 0 and are marked "term unknown" (`estimated`, so no moves). A bonus lot is short-term for 12 months from an allotment date the app doesn't know. The file's long-term count still decides how many held units are long-term.
+  - The member page shows one line per such share: "<share>: units changed without a trade (bonus, split or demerger?). Import Zerodha's tax P&L or external tradebook for exact figures."
+  - Rupee tests for bonus, split and demerger (research §3).
 
 ### 4. Holding period of filled-in units
 
@@ -130,6 +137,18 @@ The founder's direction: **the holdings file decides what is held; this year's T
 - Duplicate trades already add nothing (id-based dedupe in `store.ts`); the import card says "Nothing new: these trades are already in" when a file adds 0 (small copy change in `ui/screens/Import.tsx`).
 - A new file can still **change** moves when it reveals a fact (a sale, a transfer). That's more accurate, not spoiled.
 
+### 10. Buybacks in the Tax P&L (bug found by the research)
+
+- `parseZerodhaTaxPnl` drops every "Equity - Buyback" exit, with the warning "since Oct 2024 buyback money is taxed as dividend income". That's right for exits from 1 Oct 2024 to 31 Mar 2026 only. **Exits dated from 1 Apr 2026 are capital gains (Finance Act 2026) and must be imported like other exits.** Use the per-tax-year rules in `engine/rules.ts` (a flag such as `buybackIsCapitalGain`), not a date literal. The warning names the period it applies to.
+- Exits before 1 Oct 2024 (company paid the tax) stay left out.
+
+### 11. Research findings deliberately left for later
+
+- **Console gifts in the giver's Tax P&L (research B4).** Zerodha books a gift made through Console as an exit at the day's close, so "broker totals win" can count a gain the law doesn't tax. That shows *less* room than the truth, which is safe for moves. Detecting it ("P&L exit with no tradebook sale: was this a gift?") belongs with recognising family gifts, the next engine project. That project should also rebuild the receiver's cost and dates from the giver's lots (research §4, idea 2).
+- **External tradebook (IPO, OFS, corporate actions; research C2)** as an import: belongs with the guided import.
+- **A second demat for lot choice (research §4, idea 1):** needs a CA view (research open question 4) and a wording check against GUARDRAILS §6.
+- Open questions for a CA and the brokers: research note §5. None of them blocks this design. Each answer only refines a "Needs checking" line.
+
 ## Tests (each fails first)
 
 Synthetic fixtures only. Hand-checked rupee figures where tax or room changes.
@@ -163,11 +182,20 @@ Plus the private check (`scripts/check-private.ts`, counts only) over the real f
 - A file with no readable date, a blank account label or unread rows doesn't trim. Saved families need one re-import of the holdings file to get trimming, and the Plan asks for it.
 - Only account-level holdings exports trim; demat CAS and fund-only statements never do.
 - Older history gaps are hidden behind a closed toggle rather than removed.
-- Pending: the research note `docs/research/2026-11-22-lot-dating-transfers.md`, now being written, may change sections 2, 4 and 5 (for example, if brokers' long-term counts can overstate after a transfer in).
+- Research (`docs/research/2026-11-22-lot-dating-transfers.md`) is folded in:
+  - it confirms per-account FIFO, gifts, own-account moves, ELSS and the long-term-gain / short-term-loss rule;
+  - it adds the cost-never-stacks rule for corporate actions (section 3), the buyback caveat (section 2) and the buyback parser fix (section 10);
+  - brokers' long-term counts err towards *fewer* long-term units after gifts and transfers, which is safe, so the design trusts them.
 
 ## Tests added after the builder check
 
 12. A holdings file with no readable date fills in but never trims. A saved family whose positions have no date gets the "import again" gap.
 13. Labels "Zerodha" and " zerodha " match. A blank label never trims.
 14. A `SYM:` row protects the history ISIN with the same symbol. `skipped > 0` turns off trimming for that file.
-15. Unknown term: a gain is long-term and uses room, a loss is short-term, a debt fund keeps slab rate (rupee test).
+15. Unknown term: a gain is long-term and uses room, a loss is short-term, a debt fund keeps slab rate (rupee test). A member with booked short-term gains and an unknown-term loss doesn't gain long-term room.
+16. Corporate actions (rupee tests):
+    - **1:1 bonus:** held cost stays ₹10,000, not ₹15,000.
+    - **1:5 split:** history lots scaled, dates kept, no fill-in.
+    - **Demerger credit:** cost 0 and term unknown.
+    - The cost of held lots never exceeds the file's total.
+17. Buyback: an FY 2026-27 buyback exit in a Tax P&L is booked as a capital gain, while an FY 2025-26 one is left out. An account with trimmed units and no current-year P&L shows the buyback line and the Plan gap.
