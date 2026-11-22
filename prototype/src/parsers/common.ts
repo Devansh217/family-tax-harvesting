@@ -107,6 +107,8 @@ export interface ParsedPrice {
   cost?: Paise;
   /** Units the broker counts as long-term, when it says (Zerodha holdings). */
   ltQty?: Qty;
+  /** A row of a depository (NSDL / CDSL) statement: one line of the PAN's whole demat holdings, across brokers. */
+  demat?: boolean;
 }
 
 export interface ParseResult {

@@ -7,6 +7,8 @@ import type { ISODate, Paise, Qty, Txn } from './types';
  */
 export interface HeldPosition {
   memberId: string; isin: string; account?: string; qty: Qty; ltQty?: Qty; cost?: Paise; asOf?: ISODate; source: string;
+  /** The import it came from: ties a statement to the guessed lots it saved. */
+  importId?: string;
 }
 
 /**
@@ -59,5 +61,45 @@ export function effectiveTxns(txns: Txn[], positions: HeldPosition[], asOf: ISOD
     if (ltQty > 0) added.push({ ...base, id: `${key(p.memberId, p.isin, p.account)}|opening-lt`, date: ltDate, qty: ltQty, amount: Math.round(perUnit * ltQty), approx: true });
     if (stQty > 0) added.push({ ...base, id: `${key(p.memberId, p.isin, p.account)}|opening-st`, date: before, qty: stQty, amount: Math.round(perUnit * stQty), estimated: true });
   }
-  return added.length ? [...out, ...added] : out;
+  const all = added.length ? [...out, ...added] : out;
+  return withSnapshots(all, positions, asOf);
+}
+
+/** A demat CAS (NSDL / CDSL) lists every demat holding of the PAN, across brokers: a snapshot, not one more account. */
+// Shares (INE…) saved from a combined CAS before its demat rows were marked are demat rows too: a fund folio holds no shares.
+const isSnapshot = (p: HeldPosition) => p.source.startsWith('Demat CAS') || (p.source.startsWith('Combined CAS') && p.isin.startsWith('INE'));
+const SNAPSHOT_ACCOUNT = 'Demat (CAS)';
+/** Units in a fund folio (from a fund CAS): a demat CAS never lists them, so they explain none of its units. */
+const isFolio = (t: Txn) => t.source.startsWith('Mutual fund CAS') || t.source.startsWith('Combined CAS');
+
+/**
+ * Units a demat CAS shows that no other account explains on the statement's date. Its guessed lots saved at import
+ * (ids `member|isin|opening|importId`) are dropped, older statements' too, and replaced by one guessed lot of the
+ * difference. Everything else held then counts: trades, holdings-file lots, other files' guessed lots.
+ */
+function withSnapshots(txns: Txn[], positions: HeldPosition[], asOf: ISODate): Txn[] {
+  const snaps = positions.filter((p) => isSnapshot(p) && p.qty > 0);
+  if (!snaps.length) return txns;
+  const snapOf = (t: Txn) => (t.estimated && t.id.includes('|opening|')
+    ? snaps.find((p) => p.memberId === t.memberId && p.isin === t.isin && ((t.account ?? '') === (p.account || SNAPSHOT_ACCOUNT) || t.id.endsWith(`|opening|${p.importId}`)))
+    : undefined);
+  const saved = new Map<HeldPosition, Txn>();
+  const rest: Txn[] = [];
+  for (const t of txns) {
+    const p = snapOf(t);
+    if (!p) { rest.push(t); continue; }
+    if (!saved.has(p) || t.id.endsWith(`|opening|${p.importId}`)) saved.set(p, t);
+  }
+  const added: Txn[] = [];
+  for (const p of snaps) {
+    const ref = p.asOf ?? asOf;
+    const explained = rest
+      .filter((t) => t.memberId === p.memberId && t.isin === p.isin && t.date <= ref && !isFolio(t))
+      .reduce((a, t) => a + (t.side === 'buy' ? t.qty : -t.qty), 0);
+    const keep = p.qty - Math.max(0, explained);
+    const lot = saved.get(p);
+    if (keep <= 0 || !lot) continue;
+    added.push({ ...lot, qty: keep, amount: Math.round((lot.amount * keep) / lot.qty) });
+  }
+  return added.length ? [...rest, ...added] : rest;
 }

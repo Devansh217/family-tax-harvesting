@@ -102,7 +102,8 @@ export function MemberScreen({ id }: { id: string }) {
   const myMoves = fam.moves.filter((m) => (m.kind === 'gift' ? m.toId === id || m.fromId === id : m.memberId === id));
   const myWarnings = fam.ledger.warnings.filter((w) => w.memberId === id);
   const soon = holdings
-    .flatMap((h) => h.lots.filter((l) => l.term === 'st').map((l) => ({ h, l })))
+    // Only lots with a known date in a type that turns long-term: slab-taxed funds never do, and a guessed date says nothing.
+    .flatMap((h) => h.lots.filter((l) => l.term === 'st' && l.certain && l.longTermOn > asOf && (h.taxType === 'equity' || h.taxType === 'other_lt')).map((l) => ({ h, l })))
     .sort((a, b) => a.l.longTermOn.localeCompare(b.l.longTermOn))
     .slice(0, 6);
   const positions = state.positions.filter((p) => p.memberId === id);

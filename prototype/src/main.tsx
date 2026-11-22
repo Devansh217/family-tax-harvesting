@@ -8,7 +8,10 @@ import '@fontsource/bricolage-grotesque/700.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './ui/App';
+import { listenForStaleBuild } from './ui/staleDeploy';
 import './styles.css';
+
+listenForStaleBuild();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

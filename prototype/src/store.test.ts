@@ -60,6 +60,21 @@ describe('importing', () => {
     expect(movesOf(a)[0]).toEqual(['harvest_gain', expect.any(Number), true]);
   });
 
+  it('a combined CAS keeps its demat rows as a snapshot, so broker shares are not counted twice', () => {
+    const tb = { format: 'Trade history · tb.xlsx', warnings: [], skipped: 0, prices: [],
+      txns: [{ isin: 'INE009A01021', name: 'INFY', date: '2024-06-01', side: 'buy' as const, qty: 63_0000, amount: 63_000_00 }] };
+    const cas = { format: 'Combined CAS', txns: [], warnings: [], skipped: 0,
+      prices: [{ isin: 'INE009A01021', name: 'INFY', price: 2000_00, priceDate: '2026-11-01', qty: 63_0000, demat: true }] };
+    let s = applyImport(withMember(), 'a', 'tb.xlsx', tb, { account: 'Zerodha' });
+    s = applyImport(s, 'a', 'cas.pdf', cas, { account: 'Demat (CAS)', openingDate: '2025-10-01' });
+    expect(s.positions[0]).toMatchObject({ source: 'Demat CAS (NSDL / CDSL)' });
+    // A position saved by an older combined import is replaced, not left beside the new one.
+    const before = { ...s, positions: s.positions.map((p) => ({ ...p, source: 'Combined CAS' })) };
+    expect(applyImport(before, 'a', 'cas2.pdf', cas, { account: 'Demat (CAS)' }).positions.map((p) => p.source)).toEqual(['Demat CAS (NSDL / CDSL)']);
+    const h = computeFamily(s, '2026-11-22', FY_2026_27).members[0]!.holdings[0]!;
+    expect(h.qty).toBe(63_0000);
+  });
+
   it('removing an import removes its transactions', () => {
     let s = applyImport(withMember(), 'a', 'tb.csv', parse(tradebook));
     s = removeImport(s, s.imports[0]!.id);

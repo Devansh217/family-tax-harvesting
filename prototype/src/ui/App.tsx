@@ -1,3 +1,4 @@
+import { importOrReload } from './staleDeploy';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { daysBetween, todayISO } from '../engine/dates';
 import { computeFamily } from '../engine/family';
@@ -22,10 +23,10 @@ import { Account, ChooseCopy } from './screens/Account';
 import { useCloud } from './useCloud';
 
 // Screens most visits never open load on first use: Admin (founder only), Import (statement readers), Compare, Simulate.
-const Admin = lazy(() => import('./screens/Admin').then((m) => ({ default: m.Admin })));
-const Compare = lazy(() => import('./screens/Compare').then((m) => ({ default: m.Compare })));
-const Simulate = lazy(() => import('./screens/Simulate').then((m) => ({ default: m.Simulate })));
-const Import = lazy(() => import('./screens/Import').then((m) => ({ default: m.Import })));
+const Admin = lazy(importOrReload(() => import('./screens/Admin').then((m) => ({ default: m.Admin }))));
+const Compare = lazy(importOrReload(() => import('./screens/Compare').then((m) => ({ default: m.Compare }))));
+const Simulate = lazy(importOrReload(() => import('./screens/Simulate').then((m) => ({ default: m.Simulate }))));
+const Import = lazy(importOrReload(() => import('./screens/Import').then((m) => ({ default: m.Import }))));
 
 const TABS = [
   { route: 'home', label: 'Home', icon: Icon.home },
