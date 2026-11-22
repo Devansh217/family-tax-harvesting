@@ -138,6 +138,13 @@ describe('a demat CAS on top of broker files', () => {
     expect(casUnits(out)).toBe(q(50));
   });
 
+  it('repairs shares from a combined CAS saved before demat rows were marked', () => {
+    const S = { isin: 'INE009A01021' };
+    const old = { ...casPos(63), ...S, source: 'Combined CAS' };
+    const out = effectiveTxns([trade('buy', '2024-01-10', 63, 1000, S), casLot(63, 'cas1', S)], [old], ASOF);
+    expect(casUnits(out)).toBe(0);
+  });
+
   it('leaves a CAS lot alone when nothing else holds that security', () => {
     const out = effectiveTxns([casLot(10)], [casPos(10)], ASOF);
     expect(casUnits(out)).toBe(q(10));

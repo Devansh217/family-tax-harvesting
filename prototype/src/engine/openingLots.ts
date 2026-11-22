@@ -66,7 +66,8 @@ export function effectiveTxns(txns: Txn[], positions: HeldPosition[], asOf: ISOD
 }
 
 /** A demat CAS (NSDL / CDSL) lists every demat holding of the PAN, across brokers: a snapshot, not one more account. */
-const isSnapshot = (p: HeldPosition) => p.source.startsWith('Demat CAS');
+// Shares (INE…) saved from a combined CAS before its demat rows were marked are demat rows too: a fund folio holds no shares.
+const isSnapshot = (p: HeldPosition) => p.source.startsWith('Demat CAS') || (p.source.startsWith('Combined CAS') && p.isin.startsWith('INE'));
 const SNAPSHOT_ACCOUNT = 'Demat (CAS)';
 /** Units in a fund folio (from a fund CAS): a demat CAS never lists them, so they explain none of its units. */
 const isFolio = (t: Txn) => t.source.startsWith('Mutual fund CAS') || t.source.startsWith('Combined CAS');

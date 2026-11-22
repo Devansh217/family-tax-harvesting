@@ -215,7 +215,7 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
     if (p.qty != null) {
       // Demat rows keep one source whatever the statement is called, so the engine treats them as a snapshot.
       const source = p.demat ? DEMAT_SNAPSHOT_SOURCE : r.format;
-      s.positions = s.positions.filter((x) => !(x.memberId === memberId && x.isin === isin && x.source === source));
+      s.positions = s.positions.filter((x) => !(x.memberId === memberId && x.isin === isin && (x.source === source || (p.demat && x.source.startsWith('Combined CAS')))));
       s.positions.push({
         memberId, isin, qty: p.qty, ltQty: p.ltQty, asOf: p.priceDate, source, importId,
         ...(p.cost != null ? { cost: p.cost } : {}), account: opts.account ?? '',
