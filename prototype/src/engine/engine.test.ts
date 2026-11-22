@@ -129,6 +129,11 @@ describe('units that left the account', () => {
     expect(l.realised).toHaveLength(0);
   });
 
+  it('comes before a buy on the next day, which stays held', () => {
+    const l = buildLedger([tx('m1', 'A', '2024-01-10', 'buy', 10, 100), tx('m1', 'A', '2026-11-23', 'buy', 5, 200), gone('2026-11-22', 10)], [sec('A')]);
+    expect(l.lots.get('m1|A|')).toMatchObject([{ date: '2026-11-23', qty: q(5), cost: rs(1_000) }]);
+  });
+
   it('comes after a buy on the same day, and is never intraday', () => {
     const l = buildLedger([tx('m1', 'A', '2026-11-22', 'buy', 10, 100), gone('2026-11-22', 4)], [sec('A')]);
     expect(l.intraday).toHaveLength(0);

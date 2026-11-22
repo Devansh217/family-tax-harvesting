@@ -94,7 +94,7 @@ export function effectiveTxnsWithNotes(
   const added: Txn[] = [];
   for (const p of usable) {
     const ref = p.asOf ?? asOf;
-    const history = out.filter((t) => t.memberId === p.memberId && t.isin === p.isin && (t.account ?? '') === (p.account ?? '') && t.date <= ref);
+    const history = out.filter((t) => t.memberId === p.memberId && t.isin === p.isin && normAccount(t.account) === normAccount(p.account) && t.date <= ref);
     const bought = history.filter((t) => t.side === 'buy').reduce((a, t) => a + t.qty, 0);
     const sold = history.filter((t) => t.side === 'sell').reduce((a, t) => a + t.qty, 0);
     const opening = p.qty - bought + sold;
@@ -152,7 +152,8 @@ function unitsThatLeft(trades: Txn[], held: Txn[], files: Map<string, DecidingFi
     const isins: string[] = [];
     for (const [isin, byLabel] of units) {
       const listed = f.positions.filter((p) => p.isin === isin).reduce((a, p) => a + p.qty, 0);
-      let extra = [...byLabel.values()].reduce((a, u) => a + u.qty, 0) - listed;
+      // Per label: the ledger keeps one queue each, so a label with more sold than bought holds nothing to net off.
+      let extra = [...byLabel.values()].reduce((a, u) => a + Math.max(0, u.qty), 0) - listed;
       if (extra <= 0) continue;
       isins.push(isin);
       // Oldest units first, across labels that differ only in spaces or case.

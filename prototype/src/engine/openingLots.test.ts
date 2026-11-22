@@ -287,9 +287,25 @@ describe('the newest holdings file trims units that left the account', () => {
 
   it('a buy after the file date is not trimmed', () => {
     const trades = [trade('buy', '2025-01-10', 10, 1000), trade('buy', '2026-11-21', 5, 1200)];
-    const { txns } = effectiveTxnsWithNotes(trades, [file(10, { asOf: '2026-11-20' })], ASOF);
+    const { txns, staleFiles } = effectiveTxnsWithNotes(trades, [file(10, { asOf: '2026-11-20' })], ASOF);
     expect(left(txns)).toHaveLength(0);
+    expect(staleFiles).toEqual([{ memberId: 'a', account: 'Zerodha', asOf: '2026-11-20' }]);
     expect(heldX(txns)).toBe(q(15));
+  });
+
+  it('a file labelled with other spaces or case fills nothing in for units the history explains', () => {
+    // The tradebook lot (₹10,000) must survive, not be swapped for one at the file's ₹15,000 average.
+    const { txns } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 10, 1000, { account: 'zerodha' })], [pos(10, 10, 1500, { canTrim: true, importId: 'h1', account: ' Zerodha ' })], ASOF);
+    expect(openings(txns)).toHaveLength(0);
+    expect(left(txns)).toHaveLength(0);
+    expect(ledgerOf(txns).lots.get('a|X|zerodha')).toMatchObject([{ date: '2024-01-10', qty: q(10), cost: rs(10_000) }]);
+  });
+
+  it('a label with more sold than bought does not keep units the file says are gone', () => {
+    const trades = [trade('buy', '2024-01-10', 10, 1000), trade('sell', '2025-06-01', 3, 1200, { account: 'zerodha' })];
+    const { txns } = effectiveTxnsWithNotes(trades, [file(0)], ASOF);
+    expect(left(txns)).toMatchObject([{ account: 'Zerodha', qty: q(10) }]);
+    expect(heldX(txns)).toBe(0);
   });
 
   it('counts the units filled in from the file before trimming', () => {
