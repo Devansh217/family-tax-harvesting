@@ -312,8 +312,12 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
 /** A trade the family made: not a saved guess, not a Tax P&L exit. These date the account's last trade. */
 const isRealTrade = (t: Txn) => !isTaxPnl(t) && !t.id.includes('|opening') && !t.left;
 
+/** Buys dated this many calendar days before a holdings file's date, or later up to it, are never trimmed (T+1). */
+export const UNSETTLED_DAYS = 3;
+
 /**
- * The `left` sells that bring each account down to its deciding file. `trades` are the imported transactions (to
+ * The `left` sells that bring each account down to its deciding file, except units from buys that may not have
+ * settled into it (`UNSETTLED_DAYS`). `trades` are the imported transactions (to
  * find the account's last trade), `held` the same plus the units filled in from holdings files.
  */
 function unitsThatLeft(trades: Txn[], held: Txn[], files: Map<string, DecidingFile>) {
@@ -339,11 +343,18 @@ function unitsThatLeft(trades: Txn[], held: Txn[], files: Map<string, DecidingFi
       if (t.side === 'buy' && t.date < u.first) u.first = t.date;
       byLabel.set(label, u);
     }
+    // Buys in the last days up to the file's date may not have settled into it (T+1): never trimmed, they stay held.
+    const settledBy = addDays(f.asOf, -UNSETTLED_DAYS);
+    const unsettled = new Map<string, Qty>();
+    for (const t of trades) {
+      if (!inAccount(t) || t.side !== 'buy' || !isRealTrade(t) || t.date < settledBy || t.date > f.asOf) continue;
+      unsettled.set(t.isin, (unsettled.get(t.isin) ?? 0) + t.qty);
+    }
     const isins: string[] = [];
     for (const [isin, byLabel] of units) {
       const listed = f.positions.filter((p) => p.isin === isin).reduce((a, p) => a + p.qty, 0);
       // Per label: the ledger keeps one queue each, so a label with more sold than bought holds nothing to net off.
-      let extra = [...byLabel.values()].reduce((a, u) => a + Math.max(0, u.qty), 0) - listed;
+      let extra = [...byLabel.values()].reduce((a, u) => a + Math.max(0, u.qty), 0) - listed - (unsettled.get(isin) ?? 0);
       if (extra <= 0) continue;
       isins.push(isin);
       // Oldest units first, across labels that differ only in spaces or case.

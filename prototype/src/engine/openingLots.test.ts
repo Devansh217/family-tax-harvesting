@@ -229,6 +229,21 @@ describe('the newest holdings file trims units that left the account', () => {
     expect(ledgerOf(txns).lots.get('a|X|Zerodha')).toMatchObject([{ date: '2026-05-04', qty: q(5), cost: rs(7_500) }]);
   });
 
+  it('never trims buys from the 3 days up to the file date: they may not have settled into the holdings yet', () => {
+    // 10 shares held since Jan 2025, 5 more bought on 19 Nov 2026 (3 days before the 22 Nov file): the file lists 10.
+    const recent = (date: string) => effectiveTxnsWithNotes([trade('buy', '2025-01-10', 10, 1000), trade('buy', date, 5, 1000)], [file(10)], ASOF);
+    for (const date of ['2026-11-19', '2026-11-21', ASOF]) {
+      const { txns, trimmed } = recent(date);
+      expect(left(txns)).toEqual([]);
+      expect(trimmed).toEqual([]);
+      expect(heldX(txns)).toBe(q(15));
+    }
+    // Bought 4 days before: settled, so the file not listing it means 5 units left the account (oldest first).
+    const { txns } = recent('2026-11-18');
+    expect(left(txns)).toMatchObject([{ qty: q(5) }]);
+    expect(heldX(txns)).toBe(q(10));
+  });
+
   it('an ISIN missing from the newest file is held at 0, even if an older file listed it', () => {
     const older = file(10, { importId: 'h0', asOf: '2026-03-31' });
     const newer = file(5, { isin: 'Y', importId: 'h1' });
