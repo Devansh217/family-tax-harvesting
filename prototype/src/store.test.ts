@@ -191,6 +191,14 @@ describe('migrating saved families', () => {
     expect(parseBackup(backup('st'))).toBeNull();
   });
 
+  it('normalizeState never throws on term answers that are not a list of objects (an account copy is not checked like a backup)', () => {
+    const ok = { memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', term: 'lt' as const };
+    expect(normalizeState(oldState({}, { termAnswers: [null, ok, 'st', 3] }))!.termAnswers).toEqual([ok]);
+    expect(normalizeState(oldState({}, { termAnswers: {} }))!.termAnswers).toEqual([]);
+    expect(normalizeState(oldState({}, { termAnswers: 'st' }))!.termAnswers).toEqual([]);
+    expect(normalizeState(oldState({}, { termAnswers: null }))!.termAnswers).toEqual([]);
+  });
+
   it('setTermAnswer keeps one answer per sale, matching the account whatever its spaces and case; no term or date clears it', () => {
     const a = { memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', term: 'st' as const };
     const other = { ...a, isin: 'INE2', term: 'lt' as const };

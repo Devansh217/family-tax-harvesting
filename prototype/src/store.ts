@@ -113,7 +113,7 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
     members: autoLink((s.members as LegacyMember[]).map(migrateMember)),
     securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
     plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
-    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [], datedMoves: s.datedMoves ?? [], termAnswers: (s.termAnswers ?? []).filter(validAnswer),
+    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [], datedMoves: s.datedMoves ?? [], termAnswers: Array.isArray(s.termAnswers) ? s.termAnswers.filter((a) => a && typeof a === 'object' && validAnswer(a)) : [],
     alerts: { seasonHelp: s.alerts?.seasonHelp === true, chosen: s.alerts?.chosen === true },
   };
 }
