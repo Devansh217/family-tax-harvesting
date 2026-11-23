@@ -65,6 +65,41 @@ export function countingSummaries<S extends { memberId: string; account: string;
     && normAccount(n.account) === normAccount(b.account) && lo(n) <= lo(b) && hi(n) >= hi(b)));
 }
 
+type SummaryRow = { memberId: string; account: string; summary: { from: ISODate | null; to: ISODate | null } };
+
+/**
+ * The counting P&Ls (`countingSummaries`) grouped per member and account (whatever its spaces and case), joining any
+ * that partly overlap in period, directly or through another. Each group comes back as the first P&L with its
+ * period widened to the group's and every number in its summary summed over the group (null where every P&L has
+ * none); `group` lists the P&Ls in it. A P&L that overlaps no other is a group of one, unchanged.
+ */
+export function pnlGroups<S extends SummaryRow>(summaries: S[]): Array<S & { group: S[] }> {
+  const lo = (b: SummaryRow) => b.summary.from ?? '0000-00-00';
+  const hi = (b: SummaryRow) => b.summary.to ?? '9999-12-31';
+  const groups: S[][] = [];
+  for (const b of countingSummaries(summaries)) {
+    const same = (g: S[]) => g[0]!.memberId === b.memberId && normAccount(g[0]!.account) === normAccount(b.account);
+    const touching = groups.filter((g) => same(g) && g.some((x) => lo(x) <= hi(b) && lo(b) <= hi(x)));
+    const merged = [...touching.flat(), b];
+    for (const g of touching) groups.splice(groups.indexOf(g), 1);
+    groups.push(merged);
+  }
+  return groups.map((g) => {
+    if (g.length === 1) return { ...g[0]!, group: g };
+    const first = g[0]!;
+    const summary: Record<string, unknown> = { ...first.summary };
+    for (const [k, v] of Object.entries(first.summary)) {
+      if (k === 'from' || k === 'to' || (typeof v !== 'number' && v !== null)) continue;
+      const vals = g.map((x) => (x.summary as Record<string, unknown>)[k]).filter((x): x is number => typeof x === 'number');
+      summary[k] = vals.length ? vals.reduce((a, x) => a + x, 0) : null;
+    }
+    const froms = g.map((x) => x.summary.from), tos = g.map((x) => x.summary.to);
+    summary.from = froms.includes(null) ? null : froms.sort()[0]!;
+    summary.to = tos.includes(null) ? null : tos.sort().at(-1)!;
+    return { ...first, summary: summary as S['summary'], group: g };
+  });
+}
+
 /** One booked-gain correction per category where the broker's total and the engine's differ. */
 export interface BrokerAdjustment { memberId: string; account: string; broker: string; label: string; term: Term; gain: Paise }
 
@@ -391,21 +426,32 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
 
   // Where history is incomplete, trust the broker's booked totals so room and tax are right.
   const brokerAdjustments: BrokerAdjustment[] = [];
-  for (const b of countingSummaries(state.brokerSummaries ?? [])) {
-    const s = b.summary;
-    const from = s.from ?? rules.start, to = s.to ?? rules.end;
-    const mine = ledger.realised.filter((r) => r.memberId === b.memberId && (r.account ?? '') === b.account && inRange(r.sellDate, from, to));
-    const isEq = (isin: string) => secs.get(isin)?.listed ?? true;
-    const cats: Array<[string, Paise | null, Term, boolean]> = [
-      ['Shares, short-term', s.equityShortTerm, 'st', true], ['Shares, long-term', s.equityLongTerm, 'lt', true],
-      ['Mutual funds, short-term', s.mfShortTerm, 'st', false], ['Mutual funds, long-term', s.mfLongTerm, 'lt', false],
-    ];
-    for (const [label, broker, term, eq] of cats) {
-      if (broker == null) continue;
-      const ours = mine.filter((r) => r.term === term && isEq(r.isin) === eq).reduce((a, r) => a + r.gain, 0);
-      const diff = broker - ours;
-      if (Math.abs(diff) > Math.max(100, Math.abs(broker) * 0.0005)) brokerAdjustments.push({ memberId: b.memberId, account: b.account, broker: s.broker, label, term, gain: diff });
-    }
+  // P&Ls that partly overlap are one group: each corrected on its own would count the shared days twice. The group
+  // takes the higher booked gain of the two ways: per P&L as before, or its summed totals against the engine's gains
+  // over the group's dates.
+  const isEq = (isin: string) => secs.get(isin)?.listed ?? true;
+  const over = (b: { summary: BrokerTotals }) => (r: Realised) => inRange(r.sellDate, b.summary.from ?? rules.start, b.summary.to ?? rules.end);
+  const catsOf = (x: BrokerTotals): Array<[string, Paise | null, Term, boolean]> => [
+    ['Shares, short-term', x.equityShortTerm, 'st', true], ['Shares, long-term', x.equityLongTerm, 'lt', true],
+    ['Mutual funds, short-term', x.mfShortTerm, 'st', false], ['Mutual funds, long-term', x.mfLongTerm, 'lt', false],
+  ];
+  const tolerance = (broker: Paise) => Math.max(100, Math.abs(broker) * 0.0005);
+  for (const g of pnlGroups(state.brokerSummaries ?? [])) {
+    const mine = ledger.realised.filter((r) => r.memberId === g.memberId && g.group.some((b) => (r.account ?? '') === b.account));
+    catsOf(g.summary).forEach(([label, , term, eq], i) => {
+      const inCat = (r: Realised) => r.term === term && isEq(r.isin) === eq;
+      const withTotal = g.group.filter((b) => catsOf(b.summary)[i]![1] != null);
+      if (!withTotal.length) return;
+      const perPnl = withTotal.reduce((a, b) => {
+        const broker = catsOf(b.summary)[i]![1]!;
+        const diff = broker - mine.filter((r) => (r.account ?? '') === b.account && over(b)(r) && inCat(r)).reduce((x, r) => x + r.gain, 0);
+        return a + (Math.abs(diff) > tolerance(broker) ? diff : 0);
+      }, 0);
+      const broker = withTotal.reduce((a, b) => a + catsOf(b.summary)[i]![1]!, 0);
+      const asOne = broker - mine.filter((r) => inCat(r) && withTotal.some((b) => (r.account ?? '') === b.account && over(b)(r))).reduce((x, r) => x + r.gain, 0);
+      const gain = g.group.length === 1 ? perPnl : Math.max(perPnl, Math.abs(asOne) > tolerance(broker) ? asOne : 0);
+      if (gain !== 0) brokerAdjustments.push({ memberId: g.memberId, account: g.account, broker: g.summary.broker, label, term, gain });
+    });
   }
   const adjRealised: Realised[] = brokerAdjustments.map((a) => ({
     memberId: a.memberId, isin: `ADJ:${a.label}`, account: a.account, buyDate: rules.start, sellDate: rules.start,

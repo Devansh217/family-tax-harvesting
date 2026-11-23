@@ -1,4 +1,4 @@
-import { countingSummaries } from '../../engine/family';
+import { pnlGroups } from '../../engine/family';
 import { incomeTotal } from '../../engine/rules';
 import { useMemo, useState } from 'react';
 import { longTermFrom } from '../../engine/dates';
@@ -221,7 +221,7 @@ export function MemberScreen({ id }: { id: string }) {
         </Section>
       )}
 
-      {countingSummaries(state.brokerSummaries).filter((b) => b.memberId === id).map((b) => {
+      {pnlGroups(state.brokerSummaries).filter((b) => b.memberId === id).map((b) => {
         const lines = reconcile(fam, b);
         const allOk = lines.every((l) => l.ok);
         return (

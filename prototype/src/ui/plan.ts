@@ -1,4 +1,4 @@
-import { countingSummaries, taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
+import { countingSummaries, pnlGroups, taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
 import { doneThisSeason, type RecommendationRecord } from '../engine/records';
 import { APPROX_MARGIN, normAccount, TRIMMING_HOLDINGS_SOURCES } from '../engine/openingLots';
 import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
@@ -39,7 +39,7 @@ export const importMemberOf = (route: string) => (route.startsWith('import-') ? 
 
 export interface PlanGap {
   memberId: string;
-  key: 'no_holdings' | 'shares_no_dates' | 'funds_no_dates' | 'funds_to_check' | 'holdings_no_date' | 'buyback_pnl' | 'pnl_again';
+  key: 'no_holdings' | 'shares_no_dates' | 'funds_no_dates' | 'funds_to_check' | 'holdings_no_date' | 'buyback_pnl' | 'pnl_again' | 'pnl_overlap';
   text: string;
   /** Where to fix it. */
   href: string;
@@ -133,6 +133,14 @@ export function planGaps(
       out.push({
         memberId: id, key: 'pnl_again', href: importHref(id), action: 'Import',
         text: `${name}: import ${broker}'s tax P&L for ${fam.rules!.label} again. It was read before buybacks from 1 Apr 2026 counted as capital gains.`,
+      });
+    }
+    // P&Ls that partly overlap: the broker correction takes the safe side over them, one P&L for the year is exact.
+    // Clears once one P&L covers the whole group (it then replaces them, `countingSummaries`).
+    if (fam.rules && pnlGroups(brokerSummaries).some((g) => g.memberId === id && g.group.length > 1 && inYear(g))) {
+      out.push({
+        memberId: id, key: 'pnl_overlap', href: importHref(id), action: 'Import',
+        text: `${possessive(name)} tax P&L files overlap. Import one tax P&L for ${fam.rules.label} from 1 Apr to today.`,
       });
     }
     // Trimmed units may include a buyback, a capital gain from 1 Apr 2026 that only the Tax P&L shows.

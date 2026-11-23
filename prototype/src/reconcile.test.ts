@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeFamily, countingSummaries } from './engine/family';
+import { computeFamily, countingSummaries, pnlGroups } from './engine/family';
 import { planGaps } from './ui/plan';
 import { pnlCoverage } from './ui/warnings';
 import { FY_2026_27 } from './engine/rules';
@@ -209,5 +209,57 @@ describe('a Tax P&L imported again replaces the one it overlaps', () => {
     expect(countingSummaries(s.brokerSummaries)).toHaveLength(2);
     const covered = pnlCoverage(s.brokerSummaries, FY_2026_27);
     expect([covered('m', 'Zerodha', '2026-06-10'), covered('m', 'Zerodha', '2026-07-10')]).toEqual([true, true]);
+  });
+});
+
+describe('Tax P&Ls that partly overlap', () => {
+  // One sale of 100 units on 31 Oct 2026 at ₹600, of units bought before the history; the holdings file (100 left,
+  // ₹100 average) makes the engine count a ₹50,000 long-term gain, while the real gain is ₹20,000. P&L A (1 Apr–31 Oct)
+  // and P&L B (31 Oct–20 Nov) both list that sale: ₹20,000 long-term each.
+  // Per P&L the corrections are −₹30,000 twice: booked −₹10,000, room ₹1,25,000 (₹20,000 more than the truth).
+  // As one group: ₹20,000 + ₹20,000 − ₹50,000 = −₹10,000, booked ₹40,000, room ₹85,000. The higher booked wins.
+  const Q = 10_000;
+  const summary = (from: string, to: string, ltRs: number) => ({ broker: 'Zerodha', from, to, intraday: null, equityShortTerm: 0, equityLongTerm: ltRs * 100, mfShortTerm: null, mfLongTerm: null, fno: null, fnoTurnover: null });
+  const pnl = (from: string, to: string, ltRs: number) => ({ format: `Zerodha Tax P&L · ${from} to ${to}`, txns: [], prices: [], skipped: 0, warnings: [], brokerSummary: summary(from, to, ltRs) });
+  const base = (): AppState => {
+    let s: AppState = { ...emptyState(), members: [{ id: 'm', name: 'Asha', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other', amount: 20_00_000_00, from: 'manual' }] }] };
+    s = applyImport(s, 'm', 'h.xlsx', { format: 'Zerodha holdings', txns: [], skipped: 0, warnings: [],
+      prices: [{ isin: 'INE000000005', name: 'X', price: 3000_00, priceDate: '2026-11-20', qty: 100 * Q, ltQty: 100 * Q, cost: 10_000_00 }] }, { account: 'Zerodha' });
+    s = applyImport(s, 'm', 'tb.csv', { format: 'Zerodha tradebook', skipped: 0, warnings: [], prices: [],
+      txns: [{ isin: 'INE000000005', name: 'X', date: '2026-10-31', side: 'sell' as const, qty: 100 * Q, amount: 60_000_00 }] }, { account: 'Zerodha' });
+    s = applyImport(s, 'm', 'a.xlsx', pnl('2026-04-01', '2026-10-31', 20_000), { account: 'Zerodha' });
+    return applyImport(s, 'm', 'b.xlsx', pnl('2026-10-31', '2026-11-20', 20_000), { account: 'Zerodha' });
+  };
+
+  it('the group is corrected once: booked ₹40,000, room ₹85,000, no move past it', () => {
+    const fam = computeFamily(base(), '2026-11-23', FY_2026_27);
+    expect(fam.brokerAdjustments.map((a) => [a.label, a.gain])).toEqual([['Shares, long-term', -10_000_00]]);
+    expect(fam.totals.freeRoom).toBe(85_000_00);
+    const gain = fam.moves.filter((m) => m.kind === 'harvest_gain').reduce((a, m) => a + (m.kind === 'harvest_gain' ? m.gain : 0), 0);
+    expect(gain).toBeLessThanOrEqual(85_000_00);
+  });
+
+  it('asks for one P&L for the year, and stops once one covers the group', () => {
+    const s = base();
+    const gapsOf = (st: AppState) => { const fam = computeFamily(st, '2026-11-23', FY_2026_27); return planGaps(fam, fam.positions, st.brokerSummaries, st.imports); };
+    expect(gapsOf(s).find((g) => g.key === 'pnl_overlap')).toMatchObject({
+      memberId: 'm', href: '#import-m', action: 'Import',
+      text: "Asha's tax P&L files overlap. Import one tax P&L for FY 2026-27 from 1 Apr to today.",
+    });
+    const whole = applyImport(s, 'm', 'all.xlsx', pnl('2026-04-01', '2026-11-20', 20_000), { account: 'Zerodha' });
+    expect(gapsOf(whole).find((g) => g.key === 'pnl_overlap')).toBeUndefined();
+    // One P&L now: −₹30,000, booked ₹20,000, room ₹1,05,000 (the truth).
+    const fam = computeFamily(whole, '2026-11-23', FY_2026_27);
+    expect(fam.brokerAdjustments.map((a) => a.gain)).toEqual([-30_000_00]);
+    expect(fam.totals.freeRoom).toBe(1_05_000_00);
+  });
+
+  it('the member page check lists the group once, over its whole period', () => {
+    const s = base();
+    const fam = computeFamily(s, '2026-11-23', FY_2026_27);
+    const groups = pnlGroups(s.brokerSummaries);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.summary).toMatchObject({ from: '2026-04-01', to: '2026-11-20', equityLongTerm: 40_000_00 });
+    expect(reconcile(fam, groups[0]!).find((l) => l.label === 'Shares, long-term')).toMatchObject({ broker: 40_000_00, ours: 50_000_00, ok: false });
   });
 });
