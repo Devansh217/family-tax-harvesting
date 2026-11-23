@@ -226,6 +226,7 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
   const sold = history.filter((t) => t.side === 'sell').reduce((a, t) => a + t.qty, 0);
 
   let scaled: Map<Txn, Txn> | undefined;
+  let guessAll = false;
   let corporateAction: CorporateActionNote['kind'] | undefined;
   let hist = history;
   if (p.cost != null) {
@@ -239,13 +240,22 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
     if (h.unmatched === 0 && h.qty > 0 && p.qty !== h.qty && (whole(p.qty, h.qty) || whole(h.qty, p.qty))
       && Math.abs(p.cost - h.cost) <= h.cost * SPLIT_COST_TOLERANCE
       && (up ? p.ltQty != null && h.ltQty > 0 && rescale(h.ltQty) === p.ltQty : p.ltQty == null || rescale(h.ltQty) === p.ltQty)) {
-      scaled = new Map(history.map((t) => [t, { ...t, qty: rescale(t.qty) }]));
-      hist = history.map((t) => scaled!.get(t)!);
+      if (new Set(h.lots.map((l) => l.date)).size === 1) {
+        scaled = new Map(history.map((t) => [t, { ...t, qty: rescale(t.qty) }]));
+        hist = history.map((t) => scaled!.get(t)!);
+      } else {
+        // Held units from buys on several dates: a buy after the real split would be rescaled too, at the wrong cost.
+        // Nothing is rescaled; the held buys and the fill-in are guessed, so the share gets no moves.
+        guessAll = true;
+        const held = new Set(h.lots.map((l) => l.txn!));
+        scaled = new Map(history.filter((t) => held.has(t)).map((t) => [t, { ...t, estimated: true }]));
+        hist = history.map((t) => scaled!.get(t) ?? t);
+      }
       corporateAction = 'units';
     }
   }
 
-  const opening = scaled ? 0 : p.qty - bought + sold;
+  const opening = scaled && !guessAll ? 0 : p.qty - bought + sold;
   if (p.cost != null) {
     // Cost never stacks: the history units still held after the trim cost no more than the file says.
     const h = replayHeld(hist, Math.max(0, opening), ref);
@@ -307,7 +317,8 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
       if (stQty > 0) lots.push(guessed('opening-st', stQty, total - ltAmount));
     }
   }
-  return { lots, scaled, corporateAction };
+  // A share whose units changed in a way no single split explains: every fill-in lot is guessed too (no moves).
+  return { lots: guessAll ? lots.map(({ approx: _a, ...l }) => ({ ...l, estimated: true })) : lots, scaled, corporateAction };
 }
 
 /** A trade the family made: not a saved guess, not a Tax P&L exit. These date the account's last trade. */

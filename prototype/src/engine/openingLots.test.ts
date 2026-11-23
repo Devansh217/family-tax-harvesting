@@ -493,6 +493,25 @@ describe('fill-in on every compute: cost never stacks', () => {
     expect(lotsOf(txns)).toMatchObject([{ date: '2024-01-10', qty: q(50), cost: rs(10_000) }]);
   });
 
+  it('a split ratio over buys on different dates is not rescaled: the share goes the corporate-action way, no moves', () => {
+    // 100 bought Jun 2023 for ₹1,00,000; an unrecorded 1:5 split in Jan 2025 (500 at ₹200); 100 more bought Feb 2025
+    // for ₹20,000. The 20 Nov 2026 file shows 600, all long-term, ₹1,20,000. History 200 units at ₹1,20,000 looks like a
+    // 1:3 split, which would give 300 at ₹1,00,000 and 300 at ₹20,000: at ₹1,000 a move of 187 units would count about
+    // ₹1,24,700 of gain (₹666.67 a unit) while the broker's first in, first out books 187 × ₹800 = ₹1,49,600: ₹24,900
+    // past the room, about ₹3,200 of tax (12.5% plus 4% cess).
+    // The held units don't come from one buy date, so nothing is rescaled and the share gets no moves.
+    const trades = [trade('buy', '2023-06-01', 100, 1000), trade('buy', '2025-02-01', 100, 200)];
+    const f = file(600, 600, 1_20_000, { asOf: '2026-11-20' });
+    const { txns, corporateActions } = effectiveTxnsWithNotes(trades, [f], ASOF);
+    expect(corporateActions).toEqual([{ memberId: 'a', isin: 'X', account: 'Zerodha', kind: 'units' }]);
+    expect(heldQty(txns)).toBe(q(600));
+    expect(heldCost(txns)).toBeLessThanOrEqual(rs(1_20_000));
+    expect(lotsOf(txns).every((l) => l.estimated)).toBe(true);
+    const me: Member = { id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other', amount: rs(20_00_000), from: 'manual' }] };
+    const fam = computeFamily({ members: [me], securities: [{ isin: 'X', name: 'X', taxType: 'equity', listed: true, price: rs(1000) }], txns: trades, positions: [f] }, ASOF, R);
+    expect(fam.moves.filter((m) => m.isin === 'X' && m.kind !== 'wait')).toEqual([]);
+  });
+
   it('5:1 consolidation: one lot of 10 units at ₹10,000, nothing trimmed', () => {
     const { txns } = effectiveTxnsWithNotes([trade('buy', '2024-01-10', 50, 200)], [file(10, 10, 10_050)], ASOF);
     expect(openings(txns)).toHaveLength(0);
