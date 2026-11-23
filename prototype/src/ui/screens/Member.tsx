@@ -13,79 +13,8 @@ import { unitMismatches } from '../units';
 import { importHref } from '../plan';
 import { cgSchedule, EXEMPT_NOTE, isSaleRow, SALE_SECTIONS } from '../../engine/cgSchedule';
 import { scheduleCsv, scheduleFileName } from '../csv';
-import { isElssFund } from '../../engine/categories';
-import { setTermAnswer } from '../../store';
-import type { Term } from '../../engine/types';
-import {
-  answeredSales, bookedDisplay, hasYearPnl, holdingsNoteLines, oversellLine, pnlCoverage, unknownTermSales, visibleOversells, type UnknownTermSale,
-} from '../warnings';
-
-const TERM_LABEL: Record<Term, string> = { lt: 'long-term', st: 'short-term' };
-
-/**
- * One sale whose buy date is unknown: the term the engine assumed and the family's answer. Choosing the other term can
- * free room, so it asks first.
- */
-function UnknownTermRow({ sale }: { sale: UnknownTermSale }) {
-  const { fam, update, asOf } = useApp();
-  const [confirm, setConfirm] = useState<Term | null>(null);
-  const [dating, setDating] = useState(false);
-  const [date, setDate] = useState('');
-  const name = fam.securities.get(sale.isin)?.name ?? sale.isin;
-  const answer = (patch: { term?: Term; buyDate?: string }) =>
-    update((s) => setTermAnswer(s, { memberId: sale.memberId, account: sale.account, isin: sale.isin, sellDate: sale.sellDate, ...patch }));
-  const pick = (term: Term) => (term === sale.term ? answer({ term }) : setConfirm(term));
-  return (
-    <div className="li" style={{ flexWrap: 'wrap', gap: 8 }}>
-      <span className="grow small" style={{ minWidth: 220 }}>
-        {name}, sold {dateLabel(sale.sellDate)}: buy date unknown, so we assumed {TERM_LABEL[sale.term]}. Room left assumes this. Was it{' '}
-        <button className="btn sm" type="button" onClick={() => pick('lt')}>Long-term</button>{' '}
-        <button className="btn sm" type="button" onClick={() => pick('st')}>Short-term</button>? Not sure?{' '}
-        <button className="btn sm ghost" type="button" onClick={() => setDating(true)}>Add buy date</button>
-      </span>
-      {confirm && (
-        <span className="stack small" style={{ gap: 6, width: '100%' }} role="group" aria-label="Confirm the term">
-          <span>{confirm === 'st'
-            ? "Only choose this if your contract note or broker P&L shows the shares were held under a year. If it's wrong, a move can create tax."
-            : "Only choose this if your contract note or broker P&L shows the shares were held over a year. If it's wrong, a move can create tax."}</span>
-          <span className="row" style={{ gap: 8 }}>
-            <button className="btn sm primary" type="button" onClick={() => { answer({ term: confirm }); setConfirm(null); }}>Yes, {TERM_LABEL[confirm]}</button>
-            <button className="btn sm" type="button" onClick={() => setConfirm(null)}>Cancel</button>
-          </span>
-        </span>
-      )}
-      {dating && (
-        <span className="row small" style={{ gap: 8, width: '100%' }}>
-          <input type="date" aria-label={`Buy date of ${name} sold ${dateLabel(sale.sellDate)}`} value={date} max={sale.sellDate < asOf ? sale.sellDate : asOf} onChange={(e) => setDate(e.target.value)} />
-          <button className="btn sm primary" type="button" disabled={!date || date > sale.sellDate} onClick={() => { answer({ buyDate: date }); setDating(false); }}>Save</button>
-          <button className="btn sm" type="button" onClick={() => setDating(false)}>Cancel</button>
-        </span>
-      )}
-    </div>
-  );
-}
-
-/** Sales whose buy date is unknown, this year and not covered by a Tax P&L: answer them, or change an answer. */
-function UnknownTerms({ memberId }: { memberId: string }) {
-  const { fam, state, update } = useApp();
-  const covered = pnlCoverage(state.brokerSummaries, fam.rules);
-  const elss = (isin: string) => { const s = fam.securities.get(isin); return !!s && isElssFund(s); };
-  const open = unknownTermSales(fam.ledger.realised, memberId, fam.rules, covered, elss);
-  const answered = answeredSales(fam.ledger.realised, state.termAnswers, memberId, fam.rules, covered);
-  if (open.length === 0 && answered.length === 0) return null;
-  return (
-    <div className="sheet" aria-label="Sales with an unknown buy date">
-      {open.map((s) => <UnknownTermRow key={`${s.account}|${s.isin}|${s.sellDate}`} sale={s} />)}
-      {answered.map(({ answer, label }) => (
-        <div className="li" key={`a|${answer.account}|${answer.isin}|${answer.sellDate}`}>
-          <span className="grow small">{fam.securities.get(answer.isin)?.name ?? answer.isin}, sold {dateLabel(answer.sellDate)}: {label}
-            {answer.buyDate ? ` (${dateLabel(answer.buyDate)})` : answer.term ? ` (${TERM_LABEL[answer.term]})` : ''}.</span>
-          <button className="btn sm ghost" type="button" onClick={() => update((s) => setTermAnswer(s, { memberId, account: answer.account, isin: answer.isin, sellDate: answer.sellDate }))}>Change</button>
-        </div>
-      ))}
-    </div>
-  );
-}
+import { bookedDisplay, hasYearPnl, holdingsNoteLines, oversellLine, pnlCoverage, visibleOversells } from '../warnings';
+import { UnknownTerms } from './UnknownTerms';
 
 function PriceInput({ value, onCommit, label }: { value: Paise | undefined; onCommit: (p: Paise | undefined) => void; label: string }) {
   const [text, setText] = useState(value != null ? String(value / 100) : '');
@@ -322,7 +251,7 @@ export function MemberScreen({ id }: { id: string }) {
       })}
 
       {(notes.length > 0 || oversold.older.length > 0) && (
-        <div className="note stack" role="note" aria-label="About the imported files" style={{ gap: 8 }}>
+        <div className="banner" role="note" aria-label="About the imported files" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
           <p style={{ margin: 0 }}>{notes.length > 0
             ? "The imported files don't fully match the trade history. Here's how the figures handle it."
             : "Some sales have no matching purchase history. This year's tax isn't affected."}</p>

@@ -1,5 +1,6 @@
 import type { TaxType } from '../../engine/types';
 import { useApp } from '../app-context';
+import { UnknownTermRow, useOpenUnknownTerms } from './UnknownTerms';
 
 const LABEL: Record<TaxType, string> = { equity: 'Equity', slab: 'Slab rate', other_lt: 'Long-term 12.5%', interest: 'Interest', exempt: 'Tax-free', check: 'Check' };
 
@@ -22,6 +23,8 @@ export function FundsToCheck({ memberId }: { memberId: string }) {
   const { fam, update } = useApp();
   const v = fam.members.find((x) => x.member.id === memberId);
   const list = (v?.holdings ?? []).filter((h) => h.taxType === 'check');
+  // Sales with an unknown buy date are listed here too while this area shows (spec §5, "Needs checking").
+  const unknown = useOpenUnknownTerms(memberId);
   if (!list.length) return null;
   return (
     <section className="sheet pad stack" aria-labelledby="check-h" style={{ borderColor: 'var(--time)' }}>
@@ -43,6 +46,11 @@ export function FundsToCheck({ memberId }: { memberId: string }) {
           </div>
         );
       })}
+      {unknown.length > 0 && (
+        <div className="sheet" aria-label="Sales to check">
+          {unknown.map((s) => <UnknownTermRow key={`${s.account}|${s.isin}|${s.sellDate}`} sale={s} needsChecking />)}
+        </div>
+      )}
     </section>
   );
 }

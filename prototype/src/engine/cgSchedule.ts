@@ -62,6 +62,12 @@ function sectionOf(r: Realised): CgSectionKey | null {
 /** A real sale (has an ISIN and units). Broker corrections and the loss and business lines carry only a gain. */
 export const isSaleRow = (r: CgRow): boolean => r.isin !== '' && !r.isin.startsWith('ADJ:');
 
+/** A broker correction's row (spec §7): "Adjusted to <broker>'s tax P&L", no units or dates. */
+function adjustedName(view: FamilyView, r: { memberId: string; isin: string; account?: string }): string {
+  const a = view.brokerAdjustments.find((x) => x.memberId === r.memberId && x.account === (r.account ?? '') && `ADJ:${x.label}` === r.isin);
+  return `Adjusted to ${a?.broker || 'the broker'}'s tax P&L`;
+}
+
 export function cgSchedule(view: FamilyView, memberId: string): CgSchedule {
   const { rules } = view;
   const buckets = new Map<CgSectionKey, Map<string, CgRow>>(ORDER.map((k) => [k, new Map()]));
@@ -72,8 +78,10 @@ export function cgSchedule(view: FamilyView, memberId: string): CgSchedule {
     if (!key) { exemptGain += r.gain; continue; }
     const sec = view.securities.get(r.isin);
     const rows = buckets.get(key)!;
-    const id = `${r.sellDate}|${r.isin}`; // one row per sale: lots and accounts sold on the same day merge
-    const row = rows.get(id) ?? { isin: r.isin, name: sec?.name ?? (r.isin.startsWith('ADJ:') ? `Broker figure: ${r.isin.slice(4)}` : r.isin), units: 0, saleDate: r.sellDate, saleValue: 0, cost: 0, gain: 0 };
+    const adj = r.isin.startsWith('ADJ:');
+    // One row per sale: lots and accounts sold on the same day merge. A broker correction is one row per account.
+    const id = adj ? `${r.isin}|${r.account ?? ''}` : `${r.sellDate}|${r.isin}`;
+    const row = rows.get(id) ?? { isin: r.isin, name: sec?.name ?? (adj ? adjustedName(view, r) : r.isin), units: 0, saleDate: r.sellDate, saleValue: 0, cost: 0, gain: 0 };
     row.units += r.qty;
     row.saleValue += r.proceeds;
     row.cost += r.cost;

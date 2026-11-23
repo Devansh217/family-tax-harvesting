@@ -211,7 +211,8 @@ describe('scheduleCsv', () => {
 
   it('writes plain rupees with 2 decimals and quotes names with commas or quotes', () => {
     expect(lines).toContain('Slab-taxed gains (debt and specified funds),D,"Debt, ""Short"" Fund",100,2026-09-01,1200.00,1000.00,,200.00');
-    expect(lines).toContain('Equity short-term (111A),,"Broker figure: Shares, short-term",,,,,,7000.00');
+    // Spec §7: the broker correction reads as an adjustment, with no units or dates.
+    expect(lines).toContain("Equity short-term (111A),,Adjusted to Zerodha's tax P&L,,,,,,7000.00");
   });
 
   it('keeps spreadsheets from running text as a formula', () => {

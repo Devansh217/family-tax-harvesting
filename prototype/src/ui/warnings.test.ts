@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeFamily, type FamilyState } from '../engine/family';
 import { FY_2026_27 as R } from '../engine/rules';
 import { QTY_SCALE, type LedgerWarning, type Member, type Realised, type Txn } from '../engine/types';
 import {
-  answeredSales, bookedDisplay, holdingsNoteLines, monthRange, oversellLine, pnlCoverage, unknownTermSales, visibleOversells,
+  answeredSales, bookedDisplay, hasYearPnl, holdingsNoteLines, monthRange, needsConfirm, oversellLine, pnlCoverage, unknownTermSales, visibleGapCount, visibleOversells,
 } from './warnings';
 
 const q = (n: number) => n * QTY_SCALE;
@@ -48,6 +50,27 @@ describe('which oversold sales the member page shows', () => {
   });
 });
 
+describe('Home counts only the gaps the member pages show', () => {
+  it('one per share grouped this year, none for earlier-year or P&L-covered sales', () => {
+    const warnings = [
+      ...Array.from({ length: 11 }, () => oversell('2026-06-12', 3)),
+      oversell('2026-07-01', 1, { isin: 'OTHER' }),
+      oversell('2025-09-01', 5),
+      oversell('2026-07-01', 4, { isin: 'COVERED', account: 'Angel' }),
+      oversell('2026-07-01', 2, { memberId: 'b' }),
+    ];
+    const summaries = [{ memberId: 'a', account: 'Angel', summary: { from: null, to: null } }];
+    expect(visibleGapCount(warnings, R, summaries)).toBe(3);
+    expect(visibleGapCount([oversell('2025-09-01', 5)], R, summaries)).toBe(0);
+  });
+
+  it('Home uses that count, not every ledger warning', () => {
+    const home = readFileSync(resolve(__dirname, 'screens/Home.tsx'), 'utf8');
+    expect(home).toMatch(/visibleGapCount\(fam\.ledger\.warnings, fam\.rules, state\.brokerSummaries\)/);
+    expect(home).not.toMatch(/ledger\.warnings\.length/);
+  });
+});
+
 describe('Tax P&L coverage', () => {
   const summaries = [{ memberId: 'a', account: 'Zerodha', summary: { broker: 'Zerodha', from: '2026-04-01', to: '2026-09-30' } }];
   it('covers the account and dates the P&L spans, as the broker correction does', () => {
@@ -56,6 +79,11 @@ describe('Tax P&L coverage', () => {
     expect(covered('a', 'Zerodha', '2026-10-10')).toBe(false);
     expect(covered('a', 'Angel', '2026-06-10')).toBe(false);
     expect(covered('b', 'Zerodha', '2026-06-10')).toBe(false);
+    // The buyback caveat matches labels exactly too, as the engine applies a P&L.
+    const year = hasYearPnl(summaries, R);
+    expect(year('a', 'Zerodha')).toBe(true);
+    expect(year('a', ' zerodha ')).toBe(false);
+    expect(hasYearPnl([{ ...summaries[0]!, summary: { broker: 'Zerodha', from: '2025-04-01', to: '2026-03-31' } }], R)('a', 'Zerodha')).toBe(false);
     // No dates: the whole tax year.
     expect(pnlCoverage([{ ...summaries[0]!, summary: { broker: 'Zerodha', from: null, to: null } }], R)('a', 'Zerodha', '2027-02-01')).toBe(true);
   });
@@ -70,7 +98,19 @@ describe('unknown-term sales the member can answer', () => {
 
   it('lists each uncovered sale this year once, with its units and gain summed', () => {
     const rows = unknownTermSales([sale(), sale({ qty: q(5), gain: rs(1_000) }), sale({ memberId: 'b' }), sale({ termUnknown: undefined, isin: 'Y' })], 'a', R, none);
-    expect(rows).toEqual([{ memberId: 'a', account: 'Zerodha', isin: 'X', sellDate: '2026-06-10', qty: q(15), gain: rs(3_000), term: 'lt' }]);
+    expect(rows).toEqual([{ memberId: 'a', account: 'Zerodha', isin: 'X', sellDate: '2026-06-10', qty: q(15), gain: rs(3_000), term: 'lt', pieceTerms: ['lt'] }]);
+  });
+
+  it('a sale with a gain piece and a loss piece asks for the confirm whichever term is picked', () => {
+    // FIFO split one sale over two guessed lots: a ₹2,000 gain (long-term) and a ₹500 loss (short-term).
+    const [mixed] = unknownTermSales([sale(), sale({ qty: q(5), gain: rs(-500), term: 'st' })], 'a', R, none);
+    expect(mixed).toMatchObject({ term: 'lt', pieceTerms: ['lt', 'st'] });
+    expect(needsConfirm(mixed!, 'lt')).toBe(true);
+    expect(needsConfirm(mixed!, 'st')).toBe(true);
+    // A plain gain: confirming its own assumption needs nothing, the other term asks first.
+    const [plain] = unknownTermSales([sale()], 'a', R, none);
+    expect(needsConfirm(plain!, 'lt')).toBe(false);
+    expect(needsConfirm(plain!, 'st')).toBe(true);
   });
 
   it('Review Focus 4: an unknown-term sale covered by a Tax P&L gets no prompt', () => {
@@ -147,6 +187,13 @@ describe('holdings file notes', () => {
       '2 shares in your trade history aren\'t in Zerodha\'s holdings on 1 Nov 2026, so they\'re left out. If any of these left in a buyback this year, that gain counts: import Zerodha\'s tax P&L.',
       'Your Angel One holdings file is from 30 Sep 2026, before your latest trades. Import a newer one.',
       'X Ltd: units changed without a trade (bonus, split or demerger?). Import Zerodha\'s tax P&L or external tradebook for exact figures.',
+    ]);
+  });
+
+  it('the corporate-action line names the account\'s broker', () => {
+    const angel = { ...notes, trimmed: [], staleFiles: [], corporateActions: [{ memberId: 'a', isin: 'X', account: 'Angel One', kind: 'units' as const }] };
+    expect(holdingsNoteLines(angel, 'a', name, () => true)).toEqual([
+      'X Ltd: units changed without a trade (bonus, split or demerger?). Import Angel One\'s tax P&L or external tradebook for exact figures.',
     ]);
   });
 

@@ -21,9 +21,12 @@ export function pnlCoverage(summaries: SummaryLike[], rules: TaxRules): Covered 
     && date >= (b.summary.from ?? rules.start) && date <= (b.summary.to ?? rules.end));
 }
 
-/** True when the account has a Tax P&L for any part of this tax year (for the buyback caveat). */
+/**
+ * True when the account has a Tax P&L for any part of this tax year (for the buyback caveat). Exact label, as the
+ * engine applies a P&L, so the caveat stays whenever the engine wouldn't use that P&L.
+ */
 export function hasYearPnl(summaries: SummaryLike[], rules: TaxRules) {
-  return (memberId: string, account: string) => summaries.some((b) => b.memberId === memberId && normAccount(b.account) === normAccount(account)
+  return (memberId: string, account: string) => summaries.some((b) => b.memberId === memberId && b.account === account
     && (b.summary.from ?? rules.start) <= rules.end && (b.summary.to ?? rules.end) >= rules.start);
 }
 
@@ -59,6 +62,13 @@ export function visibleOversells(warnings: LedgerWarning[], fy: TaxRules, covere
   return { now: [...groups.values()], older };
 }
 
+/** Oversold-share lines across the family that the member pages show (Home's count): one per share this year, uncovered. */
+export function visibleGapCount(warnings: LedgerWarning[], fy: TaxRules, summaries: SummaryLike[]): number {
+  const covered = pnlCoverage(summaries, fy);
+  const members = [...new Set(warnings.map((w) => w.memberId))];
+  return members.reduce((a, m) => a + visibleOversells(warnings.filter((w) => w.memberId === m), fy, covered).now.length, 0);
+}
+
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const month = (d: ISODate) => MON[Number(d.slice(5, 7)) - 1]!;
 
@@ -91,13 +101,22 @@ export function holdingsNoteLines(
   for (const c of notes.corporateActions.filter((x) => x.memberId === memberId && x.kind === 'units')) {
     if (seen.has(c.isin)) continue;
     seen.add(c.isin);
-    out.push(`${nameOf(c.isin)}: units changed without a trade (bonus, split or demerger?). Import Zerodha's tax P&L or external tradebook for exact figures.`);
+    out.push(`${nameOf(c.isin)}: units changed without a trade (bonus, split or demerger?). Import ${brokerOf(c.account)}'s tax P&L or external tradebook for exact figures.`);
   }
   return out;
 }
 
 /** One sale whose buy date is unknown, keyed like a `TermAnswer`, with the term the engine assumed. */
-export interface UnknownTermSale { memberId: string; account: string; isin: string; sellDate: ISODate; qty: Qty; gain: Paise; term: Realised['term'] }
+export interface UnknownTermSale {
+  memberId: string; account: string; isin: string; sellDate: ISODate; qty: Qty; gain: Paise;
+  /** The term the row says was assumed (from the sale's total gain). */
+  term: Realised['term'];
+  /** The term the engine gave each first-in-first-out piece of the sale: a gain piece long-term, a loss piece short-term. */
+  pieceTerms: Array<Realised['term']>;
+}
+
+/** Picking a term asks first whenever any piece of the sale has another term: that answer can free room. */
+export const needsConfirm = (sale: Pick<UnknownTermSale, 'pieceTerms'>, picked: Realised['term']) => sale.pieceTerms.some((t) => t !== picked);
 
 const saleKey = (memberId: string, account: string, isin: string, sellDate: ISODate) => `${memberId}|${normAccount(account)}|${isin}|${sellDate}`;
 
@@ -111,7 +130,8 @@ export function unknownTermSales(realised: Realised[], memberId: string, fy: Tax
     const account = r.account ?? '';
     if (r.memberId !== memberId || !r.termUnknown || r.taxType !== 'equity' || !inYear(r.sellDate, fy) || covered(memberId, account, r.sellDate) || skip(r.isin)) continue;
     const k = saleKey(memberId, account, r.isin, r.sellDate);
-    const s = out.get(k) ?? { memberId, account, isin: r.isin, sellDate: r.sellDate, qty: 0, gain: 0, term: r.term };
+    const s = out.get(k) ?? { memberId, account, isin: r.isin, sellDate: r.sellDate, qty: 0, gain: 0, term: r.term, pieceTerms: [] };
+    if (!s.pieceTerms.includes(r.term)) s.pieceTerms.push(r.term);
     s.qty += r.qty;
     s.gain += r.gain;
     s.term = s.gain >= 0 ? 'lt' : 'st';
