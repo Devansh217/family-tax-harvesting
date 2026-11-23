@@ -254,6 +254,19 @@ describe('Tax P&Ls that partly overlap', () => {
     expect(fam.totals.freeRoom).toBe(1_05_000_00);
   });
 
+  it('a P&L whose period could not be read is replaced by a newer one from 1 Apr', () => {
+    // A P&L with no readable period overlaps every other, so it joins any group; one from 1 Apr to 20 Nov replaces it.
+    let s = base();
+    s = { ...s, brokerSummaries: s.brokerSummaries.map((b, i) => (i === 0 ? { ...b, summary: { ...b.summary, from: null, to: null } } : b)) };
+    const gapsOf = (st: AppState) => { const fam = computeFamily(st, '2026-11-23', FY_2026_27); return planGaps(fam, fam.positions, st.brokerSummaries, st.imports); };
+    expect(gapsOf(s).map((g) => g.key)).toContain('pnl_overlap');
+    const whole = applyImport(s, 'm', 'all.xlsx', pnl('2026-04-01', '2026-11-20', 20_000), { account: 'Zerodha' });
+    expect(countingSummaries(whole.brokerSummaries).map((b) => b.summary.from)).toEqual(['2026-04-01']);
+    expect(gapsOf(whole).map((g) => g.key)).not.toContain('pnl_overlap');
+    // One P&L: ₹20,000 − ₹50,000 = −₹30,000, booked ₹20,000, room ₹1,05,000 (the truth).
+    expect(computeFamily(whole, '2026-11-23', FY_2026_27).totals.freeRoom).toBe(1_05_000_00);
+  });
+
   it('the member page check lists the group once, over its whole period', () => {
     const s = base();
     const fam = computeFamily(s, '2026-11-23', FY_2026_27);

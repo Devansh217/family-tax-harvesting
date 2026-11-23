@@ -55,14 +55,18 @@ export interface BrokerTotals {
  * The broker Tax P&L totals that count. Per member and account (whatever its spaces and case), an older P&L stops
  * counting only when one imported later covers its whole period: a P&L imported again (or over a wider period)
  * replaces it, and it stays stored but is ignored. P&Ls that only partly overlap, or don't overlap, all count, so a
- * follow-on P&L never hides the months only the older one covers. Every use of the totals goes through here: the broker
+ * follow-on P&L never hides the months only the older one covers. A P&L whose period couldn't be read is replaced by a
+ * newer one from 1 Apr of a tax year through its own end date. Every use of the totals goes through here: the broker
  * correction, Tax P&L coverage, the buyback caveat and the Plan's ask to import a P&L again.
  */
 export function countingSummaries<S extends { memberId: string; account: string; summary: { from: ISODate | null; to: ISODate | null } }>(summaries: S[]): S[] {
   const lo = (b: S) => b.summary.from ?? '0000-00-00';
   const hi = (b: S) => b.summary.to ?? '9999-12-31';
+  // A P&L whose period wasn't read is taken as the tax year of a newer one that starts on 1 Apr, up to its end.
+  const fromApril = (n: S) => !!n.summary.from?.endsWith('-04-01') && n.summary.to != null;
+  const covers = (n: S, b: S) => (fromApril(n) ? lo(n) <= (b.summary.from ?? lo(n)) && hi(n) >= (b.summary.to ?? hi(n)) : lo(n) <= lo(b) && hi(n) >= hi(b));
   return summaries.filter((b, i) => !summaries.some((n, j) => j > i && n.memberId === b.memberId
-    && normAccount(n.account) === normAccount(b.account) && lo(n) <= lo(b) && hi(n) >= hi(b)));
+    && normAccount(n.account) === normAccount(b.account) && covers(n, b)));
 }
 
 type SummaryRow = { memberId: string; account: string; summary: { from: ISODate | null; to: ISODate | null } };
