@@ -250,7 +250,7 @@ if (memberDirs.length) {
     console.log(`  diag realised this year member ${i + 1}: ${[...kinds].sort().map(([k, n]) => `${k} ${n}`).join('; ') || 'none'}`);
     // 3. Visible oversell groups against Tax P&L files.
     const groups = visibleOversells(fam.ledger.warnings.filter((w) => w.memberId === id), FY_2026_27, covered).now;
-    const mine = st.brokerSummaries.filter((b) => b.memberId === id);
+    const mine = countingSummaries(st.brokerSummaries).filter((b) => b.memberId === id);
     for (const g of groups) {
       const inYearPnl = mine.filter((b) => (b.summary.from ?? FY_2026_27.start) <= FY_2026_27.end && (b.summary.to ?? FY_2026_27.end) >= FY_2026_27.start);
       const label = inYearPnl.length === 0 ? 'no label to compare' : inYearPnl.some((b) => b.account === g.account) ? 'label matches exactly' : inYearPnl.some((b) => normAccount(b.account) === normAccount(g.account)) ? 'label matches after normAccount only' : 'label does not match';

@@ -52,16 +52,17 @@ export interface BrokerTotals {
 }
 
 /**
- * The broker Tax P&L totals that count. Per member and account (whatever its spaces and case), when two overlap in
- * period only the one imported last counts: a P&L imported again replaces the one before it, which stays stored but
- * is ignored. Totals for periods that don't overlap all count. Every use of the totals goes through here: the broker
+ * The broker Tax P&L totals that count. Per member and account (whatever its spaces and case), an older P&L stops
+ * counting only when one imported later covers its whole period: a P&L imported again (or over a wider period)
+ * replaces it, and it stays stored but is ignored. P&Ls that only partly overlap, or don't overlap, all count, so a
+ * follow-on P&L never hides the months only the older one covers. Every use of the totals goes through here: the broker
  * correction, Tax P&L coverage, the buyback caveat and the Plan's ask to import a P&L again.
  */
 export function countingSummaries<S extends { memberId: string; account: string; summary: { from: ISODate | null; to: ISODate | null } }>(summaries: S[]): S[] {
   const lo = (b: S) => b.summary.from ?? '0000-00-00';
   const hi = (b: S) => b.summary.to ?? '9999-12-31';
   return summaries.filter((b, i) => !summaries.some((n, j) => j > i && n.memberId === b.memberId
-    && normAccount(n.account) === normAccount(b.account) && lo(n) <= hi(b) && lo(b) <= hi(n)));
+    && normAccount(n.account) === normAccount(b.account) && lo(n) <= lo(b) && hi(n) >= hi(b)));
 }
 
 /** One booked-gain correction per category where the broker's total and the engine's differ. */

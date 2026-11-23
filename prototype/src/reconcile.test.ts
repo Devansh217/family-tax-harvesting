@@ -177,6 +177,28 @@ describe('a Tax P&L imported again replaces the one it overlaps', () => {
     expect(planGaps(fam, fam.positions, s.brokerSummaries, s.imports).map((g) => g.key)).not.toContain('pnl_again');
   });
 
+  it('a follow-on P&L that only overlaps the old one at its edge hides nothing', () => {
+    // The old Apr–Oct P&L (buyback left out) still counts beside a 31 Oct–20 Nov one: the ask to import it again stays
+    // and booked long-term doesn't fall (no room gained).
+    let s = applyImport(start(), 'm', 'old.xlsx', oldPnl, { account: 'Zerodha' });
+    const before = computeFamily(s, '2026-11-23', FY_2026_27).members[0]!.year.ltGains;
+    s = applyImport(s, 'm', 'nov.xlsx', { format: 'Zerodha Tax P&L · 2026-10-31 to 2026-11-20', txns: pair('INE000000003', '2026-11-10', 1000, 1200), prices: [], skipped: 0,
+      warnings: [], brokerSummary: summary('2026-10-31', '2026-11-20', 200) }, { account: 'Zerodha' });
+    expect(countingSummaries(s.brokerSummaries)).toHaveLength(2);
+    const fam = computeFamily(s, '2026-11-23', FY_2026_27);
+    expect(planGaps(fam, fam.positions, s.brokerSummaries, s.imports).map((g) => g.key)).toContain('pnl_again');
+    expect(fam.members[0]!.year.ltGains).toBe(before + 200_00);
+  });
+
+  it('a newer P&L over a wider period replaces the older one', () => {
+    let s = applyImport(start(), 'm', 'old.xlsx', oldPnl, { account: 'Zerodha' });
+    s = applyImport(s, 'm', 'wide.xlsx', { ...newPnl, format: 'Zerodha Tax P&L · 2026-04-01 to 2026-11-20', brokerSummary: summary('2026-04-01', '2026-11-20', 100500) }, { account: 'Zerodha' });
+    expect(countingSummaries(s.brokerSummaries).map((b) => b.summary.to)).toEqual(['2026-11-20']);
+    const fam = computeFamily(s, '2026-11-23', FY_2026_27);
+    expect(fam.members[0]!.year.ltGains).toBe(1_00_500_00);
+    expect(planGaps(fam, fam.positions, s.brokerSummaries, s.imports).map((g) => g.key)).not.toContain('pnl_again');
+  });
+
   it('two halves of the year both count', () => {
     let s = applyImport(start(), 'm', 'h1.xlsx', { ...oldPnl, warnings: [], format: 'Zerodha Tax P&L · 2026-04-01 to 2026-06-30', brokerSummary: summary('2026-04-01', '2026-06-30', 500) }, { account: 'Zerodha' });
     s = applyImport(s, 'm', 'h2.xlsx', { ...newPnl, warnings: [], format: 'Zerodha Tax P&L · 2026-07-01 to 2026-10-31', txns: pair('INE000000002', '2026-07-10', 1000, 101000, true),
