@@ -59,15 +59,39 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 | F2 | Questions for a CA and the brokers | Needs research (write-up) | — | — |
 | F3 | Beta manual test plan | Written, not merged | `docs/beta-test-plan` (now in this file's PR) | — |
 | F4 | Minors in the family | Blocked: deferred until after the beta | — | — |
+| F5 | Scrub real figures from the public fresh-run notes | Needs a short review | — | — |
 
 **Suggested order:**
 1. **B4** (small, saves real money).
 2. **C1** first. It adds the one "newest data" function (`engine/freshness.ts`) that B1 and A1 both use.
-3. **A1 and B1** after C1, one at a time or in separate worktrees. They overlap in `engine/family.ts`, `ui/screens/Plan.tsx`, `ui/plan.ts` and `e2e/smoke.spec.ts`, so rebase the second on the first.
+3. **A1 and B1** after C1, one at a time or in separate worktrees. They overlap in `ui/plan.ts`, `e2e/smoke.spec.ts` and this file, so rebase the second on the first. (A1 and C1 also share `engine/family.ts` and `ui/screens/Plan.tsx`.)
 4. **B2**, then **B3**.
 5. **E1**, which sets the pattern for E2–E4.
 6. **D1** research.
 7. The rest.
+
+## Branches and PRs (24 Nov 2026)
+
+| Branch | PR | Holds | State |
+|---|---|---|---|
+| `docs/next-work` | #19 | This file, the three ready designs and plans, the beta test plan | Open, for merge after the guardrail review |
+| `plan-old-data` | #20 (draft) | C1 design and plan | Build first. The draft becomes the build PR |
+| `guided-import` | #21 (draft) | B1 design and plan | On hold until C1 merges |
+| `family-placement` | #22 (draft) | A1 design and plan | After C1 |
+
+- The design and plan files are identical on each feature branch and on `docs/next-work`, so they merge cleanly. Change them on both, or take them from `main` once #19 merges.
+- `holdings-first-design` merged as PR #18. Older local branches with nothing left to merge can be deleted.
+
+## Notes from the 24 Nov feedback round
+
+Things found or decided in that round that sit outside a single design:
+- **SIPs are visible in tradebooks.** A throwaway check on the test family's files showed Zerodha MF tradebooks show SIPs clearly: the same funds bought on the 1st–2nd of each month for a steady amount. Stock buys repeat too, but as top-ups, not SIPs.
+- **Angel fund buys are not in Angel's trade history.** Angel trade-history files hold shares only, so a member's Angel fund SIPs can't be guessed from them. Check whether Angel's fund statement ("Statement <dates>.xlsx") has them before A1's SIP guess ships, or ask the user.
+- **Clubbing shapes every cross-member move.** Money given to a spouse, a minor child, a son's wife or one's own HUF is still taxed as the giver's (`clubbing()` in `engine/relations.ts`). Only non-clubbed relatives, such as a parent, save tax. A1 builds on this.
+- **Gift, don't sell and buy again.** Moving existing holdings between members means gifting the units, never selling and buying again. Founder agreed; see the A1 design D3.
+- **Founder calls on placement:** a yearly cash gift to the parent, who runs the SIP from their own account; no ceiling on what goes to one member, just show the savings; the full family method (approach B); yearly harvesting in the 10-year model.
+- **Regular plans in Angel accounts:** the test family's Angel holdings likely include regular plans (B4). Check the switch-to-direct moves on the real files once B4 ships.
+- **Process:** every PR gets the `guardrail-reviewer`; its findings go in the PR. Feature PRs stay drafts until their feature is built.
 
 ---
 
@@ -105,11 +129,19 @@ The app tells the family where money should sit to pay less tax over the years, 
 - **Today:** the app turns away every PDF that isn't a CAS ("Unrecognised PDF", `parsers/index.ts`), and there is no Angel Tax P&L reader in any format (founder feedback point 1).
 - **What we know:**
   - An Angel "Tax PNL" PDF (FY 2025-26, from the test family's HUF) has a real text layer that pdf.js reads.
-  - It's 9 pages: a P&L summary (LTCG and STCG excluding buyback, buyback lines, intraday, F&O, charges), then "Equity+Bonds+SGB Trade Details".
-  - The test files also have the Excel version for FY 2026-27.
+  - It's 9 pages, read row by row with no OCR:
+    - **p.1, P&L summary:** LTCG and STCG excluding buyback, buyback lines, intraday, F&O, total charges.
+    - **p.3–4, delivery P&L:** each sale with ISIN, quantity, buy date, sell date, cost and charges, with long-term or short-term already worked out. Same shape as the Zerodha Tax P&L the app reads.
+    - **p.4, open holdings at 31 March:** quantity, average cost and closing price. A dated snapshot of what was held at the start of the year.
+    - **p.5, quantity breakup:** long-term and short-term units per holding. This dates opening lots without old tradebooks, the same split Angel's holdings file gives (B3).
+    - **p.8, charges:** not needed.
+    - **p.9, dividends:** income the member must declare. Angel warns its dividend figures may be incomplete.
+  - The test files also have the Excel version for FY 2026-27. Compare its layout before building; one reader may handle both.
+  - In the test file, last year ends in a net short-term loss after set-off: a real carried-forward case.
 - **Build:**
   - A reader for both formats.
   - "Broker totals win" for Angel accounts (`brokerAdjustments`), as Zerodha has.
+  - The p.4–5 holdings and long-term/short-term split feed the holdings-first engine as a dated snapshot, as B3 will.
   - **Last year's Tax P&L feeds carried-forward losses** (`Member.carriedLoss`): the user confirms the figure, and it applies only if that year's return was filed on time.
 - **Done when:** both files read, and the Plan's booked gains match the broker for an Angel account.
 
@@ -235,6 +267,11 @@ Start from the report's founder to-do list.
 ### F3. Beta manual test plan: Written, not merged
 - `docs/testing/beta-manual-test-plan.md` was written on 20 Nov on branch `docs/beta-test-plan` and never merged. It's carried in this file's PR.
 - Update it once A1, B1 and C1 land.
+
+### F5. Scrub real figures from the public fresh-run notes: Needs a short review
+- `docs/fresh-run-notes.md` is called anonymised, but it still holds rounded real figures from the 22 Nov run, and the old `NEXT-WORK.md` on `main` repeats one (guardrail review of PR #19).
+- The repo is public. Replace the figures with made-up or relative ones in their own PR.
+- Old commits keep the figures. Rewriting history is a separate decision for the founder.
 
 ### F4. Minors in the family: Blocked
 - Deferred until after the beta (memory, 17 Nov).
