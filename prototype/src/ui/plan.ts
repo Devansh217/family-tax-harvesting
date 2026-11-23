@@ -3,7 +3,7 @@ import { doneThisSeason, type RecommendationRecord } from '../engine/records';
 import { APPROX_MARGIN, normAccount, TRIMMING_HOLDINGS_SOURCES } from '../engine/openingLots';
 import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
 import { possessive } from './format';
-import { hasYearPnl } from './warnings';
+import { currentPnls, hasYearPnl, preBuybackPnls, type ImportLike } from './warnings';
 
 /** Days a move can be put on: from today to the last safe day, or to the end of the tax year when that is not known. */
 export const datePickerBounds = (today: ISODate, yearEnd: ISODate, lastSafe: ISODate | null) => ({ min: today, max: lastSafe ?? yearEnd });
@@ -39,7 +39,7 @@ export const importMemberOf = (route: string) => (route.startsWith('import-') ? 
 
 export interface PlanGap {
   memberId: string;
-  key: 'no_holdings' | 'shares_no_dates' | 'funds_no_dates' | 'funds_to_check' | 'holdings_no_date' | 'buyback_pnl';
+  key: 'no_holdings' | 'shares_no_dates' | 'funds_no_dates' | 'funds_to_check' | 'holdings_no_date' | 'buyback_pnl' | 'pnl_again';
   text: string;
   /** Where to fix it. */
   href: string;
@@ -47,7 +47,7 @@ export interface PlanGap {
 }
 
 type HeldPositionLike = { memberId: string; isin?: string; qty?: number; source?: string; ltQty?: number; cost?: number; account?: string; asOf?: ISODate };
-type SummaryLike = { memberId: string; account: string; summary: { from: ISODate | null; to: ISODate | null } };
+type SummaryLike = { importId?: string; memberId: string; account: string; summary: { from: ISODate | null; to: ISODate | null } };
 const rupees = (p: number) => `₹${Math.round(p / 100).toLocaleString('en-IN')}`;
 
 /**
@@ -56,9 +56,13 @@ const rupees = (p: number) => `₹${Math.round(p / 100).toLocaleString('en-IN')}
  */
 export function planGaps(
   fam: Pick<FamilyView, 'members'> & Partial<Pick<FamilyView, 'securities' | 'holdingsNotes' | 'rules'>>, positions: HeldPositionLike[], brokerSummaries: SummaryLike[] = [],
+  imports: ImportLike[] = [],
 ): PlanGap[] {
   const out: PlanGap[] = [];
-  const yearPnl = fam.rules ? hasYearPnl(brokerSummaries, fam.rules) : () => true;
+  // A Tax P&L read before buybacks counted can't close the buyback caveat; it asks to be imported again instead.
+  const yearPnl = fam.rules ? hasYearPnl(currentPnls(brokerSummaries, imports), fam.rules) : () => true;
+  const oldIds = preBuybackPnls(imports);
+  const oldThisYear = fam.rules ? hasYearPnl(brokerSummaries.filter((b) => b.importId && oldIds.has(b.importId)), fam.rules) : () => false;
   for (const v of fam.members) {
     const { id, name } = v.member;
     if (v.holdings.length === 0) {
@@ -117,9 +121,20 @@ export function planGaps(
         text: `Import ${whose === 'Your' ? 'your' : whose} holdings file again so sold or moved shares drop out.`,
       });
     }
+    // A Tax P&L for this year read before buybacks from 1 Apr 2026 counted as capital gains may lack them.
+    const again = new Set<string>();
+    for (const b of brokerSummaries) {
+      if (b.memberId !== id || again.has(b.account) || !oldThisYear(id, b.account) || !b.importId || !oldIds.has(b.importId)) continue;
+      again.add(b.account);
+      const broker = b.account.trim() || 'your broker';
+      out.push({
+        memberId: id, key: 'pnl_again', href: importHref(id), action: 'Import',
+        text: `${name}: import ${broker}'s tax P&L for ${fam.rules!.label} again. It was read before buybacks from 1 Apr 2026 counted as capital gains.`,
+      });
+    }
     // Trimmed units may include a buyback, a capital gain from 1 Apr 2026 that only the Tax P&L shows.
     for (const t of fam.holdingsNotes?.trimmed ?? []) {
-      if (t.memberId !== id || yearPnl(id, t.account)) continue;
+      if (t.memberId !== id || yearPnl(id, t.account) || again.has(t.account)) continue;
       out.push({
         memberId: id, key: 'buyback_pnl', href: importHref(id), action: 'Import',
         text: `${name}: if any shares left ${t.account} in a buyback this year, that gain counts. Import ${t.account}'s tax P&L.`,

@@ -73,6 +73,28 @@ describe('what the plan is missing', () => {
     expect(planGaps(trimmed, positions, pnl('2025-04-01', '2026-03-31')).find((g) => g.key === 'buyback_pnl')).toBeDefined();
   });
 
+  it('a Tax P&L for this year read before buybacks counted asks to be imported again, and closes no buyback gap', () => {
+    const positions = [{ memberId: 'r', isin: 'INF1', qty: 10 * 10_000, source: 'Zerodha holdings', account: 'Zerodha', asOf: '2026-11-01', importId: 'h1', canTrim: true }];
+    const buy: Txn = { id: 'rb', memberId: 'r', isin: 'INE1', date: '2025-01-10', side: 'buy', qty: 10 * 10_000, amount: 1_000_00, source: 'Trade history (Zerodha)', account: 'Zerodha' };
+    const trimmed = computeFamily({ members: [m('r')], securities: secs, txns: [buy], positions }, '2026-11-22', FY_2026_27);
+    const summaries = [{ importId: 'p1', memberId: 'r', account: 'Zerodha', summary: { broker: 'Zerodha', from: '2026-04-01', to: '2026-10-31' } }];
+    // The warning the parser gave before buybacks from 1 Apr 2026 counted as capital gains.
+    const old = [{ id: 'p1', memberId: 'r', format: 'Zerodha Tax P&L · 2026-04-01 to 2026-10-31', warnings: ['1 buyback exits were left out: since Oct 2024 buyback money is taxed as dividend income, not capital gains.'] }];
+    const gaps = planGaps(trimmed, positions, summaries, old).filter((g) => g.memberId === 'r');
+    expect(gaps.find((g) => g.key === 'pnl_again')).toMatchObject({
+      href: '#import-r', action: 'Import',
+      text: "Rekha: import Zerodha's tax P&L for FY 2026-27 again. It was read before buybacks from 1 Apr 2026 counted as capital gains.",
+    });
+    // The buyback gap isn't repeated for that account: importing the P&L again closes both.
+    expect(gaps.find((g) => g.key === 'buyback_pnl')).toBeUndefined();
+    // Imported again (today's warning, or none): no ask.
+    const fresh = [{ ...old[0]!, warnings: [] }];
+    expect(planGaps(trimmed, positions, summaries, fresh).find((g) => g.key === 'pnl_again')).toBeUndefined();
+    // A P&L for last year with the old warning asks nothing: buybacks then were dividends.
+    const lastYear = [{ ...summaries[0]!, summary: { broker: 'Zerodha', from: '2025-04-01', to: '2026-03-31' } }];
+    expect(planGaps(trimmed, positions, lastYear, old).find((g) => g.key === 'pnl_again')).toBeUndefined();
+  });
+
   it('says when a member has nothing imported yet', () => {
     const empty = computeFamily({ members: [m('d')], securities: [], txns: [] }, '2026-11-22', FY_2026_27);
     expect(planGaps(empty, [])).toMatchObject([{ memberId: 'd', key: 'no_holdings' }]);

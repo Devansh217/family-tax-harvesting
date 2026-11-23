@@ -22,6 +22,25 @@ export function pnlCoverage(summaries: SummaryLike[], rules: TaxRules): Covered 
     && date >= (b.summary.from ?? rules.start) && date <= (b.summary.to ?? rules.end));
 }
 
+/** An import as the store keeps it: enough to tell a Tax P&L read before buybacks counted as capital gains. */
+export type ImportLike = { id: string; memberId: string; format: string; warnings: string[] };
+
+/**
+ * Part of the warning a Zerodha Tax P&L got before 1 Apr 2026 buybacks counted as capital gains (Finance Act 2026):
+ * that parser left every buyback exit out, so a P&L saved then may lack this year's buyback gains.
+ */
+export const OLD_BUYBACK_WARNING = 'since Oct 2024 buyback money is taxed as dividend income';
+
+/** Ids of saved Tax P&L imports read before buybacks counted, that left a buyback exit out. */
+export const preBuybackPnls = (imports: ImportLike[]) =>
+  new Set(imports.filter((i) => i.format.startsWith('Zerodha Tax P&L') && i.warnings.some((w) => w.includes(OLD_BUYBACK_WARNING))).map((i) => i.id));
+
+/** The Tax P&L totals that can close the buyback caveat: all but those read before buybacks counted. */
+export function currentPnls<S extends SummaryLike & { importId?: string }>(summaries: S[], imports: ImportLike[]): S[] {
+  const old = preBuybackPnls(imports);
+  return summaries.filter((b) => !b.importId || !old.has(b.importId));
+}
+
 /**
  * True when the account has a Tax P&L for any part of this tax year (for the buyback caveat). Exact label, as the
  * engine applies a P&L, so the caveat stays whenever the engine wouldn't use that P&L.

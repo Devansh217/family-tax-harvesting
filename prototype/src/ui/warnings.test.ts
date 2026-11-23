@@ -5,7 +5,7 @@ import { computeFamily, type FamilyState } from '../engine/family';
 import { FY_2026_27 as R } from '../engine/rules';
 import { QTY_SCALE, type LedgerWarning, type Member, type Realised, type Txn } from '../engine/types';
 import {
-  answeredSales, buyDateAnswer, bookedDisplay, hasYearPnl, holdingsNoteLines, monthRange, needsConfirm, oversellLine, pnlCoverage, unknownTermSales, visibleGapCount, visibleOversells,
+  answeredSales, buyDateAnswer, bookedDisplay, hasYearPnl, currentPnls, holdingsNoteLines, monthRange, needsConfirm, oversellLine, pnlCoverage, unknownTermSales, visibleGapCount, visibleOversells,
 } from './warnings';
 
 const q = (n: number) => n * QTY_SCALE;
@@ -204,6 +204,13 @@ describe('holdings file notes', () => {
     expect(holdingsNoteLines(angel, 'a', name, () => true)).toEqual([
       'X Ltd: units changed without a trade (bonus, split or demerger?). Import Angel One\'s tax P&L or external tradebook for exact figures.',
     ]);
+  });
+
+  it('a P&L read before buybacks counted keeps the buyback caveat', () => {
+    const summaries = [{ importId: 'p1', memberId: 'a', account: 'Zerodha', summary: { broker: 'Zerodha', from: '2026-04-01', to: '2026-10-31' } }];
+    const imports = [{ id: 'p1', memberId: 'a', format: 'Zerodha Tax P&L · 2026-04-01 to 2026-10-31', warnings: ['2 buyback exits were left out: since Oct 2024 buyback money is taxed as dividend income, not capital gains.'] }];
+    expect(holdingsNoteLines(notes, 'a', name, hasYearPnl(currentPnls(summaries, imports), R))[0]).toMatch(/If any of these left in a buyback this year/);
+    expect(holdingsNoteLines(notes, 'a', name, hasYearPnl(currentPnls(summaries, [{ ...imports[0]!, warnings: [] }]), R))[0]).not.toMatch(/buyback/);
   });
 
   it('no buyback caveat once the account has a P&L for this year; another member\'s notes stay out', () => {

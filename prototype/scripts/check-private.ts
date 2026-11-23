@@ -164,7 +164,7 @@ if (memberDirs.length) {
     }
     const unknown = unknownTermSales(fam.booked, id, FY_2026_27, covered).length;
     const over = visibleOversells(fam.ledger.warnings.filter((w) => w.memberId === id), FY_2026_27, covered);
-    const gaps = planGaps(fam, fam.positions, st.brokerSummaries).filter((g) => g.memberId === id).length;
+    const gaps = planGaps(fam, fam.positions, st.brokerSummaries, st.imports).filter((g) => g.memberId === id).length;
     console.log(`  member ${i + 1}: trimmed shares ${trimmed}; stale holdings files ${stale}; corporate-action notes ${corp}; funds with file units: ${fileUnits.size}, held units differ from file: ${fundMismatch}; unknown-term sales ${unknown}; visible oversells now ${over.now.length} (older ${over.older.length}); Plan gaps ${gaps}`);
     // After the broker correction, booked gains per Tax P&L and category against the broker's own total: match / no match.
     const isEq = (isin: string) => st.securities.find((x) => x.isin === isin)?.listed ?? true;

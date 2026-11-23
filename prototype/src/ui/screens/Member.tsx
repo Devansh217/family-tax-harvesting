@@ -13,7 +13,7 @@ import { unitMismatches } from '../units';
 import { importHref } from '../plan';
 import { cgSchedule, EXEMPT_NOTE, isSaleRow, SALE_SECTIONS } from '../../engine/cgSchedule';
 import { scheduleCsv, scheduleFileName } from '../csv';
-import { bookedDisplay, hasYearPnl, holdingsNoteLines, oversellLine, pnlCoverage, visibleOversells } from '../warnings';
+import { bookedDisplay, currentPnls, hasYearPnl, holdingsNoteLines, oversellLine, pnlCoverage, visibleOversells } from '../warnings';
 import { UnknownTerms } from './UnknownTerms';
 
 function PriceInput({ value, onCommit, label }: { value: Paise | undefined; onCommit: (p: Paise | undefined) => void; label: string }) {
@@ -112,7 +112,7 @@ export function MemberScreen({ id }: { id: string }) {
   const nameOf = (isin: string) => fam.securities.get(isin)?.name ?? isin;
   const oversold = visibleOversells(myWarnings, fam.rules, pnlCoverage(state.brokerSummaries, fam.rules));
   const notes = [
-    ...holdingsNoteLines(fam.holdingsNotes, id, nameOf, hasYearPnl(state.brokerSummaries, fam.rules)),
+    ...holdingsNoteLines(fam.holdingsNotes, id, nameOf, hasYearPnl(currentPnls(state.brokerSummaries, state.imports), fam.rules)),
     ...oversold.now.map((g) => oversellLine(nameOf(g.isin), g)),
   ];
   const booked = bookedDisplay(year, fam.brokerAdjustments, id);
