@@ -203,3 +203,19 @@ export function bookedDisplay(year: Pick<YearSummary, 'stLosses' | 'ltLosses'>, 
       .map((x) => `Adjusted to ${x.broker}'s figure: ${x.gain > 0 ? '+' : ''}${inr(x.gain)} ${x.term === 'st' ? 'short-term' : 'long-term'}`),
   };
 }
+
+/**
+ * Words for a member page "Check against" card. A group of overlapping tax P&L files (`pnlGroups`) shows their
+ * combined totals, which count the shared days twice: it says so and doesn't claim the booked figures stay correct.
+ */
+export function pnlCheckCopy(g: { group: unknown[]; summary: { broker: string } }, adjusted: boolean): { brokerColumn: string; overlap: string | null; adjusted: string | null } {
+  const broker = g.summary.broker;
+  const many = g.group.length > 1;
+  return {
+    brokerColumn: many ? `${broker} files combined` : broker,
+    overlap: many ? 'These tax P&L files overlap, so the shared days are counted twice and room reads lower than it should. Import one tax P&L from 1 Apr to today: see the Plan.' : null,
+    adjusted: adjusted
+      ? `Until the history is complete, booked gains, room and tax use ${broker}\u2019s figures for these lines${many ? '' : ', so they stay correct'}. Moves still need the purchase dates.`
+      : null,
+  };
+}

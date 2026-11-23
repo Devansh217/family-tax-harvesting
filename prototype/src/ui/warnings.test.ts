@@ -5,7 +5,7 @@ import { computeFamily, type FamilyState } from '../engine/family';
 import { FY_2026_27 as R } from '../engine/rules';
 import { QTY_SCALE, type LedgerWarning, type Member, type Realised, type Txn } from '../engine/types';
 import {
-  answeredSales, buyDateAnswer, bookedDisplay, hasYearPnl, currentPnls, unknownTermLine, holdingsNoteLines, monthRange, needsConfirm, oversellLine, pnlCoverage, unknownTermSales, visibleGapCount, visibleOversells,
+  answeredSales, buyDateAnswer, bookedDisplay, hasYearPnl, currentPnls, pnlCheckCopy, unknownTermLine, holdingsNoteLines, monthRange, needsConfirm, oversellLine, pnlCoverage, unknownTermSales, visibleGapCount, visibleOversells,
 } from './warnings';
 
 const q = (n: number) => n * QTY_SCALE;
@@ -224,5 +224,22 @@ describe('holdings file notes', () => {
     expect(holdingsNoteLines(notes, 'b', name, () => false)).toEqual([]);
     const one = { ...notes, trimmed: [{ ...notes.trimmed[0]!, isins: ['X'] }] };
     expect(holdingsNoteLines(one, 'a', name, () => true)[0]).toBe('1 share in your trade history isn\'t in Zerodha\'s holdings on 1 Nov 2026, so it\'s left out.');
+  });
+});
+
+describe('the member page check against a tax P&L', () => {
+  it('one file: the broker column and the note that booked figures follow it', () => {
+    expect(pnlCheckCopy({ group: [1], summary: { broker: 'Zerodha' } }, true)).toEqual({
+      brokerColumn: 'Zerodha', overlap: null,
+      adjusted: 'Until the history is complete, booked gains, room and tax use Zerodha\u2019s figures for these lines, so they stay correct. Moves still need the purchase dates.',
+    });
+    expect(pnlCheckCopy({ group: [1], summary: { broker: 'Zerodha' } }, false).adjusted).toBeNull();
+  });
+
+  it('overlapping files: combined totals, the overlap line, and no claim that the figures stay correct', () => {
+    const c = pnlCheckCopy({ group: [1, 2], summary: { broker: 'Zerodha' } }, true);
+    expect(c.brokerColumn).toBe('Zerodha files combined');
+    expect(c.overlap).toBe('These tax P&L files overlap, so the shared days are counted twice and room reads lower than it should. Import one tax P&L from 1 Apr to today: see the Plan.');
+    expect(c.adjusted).toBe('Until the history is complete, booked gains, room and tax use Zerodha\u2019s figures for these lines. Moves still need the purchase dates.');
   });
 });

@@ -14,7 +14,7 @@ import { unitMismatches } from '../units';
 import { importHref } from '../plan';
 import { cgSchedule, EXEMPT_NOTE, isSaleRow, SALE_SECTIONS } from '../../engine/cgSchedule';
 import { scheduleCsv, scheduleFileName } from '../csv';
-import { bookedDisplay, currentPnls, hasYearPnl, holdingsNoteLines, oversellLine, pnlCoverage, visibleOversells } from '../warnings';
+import { bookedDisplay, currentPnls, hasYearPnl, pnlCheckCopy, holdingsNoteLines, oversellLine, pnlCoverage, visibleOversells } from '../warnings';
 import { UnknownTerms } from './UnknownTerms';
 
 function PriceInput({ value, onCommit, label }: { value: Paise | undefined; onCommit: (p: Paise | undefined) => void; label: string }) {
@@ -224,6 +224,7 @@ export function MemberScreen({ id }: { id: string }) {
       {pnlGroups(state.brokerSummaries).filter((b) => b.memberId === id).map((b) => {
         const lines = reconcile(fam, b);
         const allOk = lines.every((l) => l.ok);
+        const copy = pnlCheckCopy(b, fam.brokerAdjustments.some((a) => a.memberId === id && a.account === b.account));
         return (
           <Section key={b.importId} title={`Check against ${b.summary.broker}`} id={`rec-${b.importId}`}>
             <p className={`small ${allOk ? 'good' : ''}`} style={allOk ? undefined : { color: 'var(--time)' }}>
@@ -232,7 +233,7 @@ export function MemberScreen({ id }: { id: string }) {
             </p>
             <div className="sheet tablebox">
               <table>
-                <thead><tr><th scope="col">Realised</th><th scope="col">{b.summary.broker}</th><th scope="col">Harvesting</th><th scope="col">Difference</th></tr></thead>
+                <thead><tr><th scope="col">Realised</th><th scope="col">{copy.brokerColumn}</th><th scope="col">Harvesting</th><th scope="col">Difference</th></tr></thead>
                 <tbody>
                   {lines.map((l) => (
                     <tr key={l.label}>
@@ -244,9 +245,8 @@ export function MemberScreen({ id }: { id: string }) {
               </table>
             </div>
             {!allOk && <p className="tiny muted">Differences usually mean older purchases are missing (import earlier tradebooks), a corporate action, or the same trades imported twice from different files.</p>}
-            {fam.brokerAdjustments.some((a) => a.memberId === id && a.account === b.account) && (
-              <p className="small" style={{ color: 'var(--time)' }}>Until the history is complete, booked gains, room and tax use {b.summary.broker}&rsquo;s figures for these lines, so they stay correct. Moves still need the purchase dates.</p>
-            )}
+            {copy.overlap && <p className="small" style={{ color: 'var(--time)' }}>{copy.overlap}</p>}
+            {copy.adjusted && <p className="small" style={{ color: 'var(--time)' }}>{copy.adjusted}</p>}
           </Section>
         );
       })}
