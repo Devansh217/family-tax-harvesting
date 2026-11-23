@@ -204,8 +204,8 @@
 
 - [ ] **Step 1: Write the failing tests:**
   - `year 1 starts after this season's moves`: a family whose parent receives a season `gift` filling their ₹1.25 L. The placement's year-1 bucket includes it, so no equity placement uses this year's room.
-  - `year 1 counts the cushion of an approx season gift`: the parent's season gift is of `approx` lots with a ₹1,13,600 gain, which uses ₹1,24,960 of room. Year 1 sees ₹1,24,960 used, not ₹1,13,600, so no year-1 harvest is projected for the parent.
-  - `placement moves carry the old-data mark`: if C1 (`engine/freshness.ts`, `MoveBase.oldData`) has landed, a `place_holding` from a giver whose account's newest data is 30+ days old gets `oldData` like any other move, and the row shows C1's mark. If C1 hasn't landed, skip this test and note it in the PR.
+  - `year 1 counts the cushion of an approx season gift`: the parent is on the new regime with `normal` ₹5 L, so no basic-exemption room is left. Their season gift is of `approx` lots with a ₹1,13,600 gain, which uses ₹1,24,960 of room. Year 1 sees ₹1,24,960 used, so the projected year-1 harvest for the parent is at most ₹40 (₹1,25,000 − ₹1,24,960). With the uncushioned gain it would be ₹11,400. Don't pass by dropping the bonus room: a low-income parent keeps it.
+  - `placement moves carry the old-data mark`: a `place_holding` from a giver whose account's newest data is 30+ days old (`newestEvidence` and `isOld` from `engine/freshness.ts`, built in C1, which A1 depends on) gets `oldData`, and the row shows C1's mark.
   - `SIP placement`: a confirmed ₹20,000 a month SIP in a made-up conservative hybrid fund, earner at ₹30 L, parent at ₹3 L. Expect a `place_sip` move with `monthly` 20,000_00 and `yearlyGift` 2,40,000_00.
   - `unconfirmed SIP guesses are not placed`: guesses only, so `unconfirmed` is true and there are no `place_sip` moves.
   - `clubbed members are listed, not placed`: spouse and HUF ids are in `clubbedLeftOut`.
@@ -213,7 +213,7 @@
   - `placement moves are never auto-detected as done`, in `detect.test.ts`.
   - `moveId is stable across computes`.
 - [ ] **Step 2:** Run `npx vitest run src/engine/placementMoves.test.ts src/engine/detect.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement it.** Extend the union and `moveId`, return `null` in `detect.ts` for the `place_*` kinds, and write `computePlacement`.
+- [ ] **Step 3: Implement it.** Extend the union and `moveId`, return `null` in `detect.ts` for the `place_*` kinds, and write `computePlacement`. Placement moves are built after `computeFamily` has stamped its marks, so `computePlacement` calls `newestEvidence(state)` and `isOld` itself and sets `oldData` on each `place_holding` (giver's account) and `roomMayBeSmaller` when the receiver has an old account, exactly as C1 marks other moves.
 - [ ] **Step 4:** Run `npx vitest run` and `npm run typecheck`. Expected: all PASS. Fix every exhaustive `switch` on `m.kind` that `tsc` flags; placement kinds aren't datable.
 - [ ] **Step 5: Commit:** `git commit -m "Placement: moves from the family, after this season's moves"`
 
@@ -243,7 +243,7 @@
 - [ ] **Step 3: Build `Placement.tsx`** and mount it in `Plan.tsx`. Confirming writes a `ConfirmedSip` per row with `confirmedAt = asOf`. Placement moves go through `newShownRecords`.
 - [ ] **Step 4:** Run `npm run typecheck`, `npx vitest run` and `npm run test:smoke`. Expected: all PASS.
 - [ ] **Step 5: Check it in the browser.** Use the dev server and the sample family. Take a screenshot of the section in light and dark at 375 px width.
-- [ ] **Step 6: Commit:** `git commit -m "Plan: where money should sit"`
+- [ ] **Step 6: Commit:** `git commit -m "Plan: holding in another name"`
 
 ### Task 6: Review and PR
 
