@@ -35,9 +35,9 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 | ID | Item | Status | Branch | Depends on |
 |---|---|---|---|---|
 | **A** | **Family placement** | | | |
-| A1 | Where money should sit (SIPs and units to a lower-taxed relative) | Ready to build | `family-placement` | — |
+| A1 | Holding in another name: SIPs and units to a lower-taxed relative | Ready to build | `family-placement` | C1 |
 | **B** | **Import and readers** | | | |
-| B1 | Guided import | Ready to build | `guided-import` | — |
+| B1 | Guided import | Ready to build | `guided-import` | C1 |
 | B2 | Angel One Tax P&L reader (Excel and PDF) | Cause known | — | — |
 | B3 | Angel One holdings reader: shares and gold bonds | Needs brainstorm | — | — |
 | B4 | Direct vs regular from the ISIN | Cause known | — | — |
@@ -62,11 +62,12 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 
 **Suggested order:**
 1. **B4** (small, saves real money).
-2. **A1, B1 and C1** in parallel. Each is ready to build, and they touch different files.
-3. **B2**, then **B3**.
-4. **E1**, which sets the pattern for E2–E4.
-5. **D1** research.
-6. The rest.
+2. **C1** first. It adds the one "newest data" function (`engine/freshness.ts`) that B1 and A1 both use.
+3. **A1 and B1** after C1, one at a time or in separate worktrees. They overlap in `engine/family.ts`, `ui/screens/Plan.tsx`, `ui/plan.ts` and `e2e/smoke.spec.ts`, so rebase the second on the first.
+4. **B2**, then **B3**.
+5. **E1**, which sets the pattern for E2–E4.
+6. **D1** research.
+7. The rest.
 
 ---
 
@@ -74,7 +75,7 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 
 The app tells the family where money should sit to pay less tax over the years, not only this season (founder feedback, 24 Nov, points 5 and 6).
 
-### A1. Where money should sit: Ready to build
+### A1. Holding in another name: Ready to build
 - **Design:** `docs/superpowers/specs/2026-11-24-family-placement-design.md` (D1–D12).
 - **Plan:** `docs/superpowers/plans/2026-11-24-family-placement.md` (6 tasks).
 - **Research:** `docs/research/2026-11-15-family-asset-placement.md`.
@@ -83,7 +84,7 @@ The app tells the family where money should sit to pay less tax over the years, 
   - SIPs are guessed from tradebooks and confirmed by the user.
   - Gifts go only to non-clubbed relatives: yearly cash for SIPs, units for existing holdings.
   - Placement is full family greedy + regret + swap inside the family's current mix, over 10 years with yearly harvesting.
-  - It shows as a "Where money should sit" section on the Plan.
+  - It shows as a "Holding in another name" section on the Plan.
 - **Recommended way to run:** subagent-driven. The engine tasks build on each other, and a mistake shows wrong tax.
 
 ## Epic B: Import and readers
@@ -150,7 +151,7 @@ The app tells the family where money should sit to pay less tax over the years, 
 - Fresh-run finding 2.
 
 ### C2. Why a long-term holding with room wasn't suggested: Needs brainstorm (debug)
-- A long-term holding with spare room (13 units, about ₹7.8k gain) wasn't suggested for a parent. Is it the minimum size, or the cushion counted differently? (fresh-run finding 13)
+- A small long-term holding with spare room wasn't suggested for a parent. Is it the minimum size, or the cushion counted differently? (fresh-run finding 13)
 - Start with `superpowers:systematic-debugging` on the case.
 
 ### C3. Wording fixes: Needs brainstorm (small)
@@ -216,7 +217,7 @@ Founder feedback, 24 Nov: "a lot of text … I would like a much cleaner website
 From `docs/security/2026-11-21-security-review.md`:
 - **H2:** the app shares the `devansh217.github.io` origin, and nothing stops it being framed.
 - **M1:** `npm audit fix` for the dev tools.
-- **M2:** the backup secret is repo-wide, and `main` is unprotected.
+- **M2:** the backup secret is repo-wide. (`main` is now protected: required checks, no force pushes; checked 24 Nov.)
 - **M3:** the Pages build job holds deploy permissions.
 - **M4:** sign-out wipes unsaved changes.
 - **M5(b):** admin two-factor is not tested end to end.

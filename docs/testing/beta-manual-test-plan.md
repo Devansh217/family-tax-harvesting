@@ -1,5 +1,7 @@
 # Beta manual test plan
 
+> **Out of date (24 Nov 2026):** written 20 Nov, before the holdings-first engine (PR #18). Some checks describe screens that B1 and E2 change. Update it as NEXT-WORK F3 says before the next test day.
+
 For a day of hands-on testing as **a family member** and as **the founder (admin)**. Live site: https://devansh217.github.io/family-tax-harvesting/ (runs `main`: foundation, secure storage, beta features from PR #5). Local: `npm run dev` in `prototype/` → http://localhost:5199.
 
 Each check says what to do and what you should see. Note anything different (see "Reporting a problem" at the end).

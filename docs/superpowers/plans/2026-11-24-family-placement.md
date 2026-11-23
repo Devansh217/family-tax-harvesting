@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A "Where money should sit" section on the Plan that suggests gifting SIP money or existing fund and share units to a lower-taxed, non-clubbed relative, each with "about ₹X less tax a year".
+**Goal:** A "Holding in another name" section on the Plan that suggests gifting SIP money or existing fund and share units to a lower-taxed, non-clubbed relative, each with "about ₹X less tax a year".
 
 **Architecture:**
 - **New engine modules:**
@@ -112,7 +112,7 @@
 
 - [ ] **Step 1: Write the failing tests** with hand-checked figures (work them out in a comment in the test):
   - `equity inside the yearly room adds no tax`: new regime, `normal` ₹20 L, a ₹5 L equity slice at 10%, 10 years. The yearly gain stays under ₹1.25 L. Expect 0.
-  - `slab fund sold in year 10 is taxed at the member's slab`: `normal` ₹20 L, a ₹10 L slab slice at 7%, so the year-10 gain is ₹9,67,151. Expect 30% + 4% cess on it, to the rupee.
+  - `slab fund sold in year 10 is taxed at the member's slab`: new regime, `normal` ₹20 L, a ₹10 L slab slice at 7%, so the year-10 gain is ₹9,67,151. New-regime slabs: ₹4 L at 25% (₹20–24 L) plus ₹5,67,151 at 30%, plus 4% cess = ₹2,80,951. Expect 2,80,951_00 to the rupee.
   - `low-income parent pays nil on the same slab fund`: `normal` ₹2 L, new regime, same slice. Expect 0 (under ₹12 L with the rebate).
   - `year 1 uses only the room left after start.year1`: `start.year1.equityLt` = ₹1,25,000 and a ₹2 L equity slice with ₹20,000 gain. Year 1 harvests nothing.
   - `cushioned approx gain counts in full`: a slice whose gain was passed in already multiplied by 1.1. Its year-10 tax is 10% higher than the plain one (above the exemption).
@@ -192,7 +192,7 @@
 **Building the problem:**
 - **Starts:**
   - `normal` is `normalIncomeOf(member, fam.rules, fam.asOf)`. A null income gives a `null` start and puts the id in `missingIncome`, but only when that member is otherwise an allowed receiver.
-  - `year1` is `view.plan.buckets` plus this season's move gains in `equityLt`: `harvest_gain.gain` (memberId), `gift.gain` (toId) and `switch_direct.taxFreeGain` (memberId).
+  - `year1` is `view.plan.buckets` with `equityLt` raised by the room this season's moves actually used, **cushion included**: `(view.plan.room.free + view.plan.bonus.free) − view.roomAfterPlan`. Don't add `move.gain`: it is the uncushioned gain, and an `approx` lot uses 1.1× its gain in room (`r.used` in `engine/family.ts`).
 - **Assets:**
   - Each holding's qualifying lots become one asset, movable unless it is `needSoon` or held by an HUF. Gain is the sum of lot gains, with `approx` lots × (1 + `APPROX_MARGIN`).
   - Lots that don't qualify (`estimated`, locked ELSS) go in as unmovable assets, so the room counts stay right.
@@ -204,6 +204,8 @@
 
 - [ ] **Step 1: Write the failing tests:**
   - `year 1 starts after this season's moves`: a family whose parent receives a season `gift` filling their ₹1.25 L. The placement's year-1 bucket includes it, so no equity placement uses this year's room.
+  - `year 1 counts the cushion of an approx season gift`: the parent's season gift is of `approx` lots with a ₹1,13,600 gain, which uses ₹1,24,960 of room. Year 1 sees ₹1,24,960 used, not ₹1,13,600, so no year-1 harvest is projected for the parent.
+  - `placement moves carry the old-data mark`: if C1 (`engine/freshness.ts`, `MoveBase.oldData`) has landed, a `place_holding` from a giver whose account's newest data is 30+ days old gets `oldData` like any other move, and the row shows C1's mark. If C1 hasn't landed, skip this test and note it in the PR.
   - `SIP placement`: a confirmed ₹20,000 a month SIP in a made-up conservative hybrid fund, earner at ₹30 L, parent at ₹3 L. Expect a `place_sip` move with `monthly` 20,000_00 and `yearlyGift` 2,40,000_00.
   - `unconfirmed SIP guesses are not placed`: guesses only, so `unconfirmed` is true and there are no `place_sip` moves.
   - `clubbed members are listed, not placed`: spouse and HUF ids are in `clubbedLeftOut`.
@@ -215,7 +217,7 @@
 - [ ] **Step 4:** Run `npx vitest run` and `npm run typecheck`. Expected: all PASS. Fix every exhaustive `switch` on `m.kind` that `tsc` flags; placement kinds aren't datable.
 - [ ] **Step 5: Commit:** `git commit -m "Placement: moves from the family, after this season's moves"`
 
-### Task 5: Plan section "Where money should sit"
+### Task 5: Plan section "Holding in another name"
 
 **Files:**
 - Create: `src/ui/screens/Placement.tsx` (section component)
@@ -225,7 +227,7 @@
 - Consumes: `computePlacement`, `PlacementView` (Task 4); `ConfirmedSip` (Task 1); `inr`, `inrShort` (`ui/format.ts`); the existing `Disclaimer` and tooltip pattern on the Plan.
 
 **Copy (fixed):**
-- **Section title:** `Where money should sit`
+- **Section title:** `Holding in another name` (neutral: an estimate, not advice)
 - **SIP prompt** (when `unconfirmed`): `You invest about {inrShort(sum)} a month. Right?` with the buttons `Yes` and `Change`. Change opens an editable list, one row per fund: amount, plus `Stopped`.
 - **SIP move:** `Gift {to} {inrShort(yearlyGift)} once a year · {to} runs the {inrShort(monthly)} SIP in {name}`
 - **Holding move:** `Gift {to} {units} units of {name}`
@@ -236,7 +238,7 @@
 - **Nothing to move:** `Your money is already in the lowest-tax names.`
 - **Gift over ₹5 L:** "Mark as done" first asks `This is {inr(value)} that becomes {to}'s for good. Sleep on it?` with `Not yet` / `Mark as done`.
 
-- [ ] **Step 1: Write the failing smoke test** `e2e/smoke.spec.ts › placement section shows a gift to a parent`: use the sample family fixture with a parent at low income and a confirmed SIP in a slab-taxed fund. Expect `Where money should sit`, a line starting `Gift`, `less tax a year`, and the clubbed line for the spouse.
+- [ ] **Step 1: Write the failing smoke test** `e2e/smoke.spec.ts › placement section shows a gift to a parent`: use the sample family fixture with a parent at low income and a confirmed SIP in a slab-taxed fund. Expect `Holding in another name`, a line starting `Gift`, `less tax a year`, and the clubbed line for the spouse.
 - [ ] **Step 2:** Run `npm run test:smoke -- -g placement`. Expected: FAIL.
 - [ ] **Step 3: Build `Placement.tsx`** and mount it in `Plan.tsx`. Confirming writes a `ConfirmedSip` per row with `confirmedAt = asOf`. Placement moves go through `newShownRecords`.
 - [ ] **Step 4:** Run `npm run typecheck`, `npx vitest run` and `npm run test:smoke`. Expected: all PASS.

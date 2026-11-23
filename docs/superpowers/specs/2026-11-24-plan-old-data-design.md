@@ -51,11 +51,13 @@ export const isOld = (date: ISODate, today: ISODate) => daysBetween(date, today)
 ```
 
 Per account, newest evidence is the latest of:
-- the deciding holdings file's `asOf` (`decidingFiles` in `engine/openingLots.ts`);
+- the newest dated holdings statement for that account, of any kind: a Zerodha holdings file, an Angel One fund holdings file, a demat or fund CAS (any position's `asOf`). Not only the deciding file: a member whose only file is a fund CAS must still get marks;
 - the last tradebook trade (`isTradebook`);
 - the `to` date of each Tax P&L that counts (`countingSummaries`). A P&L with no `to` date adds nothing.
 
-An account with none of these has no entry, so it gets no mark. Examples are CAS-only fund accounts, Angel One files that don't trim, and the sample family. This matches the guided import's rule. **Builder's call:** the guided import design uses the same definition, so this is what makes the two agree.
+An account with none of these (no dated file at all, e.g. the sample family) has no entry, so it gets no mark.
+
+**One function for both designs (PR #19 guardrail review):** the guided import's "Newest data from <date>" line calls this same `newestEvidence`. Whichever of the two is built first adds `engine/freshness.ts`; the other imports it. There is no second definition.
 
 "Old" means 30 or more days before the compute date (`asOf` in `computeFamily`). 29 days is not old.
 

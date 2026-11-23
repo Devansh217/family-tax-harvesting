@@ -17,7 +17,7 @@ The app should answer both with moves that show how much tax they save. It shoul
 |---|---|---|
 | D1 | Monthly investing is **guessed from tradebooks** (a fund bought in the same account on a steady day for a steady amount, in at least 3 of the last 4 months) and **confirmed by the user**, e.g. "You invest about ₹50k a month. Right?" The user can correct the amount and add SIPs the files don't show. | Founder agreed |
 | D2 | New money for a non-clubbed relative goes as **one yearly gift**. The receiver runs the SIP from their own bank account. The move reads "Gift Mum ₹1.2 L once a year; she runs the ₹10k SIP in fund X." | Founder agreed |
-| D3 | Existing holdings move by **gifting the units**, never "sell and buy again". A gift keeps the cost and dates and books nothing in the giver's name. | Founder agreed |
+| D3 | Existing holdings move by **gifting the units**, never "sell and buy again". A gift books nothing in the giver's name, and the receiver takes the giver's cost and holding period (old s.49 and s.2(42A); where this sits in the new Act is **unconfirmed**, NEXT-WORK F2, so the move says "check with your CA" until it is). | Founder agreed |
 | D4 | **No ceiling** on how much goes to one member. Show the savings. | Founder |
 | D5 | Approach **B, full family placement** (§4), not the simpler rule-by-rule version. | Founder |
 | D6 | Spouse, own HUF, minor child and son's wife (the clubbed pairs, `clubbing()` in `engine/relations.ts`) are **never** suggested for the giver's money. One short line says they were considered and why they're left out. | Claude, from the tax rule |
@@ -31,7 +31,7 @@ The app should answer both with moves that show how much tax they save. It shoul
 ## 3. Goals, non-goals, anti-goals
 
 **Goals**
-- On the Plan, a section "Where money should sit" lists placement moves, biggest saving first, each with a one-line saving.
+- On the Plan, a section "Holding in another name" lists placement moves (an estimate, not advice: GUARDRAILS §6), biggest saving first, each with a one-line saving.
 - It covers new money (SIPs, D1–D2) and existing holdings (gifts of units, D3).
 - Every number comes from the one tax function (`taxForYear`) with each member's own income, regime, age and residency.
 - It replaces the Compare page. The page goes in the design pass for points 4, 7 and 8. Its engine code (`bringsHome`, `nominalReturn`) is reused here.
