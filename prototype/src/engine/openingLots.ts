@@ -313,7 +313,7 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
 /** A trade the family made: not a saved guess, not a Tax P&L exit. These date the account's last trade. */
 const isRealTrade = (t: Txn) => !isTaxPnl(t) && !t.id.includes('|opening') && !t.left;
 
-/** Buys dated this many calendar days before a holdings file's date, or later up to it, are never trimmed (T+1). */
+/** Units from buys dated this many calendar days before a holdings file's date, or later up to it, are never trimmed (T+1). */
 export const UNSETTLED_DAYS = 3;
 
 /**
@@ -344,28 +344,33 @@ function unitsThatLeft(trades: Txn[], held: Txn[], files: Map<string, DecidingFi
       if (t.side === 'buy' && t.date < u.first) u.first = t.date;
       byLabel.set(label, u);
     }
-    // Buys in the last days up to the file's date may not have settled into it (T+1): never trimmed, they stay held.
+    // Buys in the last days up to the file's date may not have settled into it (T+1): they are never the units
+    // trimmed. The count stays the full extra; it comes from older units only, oldest first, as far as they reach.
     const settledBy = addDays(f.asOf, -UNSETTLED_DAYS);
-    const unsettled = new Map<string, Qty>();
+    const recent = new Map<string, Qty>();
     for (const t of trades) {
       if (!inAccount(t) || t.side !== 'buy' || !isRealTrade(t) || t.date < settledBy || t.date > f.asOf) continue;
-      unsettled.set(t.isin, (unsettled.get(t.isin) ?? 0) + t.qty);
+      const k = `${t.isin}|${t.account ?? ''}`;
+      recent.set(k, (recent.get(k) ?? 0) + t.qty);
     }
     const isins: string[] = [];
     for (const [isin, byLabel] of units) {
       const listed = f.positions.filter((p) => p.isin === isin).reduce((a, p) => a + p.qty, 0);
       // Per label: the ledger keeps one queue each, so a label with more sold than bought holds nothing to net off.
-      let extra = [...byLabel.values()].reduce((a, u) => a + Math.max(0, u.qty), 0) - listed - (unsettled.get(isin) ?? 0);
+      let extra = [...byLabel.values()].reduce((a, u) => a + Math.max(0, u.qty), 0) - listed;
       if (extra <= 0) continue;
-      isins.push(isin);
-      // Oldest units first, across labels that differ only in spaces or case.
+      let any = false;
+      // Oldest units first, across labels that differ only in spaces or case. First in, first out takes a label's
+      // oldest units, so leaving its recent buys' units untouched caps what it can lose.
       for (const [label, u] of [...byLabel].sort((a, b) => a[1].first.localeCompare(b[1].first))) {
-        const qty = Math.min(extra, u.qty);
+        const qty = Math.min(extra, u.qty - Math.min(u.qty, recent.get(`${isin}|${label}`) ?? 0));
         if (qty <= 0) continue;
+        any = true;
         left.push({ id: `${memberId}|${isin}|${label}|left|${f.asOf}`, memberId, isin, account: label, side: 'sell', left: true, qty, amount: 0, date: f.asOf, source: 'Left the account' });
         extra -= qty;
         if (extra <= 0) break;
       }
+      if (any) isins.push(isin);
     }
     if (isins.length) trimmed.push({ memberId, account, asOf: f.asOf, isins });
   }

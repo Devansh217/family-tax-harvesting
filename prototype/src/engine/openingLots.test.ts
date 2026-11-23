@@ -229,19 +229,35 @@ describe('the newest holdings file trims units that left the account', () => {
     expect(ledgerOf(txns).lots.get('a|X|Zerodha')).toMatchObject([{ date: '2026-05-04', qty: q(5), cost: rs(7_500) }]);
   });
 
-  it('never trims buys from the 3 days up to the file date: they may not have settled into the holdings yet', () => {
-    // 10 shares held since Jan 2025, 5 more bought on 19 Nov 2026 (3 days before the 22 Nov file): the file lists 10.
-    const recent = (date: string) => effectiveTxnsWithNotes([trade('buy', '2025-01-10', 10, 1000), trade('buy', date, 5, 1000)], [file(10)], ASOF);
+  it('never trims buys from the 3 days up to the file date: the full count comes from older units, oldest first', () => {
+    // 10 shares held since Jan 2025, 5 more bought on 19, 21 or 22 Nov 2026 (up to 3 days before the 22 Nov file);
+    // the file lists 10. 15 − 10 = 5 trimmed, all from the old lot: the recent 5 stay held.
+    const recent = (date: string, file10 = 10, oldUnits = 10) =>
+      effectiveTxnsWithNotes([trade('buy', '2025-01-10', oldUnits, 1000), trade('buy', date, 5, 1000)], [file(file10)], ASOF);
     for (const date of ['2026-11-19', '2026-11-21', ASOF]) {
-      const { txns, trimmed } = recent(date);
-      expect(left(txns)).toEqual([]);
-      expect(trimmed).toEqual([]);
-      expect(heldX(txns)).toBe(q(15));
+      const { txns } = recent(date);
+      expect(left(txns)).toMatchObject([{ qty: q(5) }]);
+      expect(ledgerOf(txns).lots.get('a|X|Zerodha')).toMatchObject([{ date: '2025-01-10', qty: q(5) }, { date, qty: q(5) }]);
     }
-    // Bought 4 days before: settled, so the file not listing it means 5 units left the account (oldest first).
-    const { txns } = recent('2026-11-18');
-    expect(left(txns)).toMatchObject([{ qty: q(5) }]);
-    expect(heldX(txns)).toBe(q(10));
+    // Older units can't cover the count: 3 old + 5 recent, file lists 0. Only the 3 old go; the recent 5 stay.
+    const short = recent('2026-11-21', 0, 3);
+    expect(left(short.txns)).toMatchObject([{ qty: q(3) }]);
+    expect(heldX(short.txns)).toBe(q(5));
+    // Bought 4 days before: settled, so it can be trimmed: all 8 go.
+    expect(left(recent('2026-11-18', 0, 3).txns)).toMatchObject([{ qty: q(8) }]);
+  });
+
+  it('a file that already lists the recent buy trims every old unit that left: no move on shares not held', () => {
+    // 10 bought 10 Jan 2025 at ₹1,000 left the account off the history; 5 bought 21 Nov 2026 at ₹3,000. The 22 Nov
+    // file lists the 5 (cost ₹15,000). All 10 old units are trimmed; held = the 5 recent, short-term, so no harvest.
+    const txns = [trade('buy', '2025-01-10', 10, 1000), trade('buy', '2026-11-21', 5, 3000)];
+    const held = file(5, { ltQty: 0, cost: rs(15_000) });
+    const out = effectiveTxnsWithNotes(txns, [held], ASOF);
+    expect(left(out.txns)).toMatchObject([{ qty: q(10) }]);
+    expect(ledgerOf(out.txns).lots.get('a|X|Zerodha')).toMatchObject([{ date: '2026-11-21', qty: q(5), cost: rs(15_000) }]);
+    const me: Member = { id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other', amount: rs(20_00_000), from: 'manual' }] };
+    const fam = computeFamily({ members: [me], securities: [{ isin: 'X', name: 'X', taxType: 'equity', listed: true, price: rs(3000) }], txns, positions: [held] }, ASOF, R);
+    expect(fam.moves.filter((m) => m.kind === 'harvest_gain')).toEqual([]);
   });
 
   it('an ISIN missing from the newest file is held at 0, even if an older file listed it', () => {
