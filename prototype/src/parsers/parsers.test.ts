@@ -191,6 +191,32 @@ describe('Zerodha tax P&L buybacks', () => {
     expect(r.warnings).toContain('2 buyback exits before 1 Oct 2024 were left out: the company paid the tax on those.');
   });
 
+  it('marks the buyback exits it books, so the engine keeps them beside a tradebook', () => {
+    const r = parseZerodhaTaxPnl(book(row('2022-01-10', '2026-06-10')));
+    expect(r.txns.map((t) => t.buyback)).toEqual([true, true]);
+  });
+
+  describe('the broker totals always include the buybacks it books', () => {
+    // One long-term buyback exit: bought ₹1,000, tendered for ₹1,500 on 10 Jun 2026, so ₹500 long-term.
+    const withSummary = (lt: number) => [
+      ...book(row('2022-01-10', '2026-06-10')),
+      { sheet: 'Equity and Non Equity', data: [[null, 'Equity Short Term profit', 0], [null, 'Equity Long Term profit', lt]] },
+    ];
+    it('a total that already includes it stays as it is', () => {
+      expect(parseZerodhaTaxPnl(withSummary(500)).brokerSummary).toMatchObject({ equityLongTerm: 500_00, equityShortTerm: 0 });
+    });
+    it('a total that leaves it out gets it added', () => {
+      expect(parseZerodhaTaxPnl(withSummary(0)).brokerSummary).toMatchObject({ equityLongTerm: 500_00, equityShortTerm: 0 });
+    });
+    it('a total that matches neither gets a buyback gain added: more booked gain is the safe side', () => {
+      expect(parseZerodhaTaxPnl(withSummary(300)).brokerSummary).toMatchObject({ equityLongTerm: 800_00 });
+    });
+    it('a short-term buyback is added to the short-term total', () => {
+      const sheets = [...book(row('2026-01-10', '2026-06-10')), { sheet: 'Equity and Non Equity', data: [[null, 'Equity Short Term profit', 0], [null, 'Equity Long Term profit', 0]] }];
+      expect(parseZerodhaTaxPnl(sheets).brokerSummary).toMatchObject({ equityShortTerm: 500_00, equityLongTerm: 0 });
+    });
+  });
+
   it('counts an unreadable exit date as skipped, with no dividend warning', () => {
     const r = parseZerodhaTaxPnl(book(row('2022-01-10', 'n/a')));
     expect(r.txns).toHaveLength(0);

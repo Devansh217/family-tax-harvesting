@@ -233,10 +233,12 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
     if (prior) {
       // The same row again: a name matched now upgrades the trade saved by name; a match is never undone.
       if (prior.isin.startsWith('SYM:') && !isin.startsWith('SYM:')) prior.isin = isin;
+      // A Tax P&L saved before buybacks were marked gets the mark when it is imported again.
+      if (t.buyback && !prior.buyback) prior.buyback = true;
       continue;
     }
     const account = t.account ?? opts.account ?? '';
-    s.txns.push({ id, memberId, isin, date: t.date, side: t.side, qty: t.qty, amount: t.amount, source: r.format, importId, account });
+    s.txns.push({ id, memberId, isin, date: t.date, side: t.side, qty: t.qty, amount: t.amount, source: r.format, importId, account, ...(t.buyback ? { buyback: true as const } : {}) });
     added++;
   }
 

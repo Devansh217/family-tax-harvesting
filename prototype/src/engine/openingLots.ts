@@ -102,7 +102,8 @@ export type PricedSecurity = { isin: string; price?: Paise };
 /**
  * The transactions the ledger should replay, worked out fresh on every compute so import order never matters:
  *
- * 1. Tax P&L exits are dropped for an account that also has tradebooks (they would count each sale twice).
+ * 1. Tax P&L exits are dropped for an account that also has tradebooks (they would count each sale twice), except the
+ *    sale of a buyback exit: a tender never shows in a tradebook.
  * 2. Units a holdings file lists that the history cannot explain on the file's date are filled in (`fillIn`). Where
  *    an account has a deciding holdings file, only its positions fill in; a holdings file with no date fills in as of
  *    today and never trims. Guessed lots saved at import for a holdings file, or for a holding filled in here, are
@@ -117,7 +118,9 @@ export function effectiveTxnsWithNotes(
   txns: Txn[]; trimmed: TrimNote[]; staleFiles: Array<{ memberId: string; account: string; asOf: ISODate }>; corporateActions: CorporateActionNote[];
 } {
   const tradebookAccounts = new Set(txns.filter(isTradebook).map((t) => `${t.memberId}|${t.account ?? ''}`));
-  let out = txns.filter((t) => !(isTaxPnl(t) && tradebookAccounts.has(`${t.memberId}|${t.account ?? ''}`)));
+  // A buyback tender never shows in a tradebook: its sale stays and takes the tradebook's lots first in first out
+  // (its buy leg would count the units twice).
+  let out = txns.filter((t) => !(isTaxPnl(t) && tradebookAccounts.has(`${t.memberId}|${t.account ?? ''}`) && !(t.buyback && t.side === 'sell')));
 
   const files = decidingFiles(positions);
   const isHoldingsFile = (p: HeldPosition) => TRIMMING_HOLDINGS_SOURCES.includes(p.source);

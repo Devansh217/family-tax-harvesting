@@ -122,6 +122,11 @@ export interface Txn {
    * the newest holdings file with the history (openingLots.ts). Not a sale: no gain, no warning, never intraday.
    */
   left?: true;
+  /**
+   * A buyback exit from a broker Tax P&L (both legs). A tender never shows in a tradebook, so its sale is kept in an
+   * account with tradebooks, where other Tax P&L exits are dropped (openingLots.ts).
+   */
+  buyback?: true;
 }
 
 export interface Lot {

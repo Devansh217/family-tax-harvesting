@@ -91,3 +91,54 @@ describe('Zerodha holdings and check-only tax P&L', () => {
     expect(reconcile(fam, s.brokerSummaries[0]!).find((l) => l.label === 'Shares, long-term')!.ok).toBe(false);
   });
 });
+
+describe('FY 2026-27 buyback exits beside a tradebook', () => {
+  // Synthetic share TESTCO: 10 bought on 10 Jan 2022 for ₹1,000 (tradebook), tendered in a buyback on 10 Jun 2026
+  // for ₹1,500, so a ₹500 long-term gain. A tender never shows in a tradebook, only in the Tax P&L. The November
+  // holdings file no longer lists TESTCO; OTHER (5 shares) is still held.
+  const T = 'INE000000001', O = 'INE000000002';
+  const BH = [null, 'Symbol', 'ISIN', 'Entry Date', 'Exit Date', 'Quantity', 'Buy Value', 'Sell Value', 'Profit'];
+  const pnl = (lt: number) => parseZerodhaTaxPnl([
+    { sheet: 'Tradewise Exits from 2026-04-01', data: [[null, 'Tradewise Exits from 2026-04-01 to 2026-11-14'], [null, 'Equity - Buyback'], BH, [null, 'TESTCO', T, '2022-01-10', '2026-06-10', 10, 1000, 1500, 500]] },
+    { sheet: 'Equity and Non Equity', data: [[null, 'Equity Short Term profit', 0], [null, 'Equity Long Term profit', lt]] },
+  ]);
+  const tb = { format: 'Trade history · tb.xlsx', skipped: 0, warnings: [], prices: [], txns: [
+    { isin: T, name: 'TESTCO', date: '2022-01-10', side: 'buy' as const, qty: 10_0000, amount: 1000_00 },
+    { isin: O, name: 'OTHER', date: '2022-01-10', side: 'buy' as const, qty: 5_0000, amount: 500_00 },
+  ] };
+  const holdings = { format: 'Zerodha holdings', txns: [], skipped: 0, warnings: [],
+    prices: [{ isin: O, name: 'OTHER', price: 200_00, priceDate: '2026-11-20', qty: 5_0000, ltQty: 5_0000, cost: 500_00 }] };
+  const family = (lt: number, withTradebook = true) => {
+    let s: AppState = { ...emptyState(), members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other', amount: 20_00_000_00, from: 'manual' }] }] };
+    if (withTradebook) s = applyImport(s, 'a', 'tb.xlsx', tb, { account: 'Zerodha' });
+    s = applyImport(s, 'a', 'pnl.xlsx', pnl(lt), { account: 'Zerodha' });
+    s = applyImport(s, 'a', 'h.xlsx', holdings, { account: 'Zerodha' });
+    return computeFamily(s, '2026-11-23', FY_2026_27);
+  };
+
+  for (const [what, lt] of [['includes it', 500], ['leaves it out', 0]] as const) {
+    it(`books the tender as a ₹500 long-term gain at the tradebook's cost when the broker total ${what}`, () => {
+      const fam = family(lt);
+      expect(fam.ledger.realised).toMatchObject([{ isin: T, sellDate: '2026-06-10', qty: 10_0000, cost: 1000_00, gain: 500_00, term: 'lt' }]);
+      // The units left in the tender, not by a transfer: nothing is trimmed, and the total lands on the broker's.
+      expect(fam.holdingsNotes.trimmed).toEqual([]);
+      expect(fam.brokerAdjustments).toEqual([]);
+      expect(fam.members[0]!.year.ltGains).toBe(500_00);
+      expect(fam.members[0]!.year.room.free).toBe(1_24_500_00);
+    });
+  }
+
+  it('a Tax P&L saved before buybacks were marked gets the mark when imported again', () => {
+    let s: AppState = { ...emptyState(), members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new' }] };
+    s = applyImport(s, 'a', 'pnl.xlsx', pnl(500), { account: 'Zerodha' });
+    const saved: AppState = { ...s, txns: s.txns.map(({ buyback: _b, ...t }) => t) };
+    const again = applyImport(saved, 'a', 'pnl.xlsx', pnl(500), { account: 'Zerodha' });
+    expect(again.txns.map((t) => t.buyback)).toEqual([true, true]);
+  });
+
+  it('an account with only the Tax P&L books the same ₹500', () => {
+    const fam = family(500, false);
+    expect(fam.members[0]!.year.ltGains).toBe(500_00);
+    expect(fam.brokerAdjustments).toEqual([]);
+  });
+});

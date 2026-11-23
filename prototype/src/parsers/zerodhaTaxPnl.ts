@@ -1,3 +1,4 @@
+import { isLongTerm } from '../engine/dates';
 import { BUYBACK_DIVIDEND_FROM, rulesFor } from '../engine/rules';
 import type { ISODate, Paise } from '../engine/types';
 import { findIsin, parseDate, parseNumber, toPaise, toQty, type ParsedTxn, type ParseResult } from './common';
@@ -57,6 +58,10 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
   let skipped = 0, from: ISODate | null = null, to: ISODate | null = null;
   let section = '', cols: Record<string, number> | null = null;
   const counts: Record<string, number> = {};
+  // Per-term profit of the short-term and long-term sections and of the buybacks booked, to tell whether the
+  // broker's totals already count those buybacks (see `withBuybacks`).
+  const sectionProfit = { st: 0, lt: 0 };
+  const buybackProfit = { st: 0, lt: 0 };
 
   for (const r of tradewise.data) {
     const nonEmpty = r.map(text).filter(Boolean);
@@ -87,9 +92,17 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
     const buy = num(r[cols['Buy Value']!]), sell = num(r[cols['Sell Value']!]);
     if (!entry || !exit || buy == null || sell == null) { skipped++; continue; }
     const units = Math.abs(qty);
-    txns.push({ date: entry, isin, name: symbol, side: 'buy', qty: toQty(units), amount: toPaise(Math.abs(buy)) });
-    txns.push({ date: exit, isin, name: symbol, side: 'sell', qty: toQty(units), amount: toPaise(Math.abs(sell)) });
+    const buyback = /Buyback/i.test(section);
+    // A buyback exit is marked: a tender never shows in a tradebook, so the engine keeps it beside one.
+    const mark = buyback ? { buyback: true as const } : {};
+    txns.push({ date: entry, isin, name: symbol, side: 'buy', qty: toQty(units), amount: toPaise(Math.abs(buy)), ...mark });
+    txns.push({ date: exit, isin, name: symbol, side: 'sell', qty: toQty(units), amount: toPaise(Math.abs(sell)), ...mark });
     counts[section] = (counts[section] ?? 0) + 1;
+    const profitCol = cols['Taxable Profit'] ?? cols['Profit'];
+    const profit = toPaise((profitCol == null ? null : num(r[profitCol])) ?? sell - buy);
+    if (buyback) buybackProfit[isLongTerm(entry, exit, rulesFor(exit).longTermMonths) ? 'lt' : 'st'] += profit;
+    else if (/Short Term/i.test(section)) sectionProfit.st += profit;
+    else if (/Long Term/i.test(section)) sectionProfit.lt += profit;
 
     const fmvCol = cols['Fair Market Value'];
     const fmv = fmvCol == null ? null : num(r[fmvCol]);
@@ -105,8 +118,8 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
   const summary: BrokerSummary = {
     broker: 'Zerodha', from, to,
     intraday: p(eq.get('equity intraday/speculative profit')),
-    equityShortTerm: p(eq.get('equity short term profit')),
-    equityLongTerm: p(eq.get('equity long term profit')),
+    equityShortTerm: withBuybacks(p(eq.get('equity short term profit')), sectionProfit.st, buybackProfit.st),
+    equityLongTerm: withBuybacks(p(eq.get('equity long term profit')), sectionProfit.lt, buybackProfit.lt),
     mfShortTerm: p(mf.get('equity short term profit')),
     mfLongTerm: p(mf.get('equity long term profit')),
     fno: sum(fo.get('options realized profit'), fo.get('futures realized profit')),
@@ -123,6 +136,20 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
     format: `Zerodha Tax P&L${from && to ? ` · ${from} to ${to}` : ''}`,
     txns, prices: [], warnings, skipped, brokerSummary: summary, fmv2018,
   };
+}
+
+/**
+ * A broker equity total that counts the buyback exits the parser books (capital gains from 1 Apr 2026), so the
+ * engine's own figure, which books them, lands on it. A total that already matches its section plus the buybacks is
+ * kept; one that matches the section alone gets them added. One that matches neither gets a buyback gain added and a
+ * buyback loss left out: more booked gain is the safe side (less room, more tax).
+ */
+function withBuybacks(total: Paise | null, section: Paise, buybacks: Paise): Paise | null {
+  if (total == null || buybacks === 0) return total;
+  const near = (a: Paise, b: Paise) => Math.abs(a - b) <= Math.max(100, Math.abs(total) * 0.0005);
+  if (near(total, section + buybacks)) return total;
+  if (near(total, section)) return total + buybacks;
+  return total + Math.max(0, buybacks);
 }
 
 /** Zerodha Console holdings workbook: "Equity" and "Mutual Funds" sheets ("Combined" repeats them and is skipped). */
