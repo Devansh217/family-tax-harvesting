@@ -134,6 +134,14 @@ if (memberDirs.length) {
   const asOf = FY_2026_27.end > new Date().toISOString().slice(0, 10) ? new Date().toISOString().slice(0, 10) : FY_2026_27.end;
   const fam = computeFamily(st, asOf, FY_2026_27);
   const covered = pnlCoverage(st.brokerSummaries, FY_2026_27);
+  // Counts per kind of source only: a source string can carry letters from a file name.
+  const sourceKinds = (ps: Array<{ source: string }>) => {
+    const kind = (src: string) => (src === 'Zerodha holdings' ? 'holdings file' : src.startsWith('Demat CAS') ? 'demat CAS'
+      : src.startsWith('Combined CAS') ? 'combined CAS' : src.startsWith('Mutual fund CAS') ? 'fund CAS' : src.startsWith('Angel One fund holdings') ? 'fund holdings' : 'other');
+    const n = new Map<string, number>();
+    for (const p of ps) n.set(kind(p.source), (n.get(kind(p.source)) ?? 0) + 1);
+    return [...n].map(([k, c]) => `${k} ${c}`).join(', ') || 'none';
+  };
   const isFund = (isin: string) => isin.startsWith('INF') && !(st.securities.find((x) => x.isin === isin)?.listed);
 
   console.log(`\nHoldings-first replay: ${memberDirs.length} members, ${unreadable} files unreadable or locked, ${st.txns.length} transactions, ${st.positions.length} positions`);
@@ -159,7 +167,7 @@ if (memberDirs.length) {
       for (const [k, lots] of fam.ledger.lots) if (k.startsWith(`${id}|${isin}|`)) held += lots.reduce((a, l) => a + l.qty, 0);
       if (held !== q) {
         fundMismatch++;
-        if (process.env.DIAG) console.log(`    diag fund: ${held === 0 ? 'held none' : held > q ? 'held more' : 'held fewer'}; sources ${[...new Set(st.positions.filter((p) => p.memberId === id && p.isin === isin).map((p) => p.source))].join(' / ').replace(/[^/ A-Za-z()]/g, '')}; txns ${st.txns.filter((t) => t.memberId === id && t.isin === isin).length}; |diff| ratio ${(Math.abs(held - q) / q).toFixed(3)}`);
+        if (process.env.DIAG) console.log(`    diag fund: ${held === 0 ? 'held none' : held > q ? 'held more' : 'held fewer'}; positions by source kind ${sourceKinds(st.positions.filter((p) => p.memberId === id && p.isin === isin))}; txns ${st.txns.filter((t) => t.memberId === id && t.isin === isin).length}; |diff| ratio ${(Math.abs(held - q) / q).toFixed(3)}`);
       }
     }
     const unknown = unknownTermSales(fam.booked, id, FY_2026_27, covered).length;
