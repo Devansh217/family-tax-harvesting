@@ -1,7 +1,7 @@
 # Guided import: design
 
 Date: 24 Nov 2026. Status: written after a brainstorm with the founder (layout, stop rule, success and wrong-file screens, approach all agreed); awaiting the founder's approval of this document.
-Source: `docs/NEXT-WORK.md` §3 items 1 and 5; `docs/fresh-run-notes.md` points 1, 2, 9 and the founder rules; builds on `docs/superpowers/specs/2026-11-22-holdings-first-engine-design.md`.
+Source: `docs/NEXT-WORK.md` item B1 (was §3 items 1 and 5); `docs/fresh-run-notes.md` points 1, 2, 9 and the founder rules; builds on `docs/superpowers/specs/2026-11-22-holdings-first-engine-design.md`.
 
 Paths are under `prototype/src/` unless they say otherwise.
 
@@ -23,7 +23,7 @@ The holdings-first engine (PR #18) made the holdings file decide what's held and
 
 ## Non-goals
 
-- New readers. The Angel One holdings reader (shares, SGBs, long-term counts; NEXT-WORK §3 item 2) and the Angel One Tax P&L reader (item 3) are separate work. The guide shows their steps honestly as "not read yet" and is built so they join by flipping a capability flag.
+- New readers. The Angel One holdings reader (shares, SGBs, long-term counts; NEXT-WORK B3) and the Angel One Tax P&L reader (B2) are separate work. The guide shows their steps honestly as "not read yet" and is built so they join by flipping a capability flag.
 - Recognising gifts within the family (item 4), wording fixes (item 6), animations of transfers (item 7).
 - Detecting a file imported under the wrong member.
 - Marking or holding back **Plan moves whose only evidence is months old** (notes point 2). The founder chose to keep that Plan change separate (24 Nov); this design only shows the "Newest data from <date>" line (section 7).
@@ -127,7 +127,7 @@ Shown as an amber note on the file's own card **after it is added**. The file is
 - **Old holdings file, nothing newer:** the new file is the deciding file, and its `asOf` is **30 or more days before today**, or it's in the engine's `staleFiles` (trades after its date): "This holdings file is from <date> and you've traded since / it's N months old. Download today's from <broker path>." The holdings step stays "next".
 - **Last year's Tax P&L:** a P&L whose period ends before the current tax year starts: "This is the FY <year> tax P&L. It's kept, but this year's room needs FY <current>, from 1 Apr <year> to today." The P&L step stays "next".
 - **A missing tradebook year:** after a tradebook is added, the account's tradebook transactions cover tax years with a gap between the oldest and newest: "No trades from FY <year> are in. If you traded that year, add its tradebook." Soft wording: a year with no trades is possible.
-- **Old data overall (founder, 24 Nov; notes point 2):** per account, the newest evidence date is the latest of: the newest holdings statement's date for that account (a Zerodha holdings file, an Angel fund holdings file, a demat or MF CAS: any `asOf` / `priceDate`), the last tradebook trade, and the end of the newest counting Tax P&L. When it is **30 or more days before today**, the family table's row and the account's section in the member checklist show "Newest data from <date>" in the amber note style, with the account's holdings step reopened as "next" ("Refresh: download today's"), for every broker including Angel One. So the member isn't "done" until it's refreshed; a done tick for the older file stays visible under it (builder check Q3, my call). This is a standing line, not tied to one file. An account with no dated evidence at all doesn't show it.
+- **Old data overall (founder, 24 Nov; notes point 2):** per account, the newest evidence date is the latest of: the newest holdings statement's date for that account (a Zerodha holdings file, an Angel fund holdings file, a demat or MF CAS: any `asOf` / `priceDate`), the last tradebook trade, and the end of the newest counting Tax P&L. It is computed by the engine's `newestEvidence` (`engine/freshness.ts`, from the old-data design C1), the one definition shared with the Plan's marks; whichever of B1 and C1 is built first adds it. When it is **30 or more days before today**, the family table's row and the account's section in the member checklist show "Newest data from <date>" in the amber note style, with the account's holdings step reopened as "next" ("Refresh: download today's"), for every broker including Angel One. So the member isn't "done" until it's refreshed; a done tick for the older file stays visible under it (builder check Q3, my call). This is a standing line, not tied to one file. An account with no dated evidence at all doesn't show it.
 - **A missing current year:** tradebooks exist for the account but none in the current tax year, and the account has a P&L or holdings file dated this year: "This year's tradebook isn't in, so trades since 1 Apr come only from <the tax P&L / the holdings file>." Informational.
 
 ### 8. Module layout and tests

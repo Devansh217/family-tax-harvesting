@@ -38,7 +38,7 @@
 - Modify `prototype/src/ui/screens/Import.tsx`: family table, member checklist, success card, file lists, "More options".
 - Modify `prototype/src/styles.css` (or the stylesheet `Import.tsx` already uses; check `docs/DESIGN.md`): family table → stacked cards under 600 px, success card, progress bar with `prefers-reduced-motion`.
 - Modify `prototype/e2e/smoke.spec.ts`: the import tests.
-- Modify `docs/NEXT-WORK.md`: mark §3 items 1 and 5 built; note §5 Coin/CAS items fixed.
+- Modify `docs/NEXT-WORK.md`: mark B1 built; note the B6 Coin and CAS-password items it fixes.
 
 ---
 
@@ -65,7 +65,7 @@
 Rules to implement:
 - `brokerOf`: test `label + ' ' + formats.join(' ')` lowercased: `/zerodha|console|kite/` → Zerodha; `/angel/` → Angel One; label `MF folios` or format starting `Mutual fund CAS` → Mutual funds; else Other. (`guessAccount` in `store.ts` produces the labels.)
 - `memberAccounts`: one entry per distinct `normAccount(account)` over the member's `txns`, `positions` and `brokerSummaries`. Blank label (`''`) is its own account with broker from formats (usually Other). Formats come from the `imports` whose ids appear on that account's rows.
-- `evidenceDate` (spec §7 "Old data overall"): max of — any position's `asOf` for that member+account; the latest `date` of a txn with `source.startsWith('Trade history')`; `summary.to` of that account's summaries in `countingSummaries(state.brokerSummaries)`. `null` when none.
+- `evidenceDate` (spec §7 "Old data overall"): returns `newestEvidence(state).get(accountKey(memberId, account)) ?? null` from `engine/freshness.ts` (old-data plan C1, Task 1). Don't define the date a second time. If `freshness.ts` doesn't exist yet, build it here exactly as C1's Task 1 specifies (max of any dated holdings position's `asOf`, the last `Trade history` txn, `summary.to` of `countingSummaries`), with C1's Task 1 tests.
 - `usableShare` (spec §5): over `fam.members.find(memberId).holdings`, sum `lot.value` where `lot.value != null`; usable when `lot.certain && holding.taxType !== 'check'`. Add to `total` only (not usable) the unexplained units: for each of the member's `fam.positions` whose source is **not** in `TRIMMING_HOLDINGS_SOURCES` and has `qty`, `max(0, qty − holding.qty)` × price (`fam.securities.get(isin)?.price ?? holding.price ?? 0`) ÷ `QTY_SCALE`, rounded. Same logic as `unexplained` in `ui/plan.ts:73`; extract it there into an exported `unexplainedValue(fam, memberId, isin, positionQty)` and use it in both places (no behaviour change to `planGaps`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -287,7 +287,7 @@ Behaviour (spec §1, §6, §7):
 ### Task 6: Docs, fresh-run validation, PR
 
 **Files:**
-- Modify: `docs/NEXT-WORK.md` (§3 items 1 and 5 → built, with the branch; §4 rows 1 and 2 updated; §5 Coin and CAS-password items → fixed by the guide)
+- Modify: `docs/NEXT-WORK.md` (B1 → built, with the branch; findings rows 1 and 2 updated; B6 Coin and CAS-password items → fixed by the guide)
 
 - [ ] **Step 1:** Re-read `docs/fresh-run-notes.md` points 1, 2, 9 and the founder rules; write in the PR text, per point, what now handles it, and that point 2's "no moves on months-old evidence" is the separate Plan session.
 - [ ] **Step 2:** Run the private check if real files are present (`data/private/`, counts only): `npx tsx scripts/check-private.ts` — expect it still passes; report counts only.
