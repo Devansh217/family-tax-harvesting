@@ -2,6 +2,10 @@
 
 The app lives in `prototype/` (React + Vite, tax engine in `prototype/src/engine/`). Product, architecture and design specs are in `docs/`.
 
+## Next work
+
+`docs/NEXT-WORK.md` is the one list of planned and unbuilt work, grouped into epics of one-session items. Update an item's status there in the same PR that changes it, and add new work you find to it.
+
 ## Guardrails
 
 `docs/GUARDRAILS.md` holds the rules every change keeps: tax safety, saved families, privacy, security, wording. Read it before changing the engine, imports, storage, Supabase or user-facing copy.
