@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { computeFamily } from './engine/family';
+import { computeFamily, countingSummaries } from './engine/family';
+import { planGaps } from './ui/plan';
+import { pnlCoverage } from './ui/warnings';
 import { FY_2026_27 } from './engine/rules';
 import { isZerodhaTaxPnl, parseZerodhaTaxPnl } from './parsers';
 import { reconcile } from './reconcile';
@@ -140,5 +142,50 @@ describe('FY 2026-27 buyback exits beside a tradebook', () => {
     const fam = family(500, false);
     expect(fam.members[0]!.year.ltGains).toBe(500_00);
     expect(fam.brokerAdjustments).toEqual([]);
+  });
+});
+
+describe('a Tax P&L imported again replaces the one it overlaps', () => {
+  // The same account and period read twice: first by the parser before buybacks counted (₹500 long-term, the
+  // buyback left out), then again with the buyback booked: ₹1,000 → ₹1,01,000, a ₹1,00,000 long-term gain, so the
+  // total is ₹1,00,500. Only the newer one counts: no correction from the old ₹500 total cancels the buyback.
+  const Q = 10_000;
+  const fmt = 'Zerodha Tax P&L · 2026-04-01 to 2026-10-31';
+  const pair = (isin: string, sell: string, buyRs: number, sellRs: number, buyback = false) => [
+    { isin, name: isin, date: '2022-01-10', side: 'buy' as const, qty: 10 * Q, amount: buyRs * 100, ...(buyback ? { buyback: true as const } : {}) },
+    { isin, name: isin, date: sell, side: 'sell' as const, qty: 10 * Q, amount: sellRs * 100, ...(buyback ? { buyback: true as const } : {}) },
+  ];
+  const summary = (from: string, to: string, ltRs: number) => ({ broker: 'Zerodha', from, to, intraday: null, equityShortTerm: 0, equityLongTerm: ltRs * 100, mfShortTerm: null, mfLongTerm: null, fno: null, fnoTurnover: null });
+  const oldPnl = { format: fmt, txns: pair('INE000000001', '2026-06-10', 1000, 1500), prices: [], skipped: 0, brokerSummary: summary('2026-04-01', '2026-10-31', 500),
+    warnings: ['1 buyback exits were left out: since Oct 2024 buyback money is taxed as dividend income, not capital gains.'] };
+  const newPnl = { format: fmt, txns: [...pair('INE000000001', '2026-06-10', 1000, 1500), ...pair('INE000000002', '2026-07-10', 1000, 101000, true)], prices: [], skipped: 0,
+    brokerSummary: summary('2026-04-01', '2026-10-31', 100500), warnings: [] };
+  // A holdings file with one share still held, so the member has a plan to show gaps for.
+  const held = { format: 'Zerodha holdings', txns: [], skipped: 0, warnings: [],
+    prices: [{ isin: 'INE000000009', name: 'H', price: 200_00, priceDate: '2026-11-20', qty: 10 * Q, ltQty: 10 * Q, cost: 1000_00 }] };
+  const start = (): AppState => applyImport({ ...emptyState(), members: [{ id: 'm', name: 'M', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other', amount: 20_00_000_00, from: 'manual' }] }] },
+    'm', 'h.xlsx', held, { account: 'Zerodha' });
+
+  it('booked long-term is the new ₹1,00,500, with no negative correction and no ask to import again', () => {
+    let s = applyImport(start(), 'm', 'old.xlsx', oldPnl, { account: 'Zerodha' });
+    expect(planGaps(computeFamily(s, '2026-11-23', FY_2026_27), s.positions, s.brokerSummaries, s.imports).map((g) => g.key)).toContain('pnl_again');
+    s = applyImport(s, 'm', 'new.xlsx', newPnl, { account: 'Zerodha' });
+    expect(s.brokerSummaries).toHaveLength(2);
+    const fam = computeFamily(s, '2026-11-23', FY_2026_27);
+    expect(fam.brokerAdjustments).toEqual([]);
+    expect(fam.members[0]!.year.ltGains).toBe(1_00_500_00);
+    expect(planGaps(fam, fam.positions, s.brokerSummaries, s.imports).map((g) => g.key)).not.toContain('pnl_again');
+  });
+
+  it('two halves of the year both count', () => {
+    let s = applyImport(start(), 'm', 'h1.xlsx', { ...oldPnl, warnings: [], format: 'Zerodha Tax P&L · 2026-04-01 to 2026-06-30', brokerSummary: summary('2026-04-01', '2026-06-30', 500) }, { account: 'Zerodha' });
+    s = applyImport(s, 'm', 'h2.xlsx', { ...newPnl, warnings: [], format: 'Zerodha Tax P&L · 2026-07-01 to 2026-10-31', txns: pair('INE000000002', '2026-07-10', 1000, 101000, true),
+      brokerSummary: summary('2026-07-01', '2026-10-31', 1_00_000) }, { account: 'Zerodha' });
+    const fam = computeFamily(s, '2026-11-23', FY_2026_27);
+    expect(fam.brokerAdjustments).toEqual([]);
+    expect(fam.members[0]!.year.ltGains).toBe(1_00_500_00);
+    expect(countingSummaries(s.brokerSummaries)).toHaveLength(2);
+    const covered = pnlCoverage(s.brokerSummaries, FY_2026_27);
+    expect([covered('m', 'Zerodha', '2026-06-10'), covered('m', 'Zerodha', '2026-07-10')]).toEqual([true, true]);
   });
 });

@@ -1,4 +1,4 @@
-import type { BrokerAdjustment, HoldingsNotes } from '../engine/family';
+import { countingSummaries, type BrokerAdjustment, type HoldingsNotes } from '../engine/family';
 import { lotTerms } from '../engine/ledger';
 import { normAccount } from '../engine/openingLots';
 import type { TaxRules } from '../engine/rules';
@@ -18,7 +18,8 @@ type SummaryLike = { memberId: string; account: string; summary: { broker?: stri
 
 /** Coverage the way the broker correction works it out (`computeFamily`): same member and account label, within its dates. */
 export function pnlCoverage(summaries: SummaryLike[], rules: TaxRules): Covered {
-  return (memberId, account, date) => summaries.some((b) => b.memberId === memberId && b.account === account
+  const counting = countingSummaries(summaries);
+  return (memberId, account, date) => counting.some((b) => b.memberId === memberId && b.account === account
     && date >= (b.summary.from ?? rules.start) && date <= (b.summary.to ?? rules.end));
 }
 
@@ -35,10 +36,10 @@ export const OLD_BUYBACK_WARNING = 'since Oct 2024 buyback money is taxed as div
 export const preBuybackPnls = (imports: ImportLike[]) =>
   new Set(imports.filter((i) => i.format.startsWith('Zerodha Tax P&L') && i.warnings.some((w) => w.includes(OLD_BUYBACK_WARNING))).map((i) => i.id));
 
-/** The Tax P&L totals that can close the buyback caveat: all but those read before buybacks counted. */
+/** The Tax P&L totals that can close the buyback caveat: those that count (`countingSummaries`), less any read before buybacks counted. */
 export function currentPnls<S extends SummaryLike & { importId?: string }>(summaries: S[], imports: ImportLike[]): S[] {
   const old = preBuybackPnls(imports);
-  return summaries.filter((b) => !b.importId || !old.has(b.importId));
+  return countingSummaries(summaries).filter((b) => !b.importId || !old.has(b.importId));
 }
 
 /**
@@ -46,7 +47,8 @@ export function currentPnls<S extends SummaryLike & { importId?: string }>(summa
  * engine applies a P&L, so the caveat stays whenever the engine wouldn't use that P&L.
  */
 export function hasYearPnl(summaries: SummaryLike[], rules: TaxRules) {
-  return (memberId: string, account: string) => summaries.some((b) => b.memberId === memberId && b.account === account
+  const counting = countingSummaries(summaries);
+  return (memberId: string, account: string) => counting.some((b) => b.memberId === memberId && b.account === account
     && (b.summary.from ?? rules.start) <= rules.end && (b.summary.to ?? rules.end) >= rules.start);
 }
 

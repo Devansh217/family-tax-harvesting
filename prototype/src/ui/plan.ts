@@ -1,4 +1,4 @@
-import { taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
+import { countingSummaries, taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
 import { doneThisSeason, type RecommendationRecord } from '../engine/records';
 import { APPROX_MARGIN, normAccount, TRIMMING_HOLDINGS_SOURCES } from '../engine/openingLots';
 import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
@@ -62,7 +62,10 @@ export function planGaps(
   // A Tax P&L read before buybacks counted can't close the buyback caveat; it asks to be imported again instead.
   const yearPnl = fam.rules ? hasYearPnl(currentPnls(brokerSummaries, imports), fam.rules) : () => true;
   const oldIds = preBuybackPnls(imports);
-  const oldThisYear = fam.rules ? hasYearPnl(brokerSummaries.filter((b) => b.importId && oldIds.has(b.importId)), fam.rules) : () => false;
+  // Only the totals that count: a P&L imported again replaces the old one, which then asks nothing.
+  const counting = countingSummaries(brokerSummaries);
+  const isOld = (b: SummaryLike) => !!b.importId && oldIds.has(b.importId);
+  const inYear = (b: SummaryLike) => !!fam.rules && (b.summary.from ?? fam.rules.start) <= fam.rules.end && (b.summary.to ?? fam.rules.end) >= fam.rules.start;
   for (const v of fam.members) {
     const { id, name } = v.member;
     if (v.holdings.length === 0) {
@@ -123,8 +126,8 @@ export function planGaps(
     }
     // A Tax P&L for this year read before buybacks from 1 Apr 2026 counted as capital gains may lack them.
     const again = new Set<string>();
-    for (const b of brokerSummaries) {
-      if (b.memberId !== id || again.has(b.account) || !oldThisYear(id, b.account) || !b.importId || !oldIds.has(b.importId)) continue;
+    for (const b of counting) {
+      if (b.memberId !== id || again.has(b.account) || !isOld(b) || !inYear(b)) continue;
       again.add(b.account);
       const broker = b.account.trim() || 'your broker';
       out.push({

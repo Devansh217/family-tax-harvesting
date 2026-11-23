@@ -51,6 +51,19 @@ export interface BrokerTotals {
   mfLongTerm: Paise | null;
 }
 
+/**
+ * The broker Tax P&L totals that count. Per member and account (whatever its spaces and case), when two overlap in
+ * period only the one imported last counts: a P&L imported again replaces the one before it, which stays stored but
+ * is ignored. Totals for periods that don't overlap all count. Every use of the totals goes through here: the broker
+ * correction, Tax P&L coverage, the buyback caveat and the Plan's ask to import a P&L again.
+ */
+export function countingSummaries<S extends { memberId: string; account: string; summary: { from: ISODate | null; to: ISODate | null } }>(summaries: S[]): S[] {
+  const lo = (b: S) => b.summary.from ?? '0000-00-00';
+  const hi = (b: S) => b.summary.to ?? '9999-12-31';
+  return summaries.filter((b, i) => !summaries.some((n, j) => j > i && n.memberId === b.memberId
+    && normAccount(n.account) === normAccount(b.account) && lo(n) <= hi(b) && lo(b) <= hi(n)));
+}
+
 /** One booked-gain correction per category where the broker's total and the engine's differ. */
 export interface BrokerAdjustment { memberId: string; account: string; broker: string; label: string; term: Term; gain: Paise }
 
@@ -377,7 +390,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
 
   // Where history is incomplete, trust the broker's booked totals so room and tax are right.
   const brokerAdjustments: BrokerAdjustment[] = [];
-  for (const b of state.brokerSummaries ?? []) {
+  for (const b of countingSummaries(state.brokerSummaries ?? [])) {
     const s = b.summary;
     const from = s.from ?? rules.start, to = s.to ?? rules.end;
     const mine = ledger.realised.filter((r) => r.memberId === b.memberId && (r.account ?? '') === b.account && inRange(r.sellDate, from, to));

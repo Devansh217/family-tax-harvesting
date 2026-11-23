@@ -12,7 +12,7 @@ import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import readXlsxFile from 'read-excel-file/node';
 import { extractLines, isAngelFundHoldings, isAngelTrades, parseAngelFundHoldings, parseAngelTrades, resolveNames, isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseStatementLines, parseTablePreview, parseZerodhaTaxPnl, PdfPasswordError, previewRows, previewTable, type PdfJsLike } from '../src/parsers';
 import { addDays, addMonths, inRange } from '../src/engine/dates';
-import { computeFamily } from '../src/engine/family';
+import { computeFamily, countingSummaries } from '../src/engine/family';
 import { FY_2026_27 } from '../src/engine/rules';
 import { reconcile } from '../src/reconcile';
 import { normAccount } from '../src/engine/ledger';
@@ -176,7 +176,7 @@ if (memberDirs.length) {
     console.log(`  member ${i + 1}: trimmed shares ${trimmed}; stale holdings files ${stale}; corporate-action notes ${corp}; funds with file units: ${fileUnits.size}, held units differ from file: ${fundMismatch}; unknown-term sales ${unknown}; visible oversells now ${over.now.length} (older ${over.older.length}); Plan gaps ${gaps}`);
     // After the broker correction, booked gains per Tax P&L and category against the broker's own total: match / no match.
     const isEq = (isin: string) => st.securities.find((x) => x.isin === isin)?.listed ?? true;
-    for (const b of st.brokerSummaries.filter((x) => x.memberId === id)) {
+    for (const b of countingSummaries(st.brokerSummaries).filter((x) => x.memberId === id)) {
       const from = b.summary.from ?? FY_2026_27.start, to = b.summary.to ?? FY_2026_27.end;
       const cats: Array<[string, number | null, 'st' | 'lt', boolean]> = [
         ['Shares, short-term', b.summary.equityShortTerm, 'st', true], ['Shares, long-term', b.summary.equityLongTerm, 'lt', true],

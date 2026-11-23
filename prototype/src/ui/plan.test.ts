@@ -87,9 +87,17 @@ describe('what the plan is missing', () => {
     });
     // The buyback gap isn't repeated for that account: importing the P&L again closes both.
     expect(gaps.find((g) => g.key === 'buyback_pnl')).toBeUndefined();
-    // Imported again (today's warning, or none): no ask.
-    const fresh = [{ ...old[0]!, warnings: [] }];
-    expect(planGaps(trimmed, positions, summaries, fresh).find((g) => g.key === 'pnl_again')).toBeUndefined();
+    // Imported again: a newer P&L for that account and period, with no old warning, closes the ask (the old one stays
+    // stored but counts for nothing), and the buyback gap stays closed by the new one.
+    const again = [...summaries, { importId: 'p2', memberId: 'r', account: 'Zerodha', summary: { broker: 'Zerodha', from: '2026-04-01', to: '2026-11-20' } }];
+    const both = [...old, { id: 'p2', memberId: 'r', format: 'Zerodha Tax P&L · 2026-04-01 to 2026-11-20', warnings: [] }];
+    const after = planGaps(trimmed, positions, again, both).filter((g) => g.memberId === 'r').map((g) => g.key);
+    expect(after).not.toContain('pnl_again');
+    expect(after).not.toContain('buyback_pnl');
+    // A newer P&L for another account doesn't hide the old one.
+    const other = [...summaries, { importId: 'p3', memberId: 'r', account: 'Zerodha 2', summary: { broker: 'Zerodha', from: '2026-04-01', to: '2026-11-20' } }];
+    const otherImports = [...old, { id: 'p3', memberId: 'r', format: 'Zerodha Tax P&L · 2026-04-01 to 2026-11-20', warnings: [] }];
+    expect(planGaps(trimmed, positions, other, otherImports).find((g) => g.key === 'pnl_again')).toBeDefined();
     // A P&L for last year with the old warning asks nothing: buybacks then were dividends.
     const lastYear = [{ ...summaries[0]!, summary: { broker: 'Zerodha', from: '2025-04-01', to: '2026-03-31' } }];
     expect(planGaps(trimmed, positions, lastYear, old).find((g) => g.key === 'pnl_again')).toBeUndefined();
