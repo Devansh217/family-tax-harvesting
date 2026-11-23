@@ -4,7 +4,7 @@ import type { Term } from '../../engine/types';
 import { setTermAnswer } from '../../store';
 import { useApp } from '../app-context';
 import { dateLabel } from '../format';
-import { answeredSales, needsConfirm, pnlCoverage, unknownTermSales, type UnknownTermSale } from '../warnings';
+import { answeredSales, buyDateAnswer, needsConfirm, pnlCoverage, unknownTermSales, type UnknownTermSale } from '../warnings';
 
 /** This year's open unknown-term sales the member can answer (uncovered by a Tax P&L, never ELSS). */
 export function useOpenUnknownTerms(memberId: string): UnknownTermSale[] {
@@ -19,17 +19,25 @@ export const TERM_LABEL: Record<Term, string> = { lt: 'long-term', st: 'short-te
 
 /**
  * One sale whose buy date is unknown: the term the engine assumed and the family's answer. A term that differs from
- * any piece's can free room, so it asks first. `needsChecking` words it for a "to check" list (spec §5).
+ * any piece's can free room, so it asks first, and so does a buy date that gives such a term. `needsChecking` words it
+ * for a "to check" list (spec §5).
  */
 export function UnknownTermRow({ sale, needsChecking = false }: { sale: UnknownTermSale; needsChecking?: boolean }) {
   const { fam, update, asOf } = useApp();
-  const [confirm, setConfirm] = useState<Term | null>(null);
+  // The term waiting for a confirm, and the buy date that gave it (when it came from "Add buy date").
+  const [confirm, setConfirm] = useState<{ term: Term; buyDate?: string } | null>(null);
   const [dating, setDating] = useState(false);
   const [date, setDate] = useState('');
   const name = fam.securities.get(sale.isin)?.name ?? sale.isin;
   const answer = (patch: { term?: Term; buyDate?: string }) =>
     update((s) => setTermAnswer(s, { memberId: sale.memberId, account: sale.account, isin: sale.isin, sellDate: sale.sellDate, ...patch }));
-  const pick = (term: Term) => (needsConfirm(sale, term) ? setConfirm(term) : answer({ term }));
+  const pick = (term: Term) => (needsConfirm(sale, term) ? setConfirm({ term }) : answer({ term }));
+  const saveDate = () => {
+    const { term, confirm: ask } = buyDateAnswer(sale, fam.securities.get(sale.isin), date, fam.rules);
+    setDating(false);
+    if (ask) setConfirm({ term, buyDate: date });
+    else answer({ buyDate: date });
+  };
   return (
     <div className="li" style={{ flexWrap: 'wrap', gap: 8 }}>
       <span className="grow small" style={{ minWidth: 220 }}>
@@ -42,11 +50,11 @@ export function UnknownTermRow({ sale, needsChecking = false }: { sale: UnknownT
       </span>
       {confirm && (
         <span className="stack small" style={{ gap: 6, width: '100%' }} role="group" aria-label="Confirm the term">
-          <span>{confirm === 'st'
+          <span>{confirm.term === 'st'
             ? "Only choose this if your contract note or broker P&L shows the shares were held under a year. If it's wrong, a move can create tax."
             : "Only choose this if your contract note or broker P&L shows the shares were held over a year. If it's wrong, a move can create tax."}</span>
           <span className="row" style={{ gap: 8 }}>
-            <button className="btn sm primary" type="button" onClick={() => { answer({ term: confirm }); setConfirm(null); }}>Yes, {TERM_LABEL[confirm]}</button>
+            <button className="btn sm primary" type="button" onClick={() => { answer(confirm.buyDate ? { buyDate: confirm.buyDate } : { term: confirm.term }); setConfirm(null); }}>Yes, {TERM_LABEL[confirm.term]}</button>
             <button className="btn sm" type="button" onClick={() => setConfirm(null)}>Cancel</button>
           </span>
         </span>
@@ -54,7 +62,7 @@ export function UnknownTermRow({ sale, needsChecking = false }: { sale: UnknownT
       {dating && (
         <span className="row small" style={{ gap: 8, width: '100%' }}>
           <input type="date" aria-label={`Buy date of ${name} sold ${dateLabel(sale.sellDate)}`} value={date} max={sale.sellDate < asOf ? sale.sellDate : asOf} onChange={(e) => setDate(e.target.value)} />
-          <button className="btn sm primary" type="button" disabled={!date || date > sale.sellDate} onClick={() => { answer({ buyDate: date }); setDating(false); }}>Save</button>
+          <button className="btn sm primary" type="button" disabled={!date || date > sale.sellDate} onClick={saveDate}>Save</button>
           <button className="btn sm" type="button" onClick={() => setDating(false)}>Cancel</button>
         </span>
       )}

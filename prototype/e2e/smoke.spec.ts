@@ -198,6 +198,15 @@ for (const size of SIZES) {
         // Change brings the question back and the room with it.
         await page.getByRole('button', { name: 'Change', exact: true }).click();
         await expect(page.getByText('Free ₹1,15,000', { exact: true })).toBeVisible();
+        // A buy date under a year before the sale makes it short-term: it asks first, like the Short-term button.
+        await page.getByRole('button', { name: 'Add buy date' }).click();
+        await page.getByLabel(/Buy date of Test Share A sold 10 Jun 2026/).fill('2026-01-10');
+        await page.getByRole('button', { name: 'Save', exact: true }).click();
+        await expect(page.getByText('Only choose this if your contract note or broker P&L shows the shares were held under a year. If it\'s wrong, a move can create tax.')).toBeVisible();
+        await expect(page.getByText('Free ₹1,15,000', { exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Yes, short-term' }).click();
+        await expect(page.getByText('Free ₹1,25,000', { exact: true })).toBeVisible();
+        await expect(page.getByText(/Test Share A, sold 10 Jun 2026: Buy date entered by you/)).toBeVisible();
       });
 
       test('importing the same tradebook twice says nothing is new the second time', async ({ page }) => {

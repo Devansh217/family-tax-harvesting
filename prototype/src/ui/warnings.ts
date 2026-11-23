@@ -1,8 +1,9 @@
 import type { BrokerAdjustment, HoldingsNotes } from '../engine/family';
+import { lotTerms } from '../engine/ledger';
 import { normAccount } from '../engine/openingLots';
 import type { TaxRules } from '../engine/rules';
 import type { YearSummary } from '../engine/tax';
-import { QTY_SCALE, type ISODate, type LedgerWarning, type Paise, type Qty, type Realised, type TermAnswer } from '../engine/types';
+import { QTY_SCALE, type ISODate, type LedgerWarning, type Paise, type Qty, type Realised, type Security, type TermAnswer } from '../engine/types';
 import { dateLabel, inr, units as unitsLabel } from './format';
 
 /**
@@ -117,6 +118,17 @@ export interface UnknownTermSale {
 
 /** Picking a term asks first whenever any piece of the sale has another term: that answer can free room. */
 export const needsConfirm = (sale: Pick<UnknownTermSale, 'pieceTerms'>, picked: Realised['term']) => sale.pieceTerms.some((t) => t !== picked);
+
+/**
+ * The term a buy date the family enters gives the sale (the engine's own 12/24/36-month rules, `lotTerms`), and
+ * whether storing it asks first: the same check as picking that term, since it can free room just the same.
+ */
+export function buyDateAnswer(
+  sale: Pick<UnknownTermSale, 'pieceTerms' | 'sellDate'>, sec: Security | undefined, buyDate: ISODate, rules: TaxRules,
+): { term: Realised['term']; confirm: boolean } {
+  const { term } = lotTerms(sec, buyDate, sale.sellDate, rules);
+  return { term, confirm: needsConfirm(sale, term) };
+}
 
 const saleKey = (memberId: string, account: string, isin: string, sellDate: ISODate) => `${memberId}|${normAccount(account)}|${isin}|${sellDate}`;
 

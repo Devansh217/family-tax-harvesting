@@ -5,7 +5,7 @@ import { computeFamily, type FamilyState } from '../engine/family';
 import { FY_2026_27 as R } from '../engine/rules';
 import { QTY_SCALE, type LedgerWarning, type Member, type Realised, type Txn } from '../engine/types';
 import {
-  answeredSales, bookedDisplay, hasYearPnl, holdingsNoteLines, monthRange, needsConfirm, oversellLine, pnlCoverage, unknownTermSales, visibleGapCount, visibleOversells,
+  answeredSales, buyDateAnswer, bookedDisplay, hasYearPnl, holdingsNoteLines, monthRange, needsConfirm, oversellLine, pnlCoverage, unknownTermSales, visibleGapCount, visibleOversells,
 } from './warnings';
 
 const q = (n: number) => n * QTY_SCALE;
@@ -111,6 +111,15 @@ describe('unknown-term sales the member can answer', () => {
     const [plain] = unknownTermSales([sale()], 'a', R, none);
     expect(needsConfirm(plain!, 'lt')).toBe(false);
     expect(needsConfirm(plain!, 'st')).toBe(true);
+  });
+
+  it('a buy date asks first when the term it gives could free room, like picking that term', () => {
+    const [plain] = unknownTermSales([sale()], 'a', R, none);
+    const share = { isin: 'X', name: 'X', taxType: 'equity' as const, listed: true };
+    // Sold 10 Jun 2026: bought 10 Jan 2026 is under a year, so short-term, which frees room: confirm first.
+    expect(buyDateAnswer(plain!, share, '2026-01-10', R)).toEqual({ term: 'st', confirm: true });
+    // Bought 10 Jan 2025 is over a year: long-term, the term already assumed, so nothing to confirm.
+    expect(buyDateAnswer(plain!, share, '2025-01-10', R)).toEqual({ term: 'lt', confirm: false });
   });
 
   it('Review Focus 4: an unknown-term sale covered by a Tax P&L gets no prompt', () => {
