@@ -104,6 +104,11 @@ export function Simulate() {
                       {turns && ` ${units(turns.qty)} units turn long-term on ${dateLabel(turns.date)}.`}
                     </span>
                   )}
+                  {ok && r.unknownTermGain > 0 && (
+                    <span className="tiny muted">
+                      {inr(r.unknownTermGain)} of the gain is from units with an unknown buy date: it uses room as long-term, and the tax shown is the higher of long-term and short-term.
+                    </span>
+                  )}
                   {r.available > 0 && qtyWanted !== r.available && (
                     <button className="btn sm ghost" type="button" style={{ minHeight: 24, padding: 0, alignSelf: 'flex-start' }} onClick={() => choose(r.available)}>
                       All of {v.member.name}&rsquo;s units ({inrShort(valueOf(r.available))})

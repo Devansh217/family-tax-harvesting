@@ -1,7 +1,7 @@
 import { isElssFund } from './categories';
 import { addMonths, daysBetween, isLongTerm, longTermFrom } from './dates';
-import { buildLedger, effectiveCost, lotKey, lotTerms, prorate } from './ledger';
-import { APPROX_MARGIN, effectiveTxns, type HeldPosition } from './openingLots';
+import { buildLedger, effectiveCost, lotKey, lotTerms, prorate, saleTerms } from './ledger';
+import { APPROX_MARGIN, countingPositions, effectiveTxnsWithNotes, isTradebook, normAccount, type CorporateActionNote, type HeldPosition, type TrimNote } from './openingLots';
 import { terGapFor } from './data/ter-gap';
 import { directTwin, type FundsMap } from './directTwin';
 import { giftTransferCost, ltRate, roundTripCost, slabRate, stRate, type TaxRules } from './rules';
@@ -12,7 +12,7 @@ import { NSE_HOLIDAYS_2027, buybackDate } from './season';
 import { longTermMonthsFor, lotTaxType, summariseYear, type BusinessIncome, type YearSummary } from './tax';
 import { inRange } from './dates';
 import {
-  QTY_SCALE, type ISODate, type Ledger, type Lot, type Member, type Paise, type Qty, type Realised, type Security, type Term, type Txn,
+  QTY_SCALE, type ISODate, type Ledger, type Lot, type Member, type Paise, type Qty, type Realised, type Security, type Term, type TermAnswer, type Txn,
 } from './types';
 
 export interface PlannedSale { id: string; memberId: string; isin: string; qty: Qty }
@@ -35,6 +35,8 @@ export interface FamilyState {
   datedMoves?: DatedMove[];
   /** The family's records. A dated move that is done (marked or seen in a statement) is retired: no longer sized first. */
   recommendations?: RecommendationRecord[];
+  /** The family's answers for sales whose buy date is unknown (see `Realised.termUnknown`). */
+  termAnswers?: TermAnswer[];
 }
 
 export interface DatedMove { moveId: string; date: ISODate }
@@ -47,6 +49,59 @@ export interface BrokerTotals {
   equityLongTerm: Paise | null;
   mfShortTerm: Paise | null;
   mfLongTerm: Paise | null;
+}
+
+/**
+ * The broker Tax P&L totals that count. Per member and account (whatever its spaces and case), an older P&L stops
+ * counting only when one imported later covers its whole period: a P&L imported again (or over a wider period)
+ * replaces it, and it stays stored but is ignored. P&Ls that only partly overlap, or don't overlap, all count, so a
+ * follow-on P&L never hides the months only the older one covers. A P&L whose period couldn't be read is replaced by a
+ * newer one from 1 Apr of a tax year through its own end date. Every use of the totals goes through here: the broker
+ * correction, Tax P&L coverage, the buyback caveat and the Plan's ask to import a P&L again.
+ */
+export function countingSummaries<S extends { memberId: string; account: string; summary: { from: ISODate | null; to: ISODate | null } }>(summaries: S[]): S[] {
+  const lo = (b: S) => b.summary.from ?? '0000-00-00';
+  const hi = (b: S) => b.summary.to ?? '9999-12-31';
+  // A P&L whose period wasn't read is taken as the tax year of a newer one that starts on 1 Apr, up to its end.
+  const fromApril = (n: S) => !!n.summary.from?.endsWith('-04-01') && n.summary.to != null;
+  const covers = (n: S, b: S) => (fromApril(n) ? lo(n) <= (b.summary.from ?? lo(n)) && hi(n) >= (b.summary.to ?? hi(n)) : lo(n) <= lo(b) && hi(n) >= hi(b));
+  return summaries.filter((b, i) => !summaries.some((n, j) => j > i && n.memberId === b.memberId
+    && normAccount(n.account) === normAccount(b.account) && covers(n, b)));
+}
+
+type SummaryRow = { memberId: string; account: string; summary: { from: ISODate | null; to: ISODate | null } };
+
+/**
+ * The counting P&Ls (`countingSummaries`) grouped per member and account (whatever its spaces and case), joining any
+ * that partly overlap in period, directly or through another. Each group comes back as the first P&L with its
+ * period widened to the group's and every number in its summary summed over the group (null where every P&L has
+ * none); `group` lists the P&Ls in it. A P&L that overlaps no other is a group of one, unchanged.
+ */
+export function pnlGroups<S extends SummaryRow>(summaries: S[]): Array<S & { group: S[] }> {
+  const lo = (b: SummaryRow) => b.summary.from ?? '0000-00-00';
+  const hi = (b: SummaryRow) => b.summary.to ?? '9999-12-31';
+  const groups: S[][] = [];
+  for (const b of countingSummaries(summaries)) {
+    const same = (g: S[]) => g[0]!.memberId === b.memberId && normAccount(g[0]!.account) === normAccount(b.account);
+    const touching = groups.filter((g) => same(g) && g.some((x) => lo(x) <= hi(b) && lo(b) <= hi(x)));
+    const merged = [...touching.flat(), b];
+    for (const g of touching) groups.splice(groups.indexOf(g), 1);
+    groups.push(merged);
+  }
+  return groups.map((g) => {
+    if (g.length === 1) return { ...g[0]!, group: g };
+    const first = g[0]!;
+    const summary: Record<string, unknown> = { ...first.summary };
+    for (const [k, v] of Object.entries(first.summary)) {
+      if (k === 'from' || k === 'to' || (typeof v !== 'number' && v !== null)) continue;
+      const vals = g.map((x) => (x.summary as Record<string, unknown>)[k]).filter((x): x is number => typeof x === 'number');
+      summary[k] = vals.length ? vals.reduce((a, x) => a + x, 0) : null;
+    }
+    const froms = g.map((x) => x.summary.from), tos = g.map((x) => x.summary.to);
+    summary.from = froms.includes(null) ? null : froms.sort()[0]!;
+    summary.to = tos.includes(null) ? null : tos.sort().at(-1)!;
+    return { ...first, summary: summary as S['summary'], group: g };
+  });
 }
 
 /** One booked-gain correction per category where the broker's total and the engine's differ. */
@@ -121,6 +176,12 @@ export const isLaterBenefit = (m: Move) => m.kind === 'harvest_gain' || m.kind =
 export const taxFreeGainOf = (m: Move): Paise =>
   m.kind === 'harvest_gain' || m.kind === 'gift' ? m.gain : m.kind === 'switch_direct' ? m.taxFreeGain ?? 0 : 0;
 
+export interface HoldingsNotes {
+  trimmed: TrimNote[];
+  staleFiles: Array<{ memberId: string; account: string; asOf: ISODate }>;
+  corporateActions: CorporateActionNote[];
+}
+
 export interface MemberView {
   member: Member;
   /** Intraday and F&O income used in the tax figures; `intradayDetected` is what the tradebooks show. */
@@ -143,6 +204,12 @@ export interface FamilyView {
   ledger: Ledger;
   /** Corrections that make booked gains equal the broker's tax P&L where trade history is incomplete. */
   brokerAdjustments: BrokerAdjustment[];
+  /** What the holdings files changed: units that left, files older than the trades, units changed without a trade. */
+  holdingsNotes: HoldingsNotes;
+  /** The saved positions that count (`countingPositions`): older holdings files of an account with a newer one left out. */
+  positions: HeldPosition[];
+  /** The date of the oldest tradebook trade, per `${memberId}|${normAccount(account)}`. */
+  tradebookFrom: Record<string, ISODate>;
   /** Realised gains used for tax: the ledger's plus any broker adjustments. */
   booked: Realised[];
   /** Gains the planned sales would realise. Their lots are already removed from `ledger.lots`. */
@@ -239,7 +306,26 @@ function sellAcrossAccounts(ledger: Ledger, memberId: string, sec: Security, qty
   return out;
 }
 
-/** What selling `qty` units now would realise, first-in-first-out. Does not mutate the lots. */
+/**
+ * Tax for a preview (Simulate, planned sales) that includes `preview` rows. A sale from a guessed-date lot counts its
+ * gain long-term for room (`saleTerms`), but the preview can't know its real term, so the tax shown is the highest of
+ * the rows as given, every such equity row (ELSS aside: it is always long-term) as long-term, every one as
+ * short-term, and their gains short-term with their losses long-term. Room is not changed here: the caller keeps the summary of the rows as given.
+ */
+function previewTax(member: Member, rows: Realised[], preview: Realised[], secs: Map<string, Security>, rules: TaxRules, business: BusinessIncome): Paise {
+  const base = summariseYear(member, rows, rules, business).tax;
+  const unknown = new Set(preview.filter((r) => {
+    const sec = secs.get(r.isin);
+    return r.termUnknown && r.taxType === 'equity' && !(sec && isElssFund(sec));
+  }));
+  if (!unknown.size) return base;
+  const as = (gain: Term, loss: Term) =>
+    summariseYear(member, rows.map((r) => (unknown.has(r) ? { ...r, term: r.gain >= 0 ? gain : loss } : r)), rules, business).tax;
+  // The fourth, gains short-term and losses long-term, bounds a preview that mixes the two.
+  return Math.max(base, as('lt', 'lt'), as('st', 'st'), as('st', 'lt'));
+}
+
+/** What selling `qty` units now would realise, first-in-first-out. Does not mutate the lots. Guessed lots get the unknown-term rule. */
 export function previewSale(lots: Lot[], qty: Qty, sec: Security, saleDate: ISODate, rules: TaxRules): Realised[] {
   const out: Realised[] = [];
   let left = qty;
@@ -251,7 +337,7 @@ export function previewSale(lots: Lot[], qty: Qty, sec: Security, saleDate: ISOD
     const cost = effectiveCost(lot, actual, take, value, sec, rules);
     out.push({
       memberId: lot.memberId, isin: lot.isin, account: lot.account, buyDate: lot.date, sellDate: saleDate, qty: take, proceeds: value, cost,
-      gain: value - cost, ...lotTerms(sec, lot.date, saleDate, rules),
+      gain: value - cost, ...saleTerms(sec, lot, saleDate, value - cost, rules),
     });
     left -= take;
   }
@@ -302,7 +388,14 @@ function harvestableQty(lots: Lot[], sec: Security, asOf: ISODate, rules: TaxRul
 }
 
 export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules): FamilyView {
-  const ledger = buildLedger(effectiveTxns(state.txns, state.positions ?? [], asOf), state.securities, rules);
+  const { txns: effective, ...holdingsNotes } = effectiveTxnsWithNotes(state.txns, state.positions ?? [], asOf, state.securities);
+  const ledger = buildLedger(effective, state.securities, rules, state.termAnswers);
+  const tradebookFrom: Record<string, ISODate> = {};
+  for (const t of state.txns) {
+    if (!isTradebook(t)) continue;
+    const k = `${t.memberId}|${normAccount(t.account)}`;
+    if (!tradebookFrom[k] || t.date < tradebookFrom[k]!) tradebookFrom[k] = t.date;
+  }
   const secs = new Map(state.securities.map((s) => [s.isin, s]));
   const moves: Move[] = [];
   // Dated moves: the family's picked days, by move id. Later entries for the same id win.
@@ -337,21 +430,32 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
 
   // Where history is incomplete, trust the broker's booked totals so room and tax are right.
   const brokerAdjustments: BrokerAdjustment[] = [];
-  for (const b of state.brokerSummaries ?? []) {
-    const s = b.summary;
-    const from = s.from ?? rules.start, to = s.to ?? rules.end;
-    const mine = ledger.realised.filter((r) => r.memberId === b.memberId && (r.account ?? '') === b.account && inRange(r.sellDate, from, to));
-    const isEq = (isin: string) => secs.get(isin)?.listed ?? true;
-    const cats: Array<[string, Paise | null, Term, boolean]> = [
-      ['Shares, short-term', s.equityShortTerm, 'st', true], ['Shares, long-term', s.equityLongTerm, 'lt', true],
-      ['Mutual funds, short-term', s.mfShortTerm, 'st', false], ['Mutual funds, long-term', s.mfLongTerm, 'lt', false],
-    ];
-    for (const [label, broker, term, eq] of cats) {
-      if (broker == null) continue;
-      const ours = mine.filter((r) => r.term === term && isEq(r.isin) === eq).reduce((a, r) => a + r.gain, 0);
-      const diff = broker - ours;
-      if (Math.abs(diff) > Math.max(100, Math.abs(broker) * 0.0005)) brokerAdjustments.push({ memberId: b.memberId, account: b.account, broker: s.broker, label, term, gain: diff });
-    }
+  // P&Ls that partly overlap are one group: each corrected on its own would count the shared days twice. The group
+  // takes the higher booked gain of the two ways: per P&L as before, or its summed totals against the engine's gains
+  // over the group's dates.
+  const isEq = (isin: string) => secs.get(isin)?.listed ?? true;
+  const over = (b: { summary: BrokerTotals }) => (r: Realised) => inRange(r.sellDate, b.summary.from ?? rules.start, b.summary.to ?? rules.end);
+  const catsOf = (x: BrokerTotals): Array<[string, Paise | null, Term, boolean]> => [
+    ['Shares, short-term', x.equityShortTerm, 'st', true], ['Shares, long-term', x.equityLongTerm, 'lt', true],
+    ['Mutual funds, short-term', x.mfShortTerm, 'st', false], ['Mutual funds, long-term', x.mfLongTerm, 'lt', false],
+  ];
+  const tolerance = (broker: Paise) => Math.max(100, Math.abs(broker) * 0.0005);
+  for (const g of pnlGroups(state.brokerSummaries ?? [])) {
+    const mine = ledger.realised.filter((r) => r.memberId === g.memberId && g.group.some((b) => (r.account ?? '') === b.account));
+    catsOf(g.summary).forEach(([label, , term, eq], i) => {
+      const inCat = (r: Realised) => r.term === term && isEq(r.isin) === eq;
+      const withTotal = g.group.filter((b) => catsOf(b.summary)[i]![1] != null);
+      if (!withTotal.length) return;
+      const perPnl = withTotal.reduce((a, b) => {
+        const broker = catsOf(b.summary)[i]![1]!;
+        const diff = broker - mine.filter((r) => (r.account ?? '') === b.account && over(b)(r) && inCat(r)).reduce((x, r) => x + r.gain, 0);
+        return a + (Math.abs(diff) > tolerance(broker) ? diff : 0);
+      }, 0);
+      const broker = withTotal.reduce((a, b) => a + catsOf(b.summary)[i]![1]!, 0);
+      const asOne = broker - mine.filter((r) => inCat(r) && withTotal.some((b) => (r.account ?? '') === b.account && over(b)(r))).reduce((x, r) => x + r.gain, 0);
+      const gain = g.group.length === 1 ? perPnl : Math.max(perPnl, Math.abs(asOne) > tolerance(broker) ? asOne : 0);
+      if (gain !== 0) brokerAdjustments.push({ memberId: g.memberId, account: g.account, broker: g.summary.broker, label, term, gain });
+    });
   }
   const adjRealised: Realised[] = brokerAdjustments.map((a) => ({
     memberId: a.memberId, isin: `ADJ:${a.label}`, account: a.account, buyDate: rules.start, sellDate: rules.start,
@@ -417,7 +521,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
     v.plan = mine.length ? summariseYear(v.member, [...booked, ...mine], rules, v.business) : v.year;
     v.planned = {
       gain: mine.reduce((a, r) => a + r.gain, 0),
-      tax: v.plan.tax - v.year.tax,
+      tax: (mine.length ? previewTax(v.member, [...booked, ...mine], mine, secs, rules, v.business) : v.plan.tax) - v.year.tax,
       roomUsed: v.plan.exemptionUsed + v.plan.bonus.used - (v.year.exemptionUsed + v.year.bonus.used),
     };
     v.roomAfterPlan = v.plan.room.free + v.plan.bonus.free;
@@ -710,7 +814,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   const later = moves.filter(isLaterBenefit);
   const now = moves.filter((m) => !isLaterBenefit(m));
   return {
-    asOf, rules, members: views, moves, ledger, brokerAdjustments, booked, plannedRealised, securities: secs,
+    asOf, rules, members: views, moves, ledger, brokerAdjustments, holdingsNotes, positions: countingPositions(state.positions ?? []), tradebookFrom, booked, plannedRealised, securities: secs,
     totals: {
       freeRoom: sum((v) => v.plan.room.free),
       bonusFree: sum((v) => v.plan.bonus.free),
@@ -735,6 +839,8 @@ export interface SaleResult {
   extraTax: Paise;
   roomUsed: Paise;
   available: Qty;
+  /** Gain from units whose buy date is unknown: counted long-term for room, taxed the higher way in `extraTax`. */
+  unknownTermGain: Paise;
 }
 
 /**
@@ -747,14 +853,17 @@ export function simulateSale(fam: FamilyView, memberId: string, isin: string, qt
   const available = queues(fam.ledger, memberId, isin).reduce((a, q) => a + q.lots.reduce((b, l) => b + l.qty, 0), 0);
   const sold = sellAcrossAccounts(fam.ledger, memberId, sec, Math.min(qty, available), asOf, rules, false);
   const plannedMine = fam.plannedRealised.filter((r) => r.memberId === memberId);
-  const after = summariseYear(v.member, [...fam.booked, ...plannedMine, ...sold], rules, v.business);
+  const rows = [...fam.booked, ...plannedMine, ...sold];
+  const after = summariseYear(v.member, rows, rules, v.business);
   const s = (t: Term) => sold.filter((r) => r.term === t).reduce((a, r) => a + r.gain, 0);
   return {
     qty: Math.min(qty, available), available,
     proceeds: sold.reduce((a, r) => a + r.proceeds, 0),
     gain: sold.reduce((a, r) => a + r.gain, 0),
     stGain: s('st'), ltGain: s('lt'),
-    extraTax: after.tax - v.plan.tax,
+    unknownTermGain: sold.filter((r) => r.termUnknown).reduce((a, r) => a + r.gain, 0),
+    // Room as the rows are given; tax the higher way for units whose term is unknown (`previewTax`).
+    extraTax: previewTax(v.member, rows, sold, fam.securities, rules, v.business) - v.plan.tax,
     roomUsed: after.exemptionUsed + after.bonus.used - (v.plan.exemptionUsed + v.plan.bonus.used),
   };
 }

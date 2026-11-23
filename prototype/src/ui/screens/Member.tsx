@@ -1,3 +1,4 @@
+import { pnlGroups } from '../../engine/family';
 import { incomeTotal } from '../../engine/rules';
 import { useMemo, useState } from 'react';
 import { longTermFrom } from '../../engine/dates';
@@ -5,7 +6,7 @@ import type { Paise } from '../../engine/types';
 import { useApp } from '../app-context';
 import { FundsToCheck, TaxTypeChip } from './FundsToCheck';
 import { dateLabel, inr, possessive, RELATIONS, units } from '../format';
-import { Avatar, Icon, RoomMeter, Section, Svg } from '../parts';
+import { Avatar, Disclaimer, Icon, RoomMeter, Section, Svg } from '../parts';
 import { MoveRow } from './Plan';
 import { reconcile } from '../../reconcile';
 import { effectiveTxns } from '../../engine/openingLots';
@@ -13,6 +14,8 @@ import { unitMismatches } from '../units';
 import { importHref } from '../plan';
 import { cgSchedule, EXEMPT_NOTE, isSaleRow, SALE_SECTIONS } from '../../engine/cgSchedule';
 import { scheduleCsv, scheduleFileName } from '../csv';
+import { bookedDisplay, currentPnls, hasYearPnl, pnlCheckCopy, holdingsNoteLines, oversellLine, pnlCoverage, visibleOversells } from '../warnings';
+import { UnknownTerms } from './UnknownTerms';
 
 function PriceInput({ value, onCommit, label }: { value: Paise | undefined; onCommit: (p: Paise | undefined) => void; label: string }) {
   const [text, setText] = useState(value != null ? String(value / 100) : '');
@@ -44,6 +47,7 @@ function CapitalGains({ memberId, memberName }: { memberId: string; memberName: 
   return (
     <Section title="Capital gains this year" id="cg-h" action={shown.length > 0 ? <button className="btn" type="button" onClick={download}>Download CSV</button> : undefined}>
       {!hasSales && <p className="small muted">{sched.exemptGain !== 0 ? 'No taxable sales this year.' : 'No sales this year.'}</p>}
+      <UnknownTerms memberId={memberId} />
       {shown.map((sec) => (
         <div key={sec.key} className="stack" style={{ gap: 6 }}>
           <h3 style={{ fontSize: 15 }}>{sec.title}</h3>
@@ -90,7 +94,7 @@ export function MemberScreen({ id }: { id: string }) {
   const { fam, state, update, indexOf, asOf } = useApp();
   const [view, setView] = useState<'now' | 'plan'>('now');
   // Before any early return: hooks run in the same order every render.
-  const txns = useMemo(() => effectiveTxns(state.txns, state.positions, asOf), [state.txns, state.positions, asOf]);
+  const txns = useMemo(() => effectiveTxns(state.txns, state.positions, asOf, state.securities), [state.txns, state.positions, asOf, state.securities]);
   const v = fam.members.find((m) => m.member.id === id);
   if (!v) return <div className="sheet empty"><p>This member no longer exists.</p><a className="btn" href="#home">Back to family</a></div>;
 
@@ -106,15 +110,32 @@ export function MemberScreen({ id }: { id: string }) {
   const toggleNeed = (isin: string) => update((s) => ({ ...s, needSoon: { ...s.needSoon, [`${id}|${isin}`]: !s.needSoon[`${id}|${isin}`] } }));
   const myMoves = fam.moves.filter((m) => (m.kind === 'gift' ? m.toId === id || m.fromId === id : m.memberId === id));
   const myWarnings = fam.ledger.warnings.filter((w) => w.memberId === id);
-  const soon = holdings
-    // Only lots with a known date in a type that turns long-term: slab-taxed funds never do, and a guessed date says nothing.
-    .flatMap((h) => h.lots.filter((l) => l.term === 'st' && l.certain && l.longTermOn > asOf && (h.taxType === 'equity' || h.taxType === 'other_lt')).map((l) => ({ h, l })))
-    .sort((a, b) => a.l.longTermOn.localeCompare(b.l.longTermOn))
-    .slice(0, 6);
-  const positions = state.positions.filter((p) => p.memberId === id);
+  const nameOf = (isin: string) => fam.securities.get(isin)?.name ?? isin;
+  const oversold = visibleOversells(myWarnings, fam.rules, pnlCoverage(state.brokerSummaries, fam.rules));
+  const notes = [
+    ...holdingsNoteLines(fam.holdingsNotes, id, nameOf, hasYearPnl(currentPnls(state.brokerSummaries, state.imports), fam.rules)),
+    ...oversold.now.map((g) => oversellLine(nameOf(g.isin), g)),
+  ];
+  const booked = bookedDisplay(year, fam.brokerAdjustments, id);
+  // Only lots with a known date in a type that turns long-term: slab-taxed funds never do, and a guessed date says nothing.
+  // Lots of one share bought on one day are one row.
+  const soonByDay = new Map<string, { h: (typeof holdings)[number]; l: { date: string; qty: number; gain: number | null; longTermOn: string } }>();
+  for (const h of holdings) {
+    if (h.taxType !== 'equity' && h.taxType !== 'other_lt') continue;
+    for (const l of h.lots) {
+      if (l.term !== 'st' || !l.certain || l.longTermOn <= asOf) continue;
+      const k = `${h.isin}|${l.date}`;
+      const x = soonByDay.get(k);
+      if (!x) { soonByDay.set(k, { h, l: { date: l.date, qty: l.qty, gain: l.gain, longTermOn: l.longTermOn } }); continue; }
+      x.l.qty += l.qty;
+      x.l.gain = x.l.gain == null || l.gain == null ? null : x.l.gain + l.gain;
+    }
+  }
+  const soon = [...soonByDay.values()].sort((a, b) => a.l.longTermOn.localeCompare(b.l.longTermOn)).slice(0, 6);
+  const positions = fam.positions.filter((p) => p.memberId === id);
   const mismatches = unitMismatches(
     id,
-    holdings.map((h) => ({ isin: h.isin, qty: h.qty, ltQty: h.lots.filter((l) => l.term === 'lt').reduce((a, l) => a + l.qty, 0) })),
+    holdings.map((h) => ({ isin: h.isin, qty: h.qty, ltQty: h.lots.filter((l) => l.term === 'lt').reduce((a, l) => a + l.qty, 0), lots: h.lots })),
     txns,
     positions,
     myWarnings,
@@ -169,9 +190,10 @@ export function MemberScreen({ id }: { id: string }) {
           <div className="sheet">
             <div className="li"><span className="grow">Long-term gains (net)</span><span className="fig">{inr(year.ltNet)}</span></div>
             <div className="li"><span className="grow">Short-term gains (net)</span><span className="fig">{inr(year.stNet)}</span></div>
-            {(year.stLosses > 0 || year.ltLosses > 0) && (
-              <div className="li"><span className="grow muted">Losses set off</span><span className="fig">{inr(year.stLosses + year.ltLosses)}</span></div>
+            {booked.lossesSetOff > 0 && (
+              <div className="li"><span className="grow muted">Losses set off</span><span className="fig">{inr(booked.lossesSetOff)}</span></div>
             )}
+            {booked.adjustments.map((line) => <div className="li" key={line}><span className="grow muted small">{line}</span></div>)}
             <div className="li"><span className="grow muted">Tax on gains so far, with cess</span><span className={`fig ${year.tax > 0 ? 'bad' : ''}`}>{inr(year.tax)}</span></div>
             {(year.lossCarriedForward.st > 0 || year.lossCarriedForward.lt > 0) && (
               <div className="li"><span className="grow muted">Losses to carry forward</span><span className="fig">{inr(year.lossCarriedForward.st + year.lossCarriedForward.lt)}</span></div>
@@ -199,9 +221,10 @@ export function MemberScreen({ id }: { id: string }) {
         </Section>
       )}
 
-      {state.brokerSummaries.filter((b) => b.memberId === id).map((b) => {
+      {pnlGroups(state.brokerSummaries).filter((b) => b.memberId === id).map((b) => {
         const lines = reconcile(fam, b);
         const allOk = lines.every((l) => l.ok);
+        const copy = pnlCheckCopy(b, fam.brokerAdjustments.some((a) => a.memberId === id && a.account === b.account));
         return (
           <Section key={b.importId} title={`Check against ${b.summary.broker}`} id={`rec-${b.importId}`}>
             <p className={`small ${allOk ? 'good' : ''}`} style={allOk ? undefined : { color: 'var(--time)' }}>
@@ -210,7 +233,7 @@ export function MemberScreen({ id }: { id: string }) {
             </p>
             <div className="sheet tablebox">
               <table>
-                <thead><tr><th scope="col">Realised</th><th scope="col">{b.summary.broker}</th><th scope="col">Harvesting</th><th scope="col">Difference</th></tr></thead>
+                <thead><tr><th scope="col">Realised</th><th scope="col">{copy.brokerColumn}</th><th scope="col">Harvesting</th><th scope="col">Difference</th></tr></thead>
                 <tbody>
                   {lines.map((l) => (
                     <tr key={l.label}>
@@ -222,15 +245,25 @@ export function MemberScreen({ id }: { id: string }) {
               </table>
             </div>
             {!allOk && <p className="tiny muted">Differences usually mean older purchases are missing (import earlier tradebooks), a corporate action, or the same trades imported twice from different files.</p>}
-            {fam.brokerAdjustments.some((a) => a.memberId === id && a.account === b.account) && (
-              <p className="small" style={{ color: 'var(--time)' }}>Until the history is complete, booked gains, room and tax use {b.summary.broker}&rsquo;s figures for these lines, so they stay correct. Moves still need the purchase dates.</p>
-            )}
+            {copy.overlap && <p className="small" style={{ color: 'var(--time)' }}>{copy.overlap}</p>}
+            {copy.adjusted && <p className="small" style={{ color: 'var(--time)' }}>{copy.adjusted}</p>}
           </Section>
         );
       })}
 
-      {myWarnings.length > 0 && (
-        <div className="banner warn"><ul className="warnlist grow">{myWarnings.map((w, i) => <li key={i}>{fam.securities.get(w.isin)?.name ?? w.isin}, {dateLabel(w.date)}: {w.message}</li>)}</ul></div>
+      {(notes.length > 0 || oversold.older.length > 0) && (
+        <div className="banner" role="note" aria-label="About the imported files" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+          <p style={{ margin: 0 }}>{notes.length > 0
+            ? "The imported files don't fully match the trade history. Here's how the figures handle it."
+            : "Some sales have no matching purchase history. This year's tax isn't affected."}</p>
+          {notes.length > 0 && <ul style={{ margin: 0, paddingLeft: 18 }}>{notes.map((n) => <li key={n}>{n}</li>)}</ul>}
+          {oversold.older.length > 0 && (
+            <details>
+              <summary>Older history gaps (no effect on this year's tax)</summary>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{oversold.older.map((w, i) => <li key={i}>{nameOf(w.isin)}, {dateLabel(w.date)}: {w.message}</li>)}</ul>
+            </details>
+          )}
+        </div>
       )}
       {mismatches.length > 0 && (
         <div className="banner warn">
@@ -267,6 +300,7 @@ export function MemberScreen({ id }: { id: string }) {
       {myMoves.length > 0 && (
         <Section title="Moves for this member" id="mv-h">
           <div className="sheet">{myMoves.map((m) => <MoveRow key={m.id} move={m} />)}</div>
+          <Disclaimer />
         </Section>
       )}
 

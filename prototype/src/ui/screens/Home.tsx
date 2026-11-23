@@ -8,6 +8,7 @@ import { needsSetup } from './memberFields';
 import { FirstRunNotice } from './About';
 import { SinceClose } from './SinceClose';
 import { isLaterBenefit } from '../../engine/family';
+import { visibleGapCount } from '../warnings';
 
 export function SampleBanner() {
   const { state, update, go, toast } = useApp();
@@ -48,7 +49,8 @@ export function Home({ days }: { days: number }) {
   const toCheck = new Set(fam.members.flatMap((v) => v.holdings.filter((h) => h.taxType === 'check').map((h) => h.isin))).size;
   const unchecked = fam.members.reduce((a, v) => a + v.year.unchecked, 0);
   const adjusted = new Set(fam.brokerAdjustments.map((a) => a.memberId)).size;
-  const warnings = fam.ledger.warnings.length;
+  // Only the gaps the member pages show: this year's, not covered by a Tax P&L, one per share.
+  const warnings = visibleGapCount(fam.ledger.warnings, fam.rules, state.brokerSummaries);
   const unpriced = fam.members.flatMap((v) => v.holdings).filter((h) => h.price == null).length;
 
   return (
@@ -138,7 +140,7 @@ export function Home({ days }: { days: number }) {
       {(warnings > 0 || unpriced > 0 || uncertain > 0 || adjusted > 0) && (
         <div className="banner warn" role="status">
           <span className="grow">
-            {warnings > 0 && <>{warnings} {warnings === 1 ? 'sale has' : 'sales have'} no matching purchase history. </>}
+            {warnings > 0 && <>{warnings} {warnings === 1 ? 'share was' : 'shares were'} sold this year beyond the purchase history, so {warnings === 1 ? 'its' : 'their'} gain is left out. </>}
             {unpriced > 0 && <>{unpriced} {unpriced === 1 ? 'holding has' : 'holdings have'} no current price, so their gains are not counted. </>}
             {adjusted > 0 && <>Booked gains for {adjusted} {adjusted === 1 ? 'member use' : 'members use'} the broker&rsquo;s tax P&amp;L because some purchase history is missing. </>}
             {uncertain > 0 && <>{uncertain} {uncertain === 1 ? 'lot has' : 'lots have'} an estimated purchase date or no 31 Jan 2018 value, so no moves use {uncertain === 1 ? 'it' : 'them'}. </>}

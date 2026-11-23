@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseDematCAS, parseMutualFundCAS, schemeDetails } from './cas';
+import { parseZerodhaHoldings, parseZerodhaTaxPnl } from './zerodhaTaxPnl';
 import { parseCSV, parseDate, parseNumber } from './common';
 import { parseStatementLines, parseTablePreview, previewTable } from './index';
 
@@ -132,5 +133,94 @@ describe('CAS PDFs (text lines)', () => {
 
   it('routes an unknown PDF to a helpful message', () => {
     expect(parseStatementLines(['Contract note', 'Brokerage']).warnings[0]).toMatch(/does not look like a CAS/);
+  });
+});
+
+describe('Zerodha holdings date', () => {
+  const header = ['Symbol', 'ISIN', 'Quantity Available', 'Quantity Long Term', 'Average Price', 'Previous Closing Price'];
+  const row = ['EXAMPLE', 'INE000000001', 5, 5, 100, 120];
+  const sheet = (above: unknown[][]) => [{ sheet: 'Equity', data: [...above, header, row] }];
+  it('parseZerodhaHoldings reads the statement date', () => {
+    const r = parseZerodhaHoldings(sheet([['Equity Holdings Statement as on 2026-11-22']]));
+    expect(r.prices.map((p) => p.priceDate)).toEqual(['2026-11-22']);
+  });
+  it('parseZerodhaHoldings without a date leaves priceDate undefined', () => {
+    const r = parseZerodhaHoldings(sheet([['Equity Holdings Statement']]));
+    expect(r.prices).toHaveLength(1);
+    expect(r.prices[0]!.priceDate).toBeUndefined();
+  });
+});
+
+describe('Zerodha tax P&L buybacks', () => {
+  const HEAD = [null, 'Symbol', 'ISIN', 'Entry Date', 'Exit Date', 'Quantity', 'Buy Value', 'Sell Value', 'Profit'];
+  const row = (entry: string, exit: string) => [null, 'TESTCO', 'INE000000001', entry, exit, 10, 1000, 1500, 500];
+  const book = (...rows: unknown[][]) => [{
+    sheet: 'Tradewise Exits from 2024-04-01',
+    data: [[null, 'Tradewise Exits from 2024-04-01 to 2026-11-14'], [null, 'Equity - Buyback'], HEAD, ...rows],
+  }];
+
+  it('books an exit from 1 Apr 2026 as a capital gain, like other long-term exits', () => {
+    const r = parseZerodhaTaxPnl(book(row('2022-01-10', '2026-06-10')));
+    expect(r.txns).toEqual([
+      expect.objectContaining({ date: '2022-01-10', isin: 'INE000000001', side: 'buy', amount: 1000_00 }),
+      expect.objectContaining({ date: '2026-06-10', isin: 'INE000000001', side: 'sell', amount: 1500_00 }),
+    ]);
+    expect(r.warnings.join(' ')).not.toMatch(/buyback/i);
+  });
+
+  it('leaves out an exit from 1 Oct 2024 to 31 Mar 2026 and says why', () => {
+    const r = parseZerodhaTaxPnl(book(row('2022-01-10', '2025-06-10')));
+    expect(r.txns).toHaveLength(0);
+    expect(r.warnings).toContain('1 buyback exit from 1 Oct 2024 to 31 Mar 2026 was left out: in that period buyback money was taxed as dividend income.');
+  });
+
+  it('pluralises the dividend-period warning', () => {
+    const r = parseZerodhaTaxPnl(book(row('2022-01-10', '2025-06-10'), row('2022-01-10', '2026-03-31')));
+    expect(r.warnings).toContain('2 buyback exits from 1 Oct 2024 to 31 Mar 2026 were left out: in that period buyback money was taxed as dividend income.');
+  });
+
+  it('leaves out an exit before 1 Oct 2024 and says the company paid the tax', () => {
+    const r = parseZerodhaTaxPnl(book(row('2020-01-10', '2024-06-10')));
+    expect(r.txns).toHaveLength(0);
+    expect(r.warnings).toContain('1 buyback exit before 1 Oct 2024 was left out: the company paid the tax on those.');
+    expect(r.warnings.join(' ')).not.toMatch(/dividend/);
+  });
+
+  it('pluralises the before-Oct-2024 warning', () => {
+    const r = parseZerodhaTaxPnl(book(row('2020-01-10', '2024-06-10'), row('2020-01-10', '2024-09-30')));
+    expect(r.warnings).toContain('2 buyback exits before 1 Oct 2024 were left out: the company paid the tax on those.');
+  });
+
+  it('marks the buyback exits it books, so the engine keeps them beside a tradebook', () => {
+    const r = parseZerodhaTaxPnl(book(row('2022-01-10', '2026-06-10')));
+    expect(r.txns.map((t) => t.buyback)).toEqual([true, true]);
+  });
+
+  describe('the broker totals always include the buybacks it books', () => {
+    // One long-term buyback exit: bought ₹1,000, tendered for ₹1,500 on 10 Jun 2026, so ₹500 long-term.
+    const withSummary = (lt: number) => [
+      ...book(row('2022-01-10', '2026-06-10')),
+      { sheet: 'Equity and Non Equity', data: [[null, 'Equity Short Term profit', 0], [null, 'Equity Long Term profit', lt]] },
+    ];
+    it('a total that already includes it stays as it is', () => {
+      expect(parseZerodhaTaxPnl(withSummary(500)).brokerSummary).toMatchObject({ equityLongTerm: 500_00, equityShortTerm: 0 });
+    });
+    it('a total that leaves it out gets it added', () => {
+      expect(parseZerodhaTaxPnl(withSummary(0)).brokerSummary).toMatchObject({ equityLongTerm: 500_00, equityShortTerm: 0 });
+    });
+    it('a total that matches neither gets a buyback gain added: more booked gain is the safe side', () => {
+      expect(parseZerodhaTaxPnl(withSummary(300)).brokerSummary).toMatchObject({ equityLongTerm: 800_00 });
+    });
+    it('a short-term buyback is added to the short-term total', () => {
+      const sheets = [...book(row('2026-01-10', '2026-06-10')), { sheet: 'Equity and Non Equity', data: [[null, 'Equity Short Term profit', 0], [null, 'Equity Long Term profit', 0]] }];
+      expect(parseZerodhaTaxPnl(sheets).brokerSummary).toMatchObject({ equityShortTerm: 500_00, equityLongTerm: 0 });
+    });
+  });
+
+  it('counts an unreadable exit date as skipped, with no dividend warning', () => {
+    const r = parseZerodhaTaxPnl(book(row('2022-01-10', 'n/a')));
+    expect(r.txns).toHaveLength(0);
+    expect(r.skipped).toBe(1);
+    expect(r.warnings.join(' ')).not.toMatch(/buyback/i);
   });
 });

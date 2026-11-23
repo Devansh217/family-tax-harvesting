@@ -3,8 +3,10 @@ import { computeFamily } from './engine/family';
 import { FY_2026_27 } from './engine/rules';
 import { parseTablePreview, previewTable } from './parsers';
 import { sampleState } from './sample';
-import { applyImport, emptyState, hasRealData, normalizeState, backupHadSeasonHelp, parseBackup, removeImport, RESTORE_ALERTS_NOTE, type AppState } from './store';
+import { applyImport, importAddedNothing, emptyState, hasRealData, normalizeState, backupHadSeasonHelp, parseBackup, removeImport, RESTORE_ALERTS_NOTE, setTermAnswer, type AppState } from './store';
 import { ageOn } from './engine/dates';
+import { QTY_SCALE } from './engine/types';
+import { unitMismatches } from './ui/units';
 
 const withMember = (): AppState => ({ ...emptyState(), members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: 0 , from: 'manual' as const }]}] });
 const parse = (csv: string) => { const p = previewTable(csv); return parseTablePreview(p, p.mapping, 'f.csv'); };
@@ -58,6 +60,84 @@ describe('importing', () => {
     const movesOf = (s: AppState) => computeFamily(s, '2026-11-22', FY_2026_27).moves.map((m) => [m.kind, m.qty, m.approx]);
     expect(movesOf(a)).toEqual(movesOf(b));
     expect(movesOf(a)[0]).toEqual(['harvest_gain', expect.any(Number), true]);
+  });
+
+  describe('holdings files are kept per import, so order and removal never trim shares still held', () => {
+    const U = QTY_SCALE;
+    // Synthetic shares X, Y and Z, bought at ₹1,000 and listed at ₹2,000 a share.
+    const file = (date: string, rows: Array<[string, number]>) => ({
+      format: 'Zerodha holdings', txns: [], skipped: 0, warnings: [],
+      prices: rows.map(([isin, u]) => ({ isin, name: isin, price: 2000_00, priceDate: date, qty: u * U, cost: u * 1000_00, ltQty: u * U })),
+    });
+    const tb = (rows: Array<[string, number]>) => ({
+      format: 'Trade history · tb.xlsx', skipped: 0, warnings: [], prices: [],
+      txns: rows.map(([isin, u]) => ({ isin, name: isin, date: '2024-01-10', side: 'buy' as const, qty: u * U, amount: u * 1000_00 })),
+    });
+    const held = (s: AppState) => {
+      const out: Record<string, number> = {};
+      for (const [k, lots] of computeFamily(s, '2026-11-23', FY_2026_27).ledger.lots) {
+        const q = lots.reduce((a, l) => a + l.qty, 0) / U;
+        if (q) out[k.replace(/^a\|/, '')] = q;
+      }
+      return out;
+    };
+    const Z = 'Zerodha';
+    const start = () => applyImport(withMember(), 'a', 'tb.xlsx', tb([['INEX', 10], ['INEY', 10]]), { account: Z });
+    const nov = file('2026-11-20', [['INEX', 10], ['INEY', 10]]);
+    const mar = file('2026-03-31', [['INEX', 10], ['INEZ', 5]]);
+
+    it('a November file then a March file gives the same as March then November: the newest file decides', () => {
+      const novMar = applyImport(applyImport(start(), 'a', 'nov.xlsx', nov, { account: Z }), 'a', 'mar.xlsx', mar, { account: Z });
+      const marNov = applyImport(applyImport(start(), 'a', 'mar.xlsx', mar, { account: Z }), 'a', 'nov.xlsx', nov, { account: Z });
+      expect(held(novMar)).toEqual({ 'INEX|Zerodha': 10, 'INEY|Zerodha': 10 });
+      expect(held(marNov)).toEqual(held(novMar));
+    });
+
+    it('two accounts for one member each keep their own shares', () => {
+      let s = start();
+      s = applyImport(s, 'a', 'tb2.xlsx', tb([['INEX', 10]]), { account: 'Zerodha 2' });
+      s = applyImport(s, 'a', 'h1.xlsx', file('2026-11-20', [['INEX', 10], ['INEY', 10]]), { account: Z });
+      s = applyImport(s, 'a', 'h2.xlsx', file('2026-11-20', [['INEX', 10]]), { account: 'Zerodha 2' });
+      expect(held(s)).toEqual({ 'INEX|Zerodha': 10, 'INEY|Zerodha': 10, 'INEX|Zerodha 2': 10 });
+    });
+
+    it('removing the newest file falls back to the previous file, intact', () => {
+      const withMar = applyImport(start(), 'a', 'mar.xlsx', mar, { account: Z });
+      const both = applyImport(withMar, 'a', 'nov.xlsx', nov, { account: Z });
+      const novId = both.imports.at(-1)!.id;
+      const back = removeImport(both, novId);
+      // March lists X and Z: Y (not listed) left the account, Z is filled in from the file.
+      expect(held(back)).toEqual({ 'INEX|Zerodha': 10, 'INEZ|Zerodha': 5 });
+      expect(held(back)).toEqual(held(withMar));
+    });
+
+    it('unit checks read only the positions that count, per account', () => {
+      const mismatchesOf = (s: AppState) => {
+        const fam = computeFamily(s, '2026-11-23', FY_2026_27);
+        const holdings = fam.members[0]!.holdings.map((h) => ({
+          isin: h.isin, qty: h.qty, ltQty: h.lots.filter((l) => l.term === 'lt').reduce((a, l) => a + l.qty, 0), lots: h.lots,
+        }));
+        return unitMismatches('a', holdings, s.txns, fam.positions.filter((p) => p.memberId === 'a'));
+      };
+      // The March file's Z is not held (November decides): no "statement 5, history 0" line.
+      const novMar = applyImport(applyImport(start(), 'a', 'nov.xlsx', nov, { account: Z }), 'a', 'mar.xlsx', mar, { account: Z });
+      expect(mismatchesOf(novMar)).toEqual([]);
+      // Two accounts with 10 each: each file matches its own account, not the member's 20.
+      let s = start();
+      s = applyImport(s, 'a', 'tb2.xlsx', tb([['INEX', 10]]), { account: 'Zerodha 2' });
+      s = applyImport(s, 'a', 'h1.xlsx', file('2026-11-20', [['INEX', 10], ['INEY', 10]]), { account: Z });
+      s = applyImport(s, 'a', 'h2.xlsx', file('2026-11-20', [['INEX', 10]]), { account: 'Zerodha 2' });
+      expect(mismatchesOf(s)).toEqual([]);
+    });
+
+    it('a same-day download again replaces the earlier one: nothing is counted twice', () => {
+      const first = applyImport(start(), 'a', 'nov.xlsx', nov, { account: Z });
+      const again = applyImport(first, 'a', 'nov (1).xlsx', file('2026-11-20', [['INEX', 10], ['INEY', 6]]), { account: ' zerodha ' });
+      expect(again.positions).toHaveLength(2);
+      expect(held(again)).toEqual({ 'INEX|Zerodha': 10, 'INEY|Zerodha': 6 });
+      // The identical file again adds nothing.
+      expect(importAddedNothing(first, applyImport(first, 'a', 'nov (2).xlsx', nov, { account: Z }))).toBe(true);
+    });
   });
 
   it('a combined CAS keeps its demat rows as a snapshot, so broker shares are not counted twice', () => {
@@ -171,6 +251,43 @@ describe('migrating saved families', () => {
       .toEqual({ 'FY 2026-27|harvest_gain|m1|INE1|': true, 'FY 2026-27|wait|m1|INE2|': true });
   });
 
+  it('normalizeState keeps termAnswers and defaults to none', () => {
+    expect(normalizeState(oldState({}))!.termAnswers).toEqual([]);
+    const termAnswers = [{ memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', term: 'st' as const }];
+    expect(normalizeState(oldState({}, { termAnswers }))!.termAnswers).toEqual(termAnswers);
+    // Answers with no account, no valid term or buy date, or no sale date are dropped.
+    const bad = [
+      { memberId: 'm1', isin: 'INE1', sellDate: '2026-04-10', term: 'st' },
+      { memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', term: 'short' },
+      { memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', buyDate: 'soon' },
+      { memberId: 'm1', account: 'Zerodha', isin: 'INE1', term: 'lt' },
+    ];
+    const dated = { memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', buyDate: '2025-01-02' };
+    expect(normalizeState(oldState({}, { termAnswers: [...bad, ...termAnswers, dated] }))!.termAnswers).toEqual([...termAnswers, dated]);
+    // A backup with term answers that are not a list of objects is refused.
+    const backup = (termAnswers: unknown) => JSON.stringify({ version: 1, members: [{ id: 'm1', name: 'A', relation: 'self', age: 40, regime: 'new' }], termAnswers });
+    expect(parseBackup(backup(termAnswers))!.termAnswers).toEqual(termAnswers);
+    expect(parseBackup(backup('st'))).toBeNull();
+  });
+
+  it('normalizeState never throws on term answers that are not a list of objects (an account copy is not checked like a backup)', () => {
+    const ok = { memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', term: 'lt' as const };
+    expect(normalizeState(oldState({}, { termAnswers: [null, ok, 'st', 3] }))!.termAnswers).toEqual([ok]);
+    expect(normalizeState(oldState({}, { termAnswers: {} }))!.termAnswers).toEqual([]);
+    expect(normalizeState(oldState({}, { termAnswers: 'st' }))!.termAnswers).toEqual([]);
+    expect(normalizeState(oldState({}, { termAnswers: null }))!.termAnswers).toEqual([]);
+  });
+
+  it('setTermAnswer keeps one answer per sale, matching the account whatever its spaces and case; no term or date clears it', () => {
+    const a = { memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', term: 'st' as const };
+    const other = { ...a, isin: 'INE2', term: 'lt' as const };
+    const s1 = setTermAnswer({ ...withMember(), termAnswers: [other] }, a);
+    expect(s1.termAnswers).toEqual([other, a]);
+    const dated = { memberId: 'm1', account: ' zerodha ', isin: 'INE1', sellDate: '2026-04-10', buyDate: '2025-01-02' };
+    expect(setTermAnswer(s1, dated).termAnswers).toEqual([other, dated]);
+    expect(setTermAnswer(s1, { memberId: 'm1', account: 'ZERODHA', isin: 'INE1', sellDate: '2026-04-10' }).termAnswers).toEqual([other]);
+  });
+
   it('migrates saved security kinds to tax types', () => {
     const s = normalizeState(oldState({}, { securities: [
       { isin: 'INE1', name: 'S', kind: 'equity' }, { isin: 'INF1', name: 'F', kind: 'equity_mf' }, { isin: 'INF2', name: 'D', kind: 'other' },
@@ -192,6 +309,66 @@ describe('migrating saved families', () => {
     const fam = computeFamily(normalizeState(saved)!, '2026-11-15', FY_2026_27);
     const got = fam.members.map((v) => [v.member.id, v.year.tax, v.year.room.free, v.year.bonus.free, v.plan.tax]);
     expect(got).toEqual([['a', 0, 15_000_00, 0, 0], ['m', 0, 1_05_000_00, 0, 0], ['r', 2_579_00, 1_25_000_00, 0, 2_579_00], ['s', 0, 1_25_000_00, 0, 0], ['k', 0, 1_25_000_00, 4_00_000_00, 0]]);
+  });
+
+  it('holdings saved before files were dated never trim', () => {
+    // Saved before canTrim / asOf: a Zerodha holdings file lists only Y, the history also holds X.
+    const saved = oldState({}, {
+      members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new' }],
+      securities: [{ isin: 'INE000000001', name: 'X', kind: 'equity' }, { isin: 'INE000000002', name: 'Y', kind: 'equity' }],
+      txns: [{ id: 't1', memberId: 'a', isin: 'INE000000001', date: '2025-01-10', side: 'buy', qty: 10 * QTY_SCALE, amount: rs(10_000), source: 'Trade history · tb.xlsx', account: 'Zerodha', importId: 'i1' }],
+      positions: [{ memberId: 'a', isin: 'INE000000002', qty: 5 * QTY_SCALE, ltQty: 5 * QTY_SCALE, cost: rs(5_000), account: 'Zerodha', source: 'Zerodha holdings', importId: 'i2' }],
+    });
+    const fam = computeFamily(normalizeState(saved)!, '2026-11-22', FY_2026_27);
+    expect(fam.members[0]!.holdings.find((h) => h.isin === 'INE000000001')!.qty).toBe(10 * QTY_SCALE);
+  });
+
+  it('a family saved with guessed fund lots from a holdings file keeps its units, never more than the file', () => {
+    // Today's shape: positions without canTrim / asOf, and the guessed lots the import saved for them.
+    const F = 'INF000000001', G = 'INF000000002';
+    const lot = (isin: string, units: number, costRs: number) => ({
+      id: `a|${isin}|opening|i2`, memberId: 'a', isin, date: '2025-10-01', side: 'buy', qty: units * QTY_SCALE, amount: rs(costRs),
+      source: 'Opening balance (estimated date)', importId: 'i2', account: 'Zerodha', estimated: true,
+    });
+    const position = (isin: string, units: number, costRs: number) => ({ memberId: 'a', isin, qty: units * QTY_SCALE, cost: rs(costRs), account: 'Zerodha', source: 'Zerodha holdings', importId: 'i2' });
+    const saved = oldState({}, {
+      members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new' }],
+      securities: [{ isin: F, name: 'F', kind: 'equity_mf' }, { isin: G, name: 'G', kind: 'equity_mf' }],
+      // F: the tradebook, imported after the holdings file, explains 40 of the file's 100 units.
+      txns: [lot(F, 100, 5_000), lot(G, 50, 2_500),
+        { id: 't1', memberId: 'a', isin: F, date: '2026-06-01', side: 'buy', qty: 40 * QTY_SCALE, amount: rs(2_400), source: 'Trade history · tb.xlsx', account: 'Zerodha', importId: 'i3' }],
+      positions: [position(F, 100, 5_000), position(G, 50, 2_500)],
+    });
+    const fam = computeFamily(normalizeState(saved)!, '2026-11-22', FY_2026_27);
+    const held = (isin: string) => fam.members[0]!.holdings.find((h) => h.isin === isin)?.qty;
+    expect(held(F)).toBe(100 * QTY_SCALE); // was 140 before: the saved lot and the tradebook stacked
+    expect(held(G)).toBe(50 * QTY_SCALE);
+  });
+
+  it('a family saved with two holdings imports keeps a fund only the older one lists', () => {
+    // Today's shape, no canTrim / asOf: import i1 listed funds F and G (G saved a guessed lot), import i2 lists only F.
+    const F = 'INF000000001', G = 'INF000000002';
+    const position = (isin: string, units: number, costRs: number, importId: string) => ({ memberId: 'a', isin, qty: units * QTY_SCALE, cost: rs(costRs), account: 'Zerodha', source: 'Zerodha holdings', importId });
+    const saved = oldState({}, {
+      members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new' }],
+      securities: [{ isin: F, name: 'F', kind: 'equity_mf' }, { isin: G, name: 'G', kind: 'equity_mf' }],
+      txns: [{ id: `a|${G}|opening|i1`, memberId: 'a', isin: G, date: '2025-10-01', side: 'buy', qty: 50 * QTY_SCALE, amount: rs(2_500), source: 'Opening balance (estimated date)', importId: 'i1', account: 'Zerodha', estimated: true }],
+      positions: [position(G, 50, 2_500, 'i1'), position(F, 100, 5_000, 'i2')],
+    });
+    const fam = computeFamily(normalizeState(saved)!, '2026-11-22', FY_2026_27);
+    const held = (isin: string) => fam.members[0]!.holdings.find((h) => h.isin === isin)?.qty;
+    expect(held(G)).toBe(50 * QTY_SCALE);
+    expect(held(F)).toBe(100 * QTY_SCALE);
+  });
+
+  it('applyImport no longer saves a guessed lot for a Zerodha holdings file; other formats still do', () => {
+    const fund = { isin: 'INF000000001', name: 'F', price: 50_00, priceDate: '2026-11-20', qty: 100_0000, cost: 5_000_00 };
+    const zerodha = { format: 'Zerodha holdings', txns: [], warnings: [], skipped: 0, prices: [fund] };
+    const s = applyImport(withMember(), 'a', 'h.xlsx', zerodha, { account: 'Zerodha', openingDate: '2025-10-01' });
+    expect(s.txns).toEqual([]);
+    expect(s.positions).toHaveLength(1);
+    const other = applyImport(withMember(), 'a', 'h.csv', { ...zerodha, format: 'Holdings · h.csv' }, { account: 'Groww', openingDate: '2025-10-01' });
+    expect(other.txns.map((t) => t.id)).toEqual([expect.stringMatching(/^a\|INF000000001\|opening\|/)]);
   });
 
   it('works out age on a date from date of birth, else the stored age', () => {
@@ -236,5 +413,32 @@ describe('review: restoring a backup', () => {
     expect(s.imports).toEqual([]);
     expect(hasRealData(s)).toBe(false);
   });
+
+  it('applyImport marks holdings positions canTrim only when dated, complete and ISIN-matched', () => {
+    const file = (priceDate: string | undefined, skipped = 0, isin = 'INE000000001') => ({
+      format: 'Zerodha holdings', txns: [], warnings: [], skipped,
+      prices: [{ isin, name: 'EXAMPLE', price: 120_00, priceDate, qty: 5_0000, ltQty: 5_0000, cost: 500_00 }],
+    });
+    const trim = (f: ReturnType<typeof file>) => applyImport(withMember(), 'a', 'h.xlsx', f, { account: 'Zerodha' }).positions.map((p) => [p.asOf, p.canTrim]);
+    expect(trim(file('2026-11-22'))).toEqual([['2026-11-22', true]]);
+    expect(trim(file(undefined))).toEqual([[undefined, false]]);
+    expect(trim(file('2026-11-22', 1))).toEqual([['2026-11-22', false]]);
+    expect(trim(file('2026-11-22', 0, 'SYM:EXAMPLE'))).toEqual([['2026-11-22', false]]);
+  });
 });
 
+
+describe('an import that adds nothing', () => {
+  it('is spotted for the same tradebook or the same holdings file again, not for new data', () => {
+    const opts = { account: 'Zerodha' };
+    const run = (s: AppState, csv: string) => { const n = applyImport(s, 'a', 'f.csv', parse(csv), opts); return [n, importAddedNothing(s, n)] as const; };
+    const [s1, first] = run(withMember(), tradebook);
+    expect(first).toBe(false);
+    const [s2, again] = run(s1, tradebook);
+    expect(again).toBe(true);
+    const more = tradebook + '\nINFY,INE009A01021,2024-04-01,EQ,buy,5,1600';
+    expect(run(s2, more)[1]).toBe(false);
+    const [h1] = run(s2, holdings);
+    expect(run(h1, holdings)[1]).toBe(true);
+  });
+});

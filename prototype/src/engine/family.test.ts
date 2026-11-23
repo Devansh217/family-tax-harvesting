@@ -196,6 +196,70 @@ describe('family totals and simulator', () => {
   });
 });
 
+describe('previews of sales from guessed-date lots', () => {
+  // A holdings file alone: 10 shares, none long-term, ₹10,000 at the broker's average; the price is ₹2,000 a share.
+  // The fill-in lot is guessed (`estimated`), so a sale's term is unknown. Income ₹20 L (new regime, no rebate, no
+  // surcharge). As long-term the ₹10,000 gain sits inside the ₹1,25,000 exemption: no tax. As short-term (what the
+  // file says): 20% × ₹10,000 = ₹2,000, plus 4% cess = ₹2,080. The preview shows the higher, ₹2,080; room still
+  // counts it long-term, ₹10,000 used.
+  const held = {
+    members: [person('a', 'self')],
+    securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(2000) }],
+    txns: [],
+    positions: [{ memberId: 'a', isin: 'X', account: 'Zerodha', qty: q(10), ltQty: 0, cost: rs(10_000), asOf: '2026-11-20', source: 'Zerodha holdings', importId: 'h', canTrim: true }],
+  };
+  const DAY = '2026-11-23';
+
+  it('Simulate shows the higher of the long-term and short-term tax, and room used as long-term', () => {
+    const fam = computeFamily(held, DAY, R);
+    const r = simulateSale(fam, 'a', 'X', q(10), DAY, R);
+    expect(r.gain).toBe(rs(10_000));
+    expect(r.extraTax).toBe(rs(2_080));
+    expect(r.roomUsed).toBe(rs(10_000));
+    expect(r.unknownTermGain).toBe(rs(10_000));
+  });
+
+  it('a planned sale shows the same higher tax and uses the same room', () => {
+    const fam = computeFamily({ ...held, plannedSales: [{ id: 'p', memberId: 'a', isin: 'X', qty: q(10) }] }, DAY, R);
+    expect(fam.members[0]!.planned).toMatchObject({ gain: rs(10_000), tax: rs(2_080), roomUsed: rs(10_000) });
+    expect(fam.members[0]!.plan.room.free).toBe(rs(1_15_000));
+  });
+
+  it('a mixed preview is also tried with the gain short-term and the loss long-term', () => {
+    // ₹1,25,000 long-term already booked (125 shares of X bought at ₹1,000 in 2023, sold at ₹2,000). Simulate sells 20
+    // of Y at ₹1,000 from two guessed lots: 10 at no cost (₹10,000 gain) and 10 at ₹20,000 (₹10,000 loss).
+    // As given (gain long, loss short), all long or all short: net long-term stays ₹1,25,000, inside the exemption, ₹0.
+    // Gain short and loss long: the loss only offsets long-term (₹1,15,000, exempt), the ₹10,000 short-term gain is
+    // taxed at 20% = ₹2,000, plus 4% cess = ₹2,080.
+    const fam = computeFamily({
+      members: [person('a', 'self')],
+      securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(2000) }, { isin: 'Y', name: 'Y', taxType: 'equity' as const, listed: true, price: rs(1000) }],
+      txns: [
+        buy('a', 'X', '2023-01-01', 125, 1000),
+        { id: 'sx', memberId: 'a', isin: 'X', date: '2026-06-01', side: 'sell' as const, qty: q(125), amount: rs(2_50_000), source: 'test' },
+        { ...buy('a', 'Y', '2026-01-01', 10, 0), estimated: true },
+        { ...buy('a', 'Y', '2026-02-01', 10, 2000), estimated: true },
+      ],
+    }, DAY, R);
+    expect(fam.members[0]!.year.ltGains).toBe(rs(1_25_000));
+    const r = simulateSale(fam, 'a', 'Y', q(20), DAY, R);
+    expect(r.gain).toBe(0);
+    expect(r.extraTax).toBe(rs(2_080));
+  });
+
+  it('a booked sale from a guessed lot keeps the long-term rule', () => {
+    const fam = computeFamily({
+      ...held, positions: [],
+      txns: [
+        { id: 'g', memberId: 'a', isin: 'X', date: '2026-06-01', side: 'buy' as const, qty: q(10), amount: rs(10_000), source: 'test', estimated: true },
+        { id: 's', memberId: 'a', isin: 'X', date: '2026-11-01', side: 'sell' as const, qty: q(10), amount: rs(20_000), source: 'test' },
+      ],
+    }, DAY, R);
+    expect(fam.members[0]!.year.tax).toBe(0);
+    expect(fam.members[0]!.year.exemptionUsed).toBe(rs(10_000));
+  });
+});
+
 describe('funds to check', () => {
   it('a fund whose tax type is unknown gets no moves until it is set', () => {
     const st = (taxType: 'check' | 'equity') => ({

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { computeFamily } from '../engine/family';
 import { FY_2026_27 } from '../engine/rules';
 import type { Member, Security, Txn } from '../engine/types';
-import { datePickerBounds, dateVerb, importHref, importMemberOf, planGaps } from './plan';
+import type { Move } from '../engine/family';
+import { cushionNudge, datePickerBounds, dateVerb, importHref, importMemberOf, planGaps } from './plan';
 
 describe('date picker (m2, m4)', () => {
   it('max is the last safe day, or the end of the tax year when the holiday list is not out; min is today', () => {
@@ -36,12 +37,70 @@ describe('what the plan is missing', () => {
     // Rekha's holdings file was read before it kept cost: importing it again fills the dates.
     expect(gaps.find((g) => g.memberId === 'r')).toMatchObject({ key: 'shares_no_dates' });
     expect(gaps.find((g) => g.memberId === 'r')!.text).toMatch(/holdings file again/);
+    // That gap already asks for the file again, so the undated-file gap isn't added too.
+    expect(gaps.filter((g) => g.memberId === 'r').map((g) => g.key)).toEqual(['shares_no_dates']);
   });
 
   it('counts fund units the holdings file shows but the history does not explain', () => {
     // Devansh holds 3,000 units of Fund A per the holdings file; the history explains 1,000 (all guessed here).
     const gaps = planGaps(fam, [{ memberId: 'd', isin: 'INF1', qty: 3000 * 10_000, source: 'Zerodha holdings' }]);
     expect(gaps.find((g) => g.key === 'funds_no_dates')!.text).toMatch(/₹3,01,000 in mutual funds/);
+  });
+
+  it('planGaps asks to re-import holdings when positions have no asOf', () => {
+    const undated = { memberId: 'd', isin: 'INF1', qty: 1000 * 10_000, source: 'Zerodha holdings', account: 'Zerodha' };
+    const gap = planGaps(fam, [undated]).find((g) => g.key === 'holdings_no_date');
+    expect(gap).toMatchObject({ memberId: 'd', href: '#import-d', action: 'Import', text: "Import Devansh's holdings file again so sold or moved shares drop out." });
+    // A dated file for the same account decides instead, so the old undated rows don't matter.
+    const dated = { ...undated, asOf: '2026-11-01', account: ' zerodha ' };
+    expect(planGaps(fam, [undated, dated]).find((g) => g.key === 'holdings_no_date')).toBeUndefined();
+    // Other statements never trim, so their missing date asks for nothing.
+    expect(planGaps(fam, [{ ...undated, source: 'Demat CAS (NSDL / CDSL)' }]).find((g) => g.key === 'holdings_no_date')).toBeUndefined();
+  });
+
+  it('planGaps adds the buyback gap when an account has trimmed units and no current-year Tax P&L', () => {
+    // Rekha bought 10 of a share in 2025; her Zerodha holdings file of 1 Nov 2026 doesn't list it, so it is trimmed.
+    const positions = [{ memberId: 'r', isin: 'INF1', qty: 10 * 10_000, source: 'Zerodha holdings', account: 'Zerodha', asOf: '2026-11-01', importId: 'h1', canTrim: true }];
+    const buy: Txn = { id: 'rb', memberId: 'r', isin: 'INE1', date: '2025-01-10', side: 'buy', qty: 10 * 10_000, amount: 1_000_00, source: 'Trade history (Zerodha)', account: 'Zerodha' };
+    const trimmed = computeFamily({ members: [m('r')], securities: secs, txns: [buy], positions }, '2026-11-22', FY_2026_27);
+    expect(trimmed.holdingsNotes.trimmed).toMatchObject([{ memberId: 'r', isins: ['INE1'] }]);
+    const gap = planGaps(trimmed, positions).find((g) => g.key === 'buyback_pnl');
+    expect(gap).toMatchObject({ memberId: 'r', href: '#import-r', action: 'Import' });
+    expect(gap!.text).toBe("Rekha: if any shares left Zerodha in a buyback this year, that gain counts. Import Zerodha's tax P&L.");
+    // A Tax P&L for this year in that account closes the gap; one for last year doesn't.
+    const pnl = (from: string, to: string) => [{ memberId: 'r', account: 'Zerodha', summary: { broker: 'Zerodha', from, to } }];
+    expect(planGaps(trimmed, positions, pnl('2026-04-01', '2026-10-31')).find((g) => g.key === 'buyback_pnl')).toBeUndefined();
+    expect(planGaps(trimmed, positions, pnl('2025-04-01', '2026-03-31')).find((g) => g.key === 'buyback_pnl')).toBeDefined();
+  });
+
+  it('a Tax P&L for this year read before buybacks counted asks to be imported again, and closes no buyback gap', () => {
+    const positions = [{ memberId: 'r', isin: 'INF1', qty: 10 * 10_000, source: 'Zerodha holdings', account: 'Zerodha', asOf: '2026-11-01', importId: 'h1', canTrim: true }];
+    const buy: Txn = { id: 'rb', memberId: 'r', isin: 'INE1', date: '2025-01-10', side: 'buy', qty: 10 * 10_000, amount: 1_000_00, source: 'Trade history (Zerodha)', account: 'Zerodha' };
+    const trimmed = computeFamily({ members: [m('r')], securities: secs, txns: [buy], positions }, '2026-11-22', FY_2026_27);
+    const summaries = [{ importId: 'p1', memberId: 'r', account: 'Zerodha', summary: { broker: 'Zerodha', from: '2026-04-01', to: '2026-10-31' } }];
+    // The warning the parser gave before buybacks from 1 Apr 2026 counted as capital gains.
+    const old = [{ id: 'p1', memberId: 'r', format: 'Zerodha Tax P&L · 2026-04-01 to 2026-10-31', warnings: ['1 buyback exits were left out: since Oct 2024 buyback money is taxed as dividend income, not capital gains.'] }];
+    const gaps = planGaps(trimmed, positions, summaries, old).filter((g) => g.memberId === 'r');
+    expect(gaps.find((g) => g.key === 'pnl_again')).toMatchObject({
+      href: '#import-r', action: 'Import',
+      text: "Rekha: import Zerodha's tax P&L for FY 2026-27 again. It was read before buybacks from 1 Apr 2026 counted as capital gains.",
+    });
+    // The buyback gap isn't repeated for that account: importing the P&L again closes both.
+    expect(gaps.find((g) => g.key === 'buyback_pnl')).toBeUndefined();
+    // Imported again: a newer P&L for that account and period, with no old warning, closes the ask (the old one stays
+    // stored but counts for nothing), and the buyback gap stays closed by the new one.
+    const again = [...summaries, { importId: 'p2', memberId: 'r', account: 'Zerodha', summary: { broker: 'Zerodha', from: '2026-04-01', to: '2026-11-20' } }];
+    const both = [...old, { id: 'p2', memberId: 'r', format: 'Zerodha Tax P&L · 2026-04-01 to 2026-11-20', warnings: [] }];
+    const after = planGaps(trimmed, positions, again, both).filter((g) => g.memberId === 'r').map((g) => g.key);
+    expect(after).not.toContain('pnl_again');
+    expect(after).not.toContain('buyback_pnl');
+    // A newer P&L for another account doesn't hide the old one.
+    const other = [...summaries, { importId: 'p3', memberId: 'r', account: 'Zerodha 2', summary: { broker: 'Zerodha', from: '2026-04-01', to: '2026-11-20' } }];
+    const otherImports = [...old, { id: 'p3', memberId: 'r', format: 'Zerodha Tax P&L · 2026-04-01 to 2026-11-20', warnings: [] }];
+    expect(planGaps(trimmed, positions, other, otherImports).find((g) => g.key === 'pnl_again')).toBeDefined();
+    // A P&L for last year with the old warning asks nothing: buybacks then were dividends.
+    const lastYear = [{ ...summaries[0]!, summary: { broker: 'Zerodha', from: '2025-04-01', to: '2026-03-31' } }];
+    expect(planGaps(trimmed, positions, lastYear, old).find((g) => g.key === 'pnl_again')).toBeUndefined();
   });
 
   it('says when a member has nothing imported yet', () => {
@@ -60,5 +119,30 @@ describe('import links for one member', () => {
   it('gap links go to the member they are about', () => {
     const empty = computeFamily({ members: [{ id: 'd', name: 'D', relation: 'self', age: 40, regime: 'new' }], securities: [], txns: [] }, '2026-11-22', FY_2026_27);
     expect(planGaps(empty, [])[0]!.href).toBe('#import-d');
+  });
+});
+
+describe('nudge to recover the cushion', () => {
+  const member: Member = { id: 'd', name: 'Devansh', relation: 'self', age: 40, regime: 'new', income: [] };
+  const sec: Security = { isin: 'INE1', name: 'Share', taxType: 'equity', listed: true, price: 100_00 };
+  const tb = (date: string, account: string): Txn => ({ id: `${date}${account}`, memberId: 'd', isin: 'INE1', date, side: 'buy', qty: 10 * 10_000, amount: 500_00, source: 'Trade history · Zerodha', account });
+  const fam = computeFamily({ members: [member], securities: [sec], txns: [tb('2025-03-10', 'Zerodha'), tb('2024-05-02', 'Zerodha'), tb('2020-01-01', 'Angel One')] }, '2026-11-22', FY_2026_27);
+  const move = (gain: number, over: Partial<Move> = {}) => ({ kind: 'harvest_gain', id: 'x', memberId: 'd', isin: 'INE1', name: 'Share', account: 'Zerodha', gain: gain * 100, approx: true, ...over }) as unknown as Move;
+
+  it('an approx move names the tax year before the oldest tradebook and the room left spare', () => {
+    expect(cushionNudge(move(56_400), fam)).toEqual({ fy: 'FY 2023-24', rupees: 5_600_00 });
+    // An account label differing in case or spaces is the same account; a January date is in the year before it starts.
+    expect(cushionNudge(move(56_400, { account: ' zerodha ' }), fam)!.fy).toBe('FY 2023-24');
+    expect(cushionNudge(move(56_400, { account: 'Angel One' }), fam)!.fy).toBe('FY 2018-19');
+  });
+  it('has no year when the account has no tradebook', () => {
+    expect(cushionNudge(move(56_400, { account: 'Groww' }), fam)).toEqual({ fy: null, rupees: 5_600_00 });
+  });
+  it('exact moves and small amounts give nothing', () => {
+    expect(cushionNudge(move(56_400, { approx: false }), fam)).toBeNull();
+    expect(cushionNudge(move(8_000), fam)).toBeNull();
+    // 9,400 x 10% = 940 rounds to 900: under the 1,000 threshold. 9,600 rounds to 1,000: shown.
+    expect(cushionNudge(move(9_400 * 1), fam)).toBeNull();
+    expect(cushionNudge(move(9_600 * 1), fam)).not.toBeNull();
   });
 });

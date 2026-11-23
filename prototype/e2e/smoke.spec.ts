@@ -168,6 +168,69 @@ for (const size of SIZES) {
         await expect(page.getByRole('link', { name: /Priya/ }).first()).toBeVisible();
       });
 
+      test('member page: one quiet note, and an unknown-term sale answered short-term', async ({ page }) => {
+        // A synthetic family (e2e/fixtures): a ₹10,000 gain from a lot with a guessed date, sold this year, and Test
+        // Share B sold three times this year (and once last year) with no purchase history.
+        await open(page, 'family');
+        await page.locator('input[type="file"]').setInputFiles(new URL('./fixtures/unknown-term-family.json', import.meta.url).pathname);
+        await expect(page.getByText('Backup restored')).toBeVisible();
+        await open(page, 'member-p');
+        await expect(h1(page, 'Priya')).toBeVisible();
+        // One calm note, not a red list: this year's gaps grouped per share, older ones behind a closed toggle.
+        const note = page.getByRole('note', { name: 'About the imported files' });
+        await expect(note).toHaveCount(1);
+        await expect(page.locator('.banner.warn')).toHaveCount(0);
+        await expect(note.getByText('Test Share B: sold 12 more units than the history shows (Jul–Aug 2026).', { exact: false })).toBeVisible();
+        await expect(note.locator('li', { hasText: 'Test Share B: sold' })).toHaveCount(1);
+        await expect(note.locator('details')).not.toHaveAttribute('open', '');
+        await expect(note.getByText('Older history gaps (no effect on this year\'s tax)')).toBeVisible();
+        // The guessed-date gain counts long-term, so it uses room.
+        await expect(page.getByText('Free ₹1,15,000', { exact: true })).toBeVisible();
+        await expect(page.getByText(/Test Share A, sold 10 Jun 2026: buy date unknown, so we assumed long-term/)).toBeVisible();
+        await page.getByRole('button', { name: 'Short-term', exact: true }).click();
+        await expect(page.getByText('Only choose this if your contract note or broker P&L shows the shares were held under a year. If it\'s wrong, a move can create tax.')).toBeVisible();
+        // Nothing changes until confirmed.
+        await expect(page.getByText('Free ₹1,15,000', { exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Yes, short-term' }).click();
+        await expect(page.getByText('Free ₹1,25,000', { exact: true })).toBeVisible();
+        await expect(page.getByText(/Test Share A, sold 10 Jun 2026: Term set by you/)).toBeVisible();
+        await expectNoSideScroll(page);
+        // Change brings the question back and the room with it.
+        await page.getByRole('button', { name: 'Change', exact: true }).click();
+        await expect(page.getByText('Free ₹1,15,000', { exact: true })).toBeVisible();
+        // A buy date under a year before the sale makes it short-term: it asks first, like the Short-term button.
+        await page.getByRole('button', { name: 'Add buy date' }).click();
+        await page.getByLabel(/Buy date of Test Share A sold 10 Jun 2026/).fill('2026-01-10');
+        await page.getByRole('button', { name: 'Save', exact: true }).click();
+        await expect(page.getByText('Only choose this if your contract note or broker P&L shows the shares were held under a year. If it\'s wrong, a move can create tax.')).toBeVisible();
+        await expect(page.getByText('Free ₹1,15,000', { exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Yes, short-term' }).click();
+        await expect(page.getByText('Free ₹1,25,000', { exact: true })).toBeVisible();
+        await expect(page.getByText(/Test Share A, sold 10 Jun 2026: Buy date entered by you/)).toBeVisible();
+      });
+
+      test('importing the same tradebook twice says nothing is new the second time', async ({ page }) => {
+        await open(page, 'home');
+        await page.getByRole('button', { name: 'Start my own family' }).click();
+        await expect(page).toHaveURL(/#family$/);
+        await page.evaluate(() => { location.hash = 'import'; });
+        await expect(h1(page, 'Import statements')).toBeVisible();
+        const csv = 'symbol,isin,trade_date,segment,trade_type,quantity,price\nINFY,INE009A01021,2024-03-12,EQ,buy,10,1500\n';
+        const files = page.locator('input[type="file"]');
+        const addFile = async (name: string) => {
+          await files.setInputFiles({ name, mimeType: 'text/csv', buffer: Buffer.from(csv) });
+          const card = page.getByRole('article', { name });
+          await card.getByRole('button', { name: /^Add to / }).click();
+          return card;
+        };
+        const first = await addFile('tradebook-a.csv');
+        await expect(first.getByText('Added', { exact: true })).toBeVisible();
+        await expect(page.getByText('Nothing new: these trades are already in')).toHaveCount(0);
+        await addFile('tradebook-b.csv');
+        await expect(page.getByText('Nothing new: these trades are already in')).toHaveCount(1);
+        await expectNoSideScroll(page);
+      });
+
       test('download a backup on Family', async ({ page }) => {
         await open(page, 'family');
         const [download] = await Promise.all([

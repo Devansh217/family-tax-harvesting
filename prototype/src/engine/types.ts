@@ -117,6 +117,16 @@ export interface Txn {
   estimated?: boolean;
   /** Long-term for sure, but the date is before the history and the cost is the broker's average (openingLots.ts). */
   approx?: boolean;
+  /**
+   * On a sell: the units left the account (a transfer, gift or buyback the history doesn't show), found by comparing
+   * the newest holdings file with the history (openingLots.ts). Not a sale: no gain, no warning, never intraday.
+   */
+  left?: true;
+  /**
+   * A buyback exit from a broker Tax P&L (both legs). A tender never shows in a tradebook, so its sale is kept in an
+   * account with tradebooks, where other Tax P&L exits are dropped (openingLots.ts).
+   */
+  buyback?: true;
 }
 
 export interface Lot {
@@ -146,13 +156,28 @@ export interface Realised {
   gain: Paise;
   term: Term;
   taxType: TaxType;
+  /**
+   * Sold from a guessed lot (`estimated`), so the buy date is unknown and the term was set the safe way for room: a
+   * gain long-term, a loss short-term; ELSS always long-term; non-equity keeps its own type. A `TermAnswer` clears it.
+   */
+  termUnknown?: true;
 }
+
+/**
+ * The family's answer for one sale whose buy date is unknown, keyed by member, account, ISIN and sale date: the term
+ * itself, or the buy date the term is worked out from. It only sets that past sale's term; a covering broker Tax P&L
+ * still wins.
+ */
+export interface TermAnswer { memberId: string; account: string; isin: string; sellDate: ISODate; term?: Term; buyDate?: ISODate }
 
 export interface LedgerWarning {
   memberId: string;
   isin: string;
   date: ISODate;
   message: string;
+  /** The account the sale was in, and the units sold beyond what the history holds there. */
+  account?: string;
+  qty?: Qty;
 }
 
 export interface Ledger {

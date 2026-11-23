@@ -3,8 +3,9 @@ import { autoLink } from './engine/links';
 import type { DatedMove, PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
 import type { RecommendationRecord } from './engine/records';
+import { normAccount, TRIMMING_HOLDINGS_SOURCES } from './engine/openingLots';
 import { FY_2026_27 } from './engine/rules';
-import type { ISODate, Member, Paise, Qty, Security, TaxType, Txn } from './engine/types';
+import type { ISODate, Member, Paise, Qty, Security, TaxType, TermAnswer, Txn } from './engine/types';
 import type { BrokerSummary, ParsedPrice, ParseResult } from './parsers';
 
 export interface ImportRecord {
@@ -23,6 +24,8 @@ export interface Position {
   memberId: string; isin: string; qty: Qty; ltQty?: Qty; asOf?: ISODate; source: string;
   /** Total cost at the broker's average price, and the account: together with `ltQty` they fill in lots bought before the trade history. */
   cost?: Paise; account?: string;
+  /** A holdings file that was dated and fully read: the engine may trim lots to its units (see HeldPosition). */
+  canTrim?: boolean;
 }
 
 export interface AppState {
@@ -49,13 +52,15 @@ export interface AppState {
   recommendations: RecommendationRecord[];
   /** Moves the family picked a day for; sized first on every recompute so they hold their room. */
   datedMoves: DatedMove[];
+  /** The family's answers for sales whose buy date is unknown: a term or a buy date per sale. */
+  termAnswers: TermAnswer[];
   /** Harvest season help: the server may read this family on email days, 1 Feb to 31 Mar, to email what is left to do. Off until switched on. */
   alerts?: { seasonHelp: boolean; chosen?: boolean };
 }
 
 
 export const emptyState = (): AppState => ({
-  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [], datedMoves: [], alerts: { seasonHelp: false, chosen: false },
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [], datedMoves: [], termAnswers: [], alerts: { seasonHelp: false, chosen: false },
 });
 
 /** Shapes saved before the member profile and tax-type changes (Nov 2026). */
@@ -82,6 +87,23 @@ function migrateSecurity(x: LegacySecurity): Security {
   return { ...rest, ...classifyByIsin(rest.isin) };
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const isDate = (v: unknown) => typeof v === 'string' && ISO_DATE.test(v);
+/** A saved or restored term answer the engine can use: every key present, and a term or a buy date. */
+const validAnswer = (a: TermAnswer) => typeof a.memberId === 'string' && typeof a.account === 'string' && typeof a.isin === 'string'
+  && isDate(a.sellDate) && (a.term === 'lt' || a.term === 'st' || isDate(a.buyDate));
+
+/**
+ * Saves the family's answer for one sale whose buy date is unknown, replacing any earlier answer for that sale (same
+ * member, ISIN, sale date and account, whatever its spaces and case). An answer with no term and no buy date clears it.
+ */
+export function setTermAnswer(state: AppState, answer: TermAnswer): AppState {
+  const same = (a: TermAnswer) => a.memberId === answer.memberId && a.isin === answer.isin && a.sellDate === answer.sellDate
+    && normAccount(a.account) === normAccount(answer.account);
+  const rest = (state.termAnswers ?? []).filter((a) => !same(a));
+  return { ...state, termAnswers: answer.term || answer.buyDate ? [...rest, answer] : rest };
+}
+
 /** Fills fields added after a copy was saved (older browser data or an account copy). Null if unusable. */
 export function normalizeState(s: AppState | null | undefined): AppState | null {
   if (!s || s.version !== 1 || !Array.isArray(s.members)) return null;
@@ -91,7 +113,7 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
     members: autoLink((s.members as LegacyMember[]).map(migrateMember)),
     securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
     plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
-    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [], datedMoves: s.datedMoves ?? [],
+    brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [], datedMoves: s.datedMoves ?? [], termAnswers: Array.isArray(s.termAnswers) ? s.termAnswers.filter((a) => a && typeof a === 'object' && validAnswer(a)) : [],
     alerts: { seasonHelp: s.alerts?.seasonHelp === true, chosen: s.alerts?.chosen === true },
   };
 }
@@ -110,7 +132,7 @@ export function parseBackup(text: string): AppState | null {
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const LIST_FIELDS = ['members', 'securities', 'txns', 'positions', 'imports', 'plannedSales', 'history', 'brokerSummaries', 'recommendations', 'datedMoves'];
+const LIST_FIELDS = ['members', 'securities', 'txns', 'positions', 'imports', 'plannedSales', 'history', 'brokerSummaries', 'recommendations', 'datedMoves', 'termAnswers'];
 const MAP_FIELDS = ['done', 'needSoon', 'taxTypeOverrides'];
 
 /**
@@ -192,6 +214,8 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
   const s: AppState = structuredClone(state);
   const importId = uid('imp');
   const seen = new Map<string, number>();
+  // A holdings file may trim lots only when every row was read and matched to an ISIN.
+  const fileComplete = r.skipped === 0 && !r.prices.some((x) => x.isin.startsWith('SYM:'));
   const existing = new Map(s.txns.map((t) => [t.id, t]));
   let added = 0;
 
@@ -209,10 +233,12 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
     if (prior) {
       // The same row again: a name matched now upgrades the trade saved by name; a match is never undone.
       if (prior.isin.startsWith('SYM:') && !isin.startsWith('SYM:')) prior.isin = isin;
+      // A Tax P&L saved before buybacks were marked gets the mark when it is imported again.
+      if (t.buyback && !prior.buyback) prior.buyback = true;
       continue;
     }
     const account = t.account ?? opts.account ?? '';
-    s.txns.push({ id, memberId, isin, date: t.date, side: t.side, qty: t.qty, amount: t.amount, source: r.format, importId, account });
+    s.txns.push({ id, memberId, isin, date: t.date, side: t.side, qty: t.qty, amount: t.amount, source: r.format, importId, account, ...(t.buyback ? { buyback: true as const } : {}) });
     added++;
   }
 
@@ -222,15 +248,23 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
     if (p.qty != null) {
       // Demat rows keep one source whatever the statement is called, so the engine treats them as a snapshot.
       const source = p.demat ? DEMAT_SNAPSHOT_SOURCE : r.format;
-      s.positions = s.positions.filter((x) => !(x.memberId === memberId && x.isin === isin && (x.source === source || (p.demat && x.source.startsWith('Combined CAS')))));
+      // A holdings file is kept per import: the engine picks the newest per account (`countingPositions`), so an older
+      // file, another account's file or removing the newest file never drops shares still held. Only the same file
+      // downloaded again (same account and date) replaces it.
+      const replaces = TRIMMING_HOLDINGS_SOURCES.includes(source)
+        ? (x: Position) => x.source === source && normAccount(x.account) === normAccount(opts.account) && x.asOf === p.priceDate
+        : (x: Position) => x.source === source || (!!p.demat && x.source.startsWith('Combined CAS'));
+      s.positions = s.positions.filter((x) => !(x.memberId === memberId && x.isin === isin && replaces(x)));
       s.positions.push({
         memberId, isin, qty: p.qty, ltQty: p.ltQty, asOf: p.priceDate, source, importId,
         ...(p.cost != null ? { cost: p.cost } : {}), account: opts.account ?? '',
+        ...(TRIMMING_HOLDINGS_SOURCES.includes(r.format) ? { canTrim: !!p.priceDate && fileComplete } : {}),
       });
     }
     const hasHistory = s.txns.some((t) => t.memberId === memberId && t.isin === isin && (t.account ?? '') === (opts.account ?? ''));
-    // A holdings file with cost and long-term units needs no guessed lot: the engine fills in older units (openingLots.ts).
-    const filledByEngine = p.ltQty != null && p.cost != null;
+    // A holdings file (or any row with cost and long-term units) needs no guessed lot: the engine fills in the units
+    // the history can't explain on every compute (openingLots.ts).
+    const filledByEngine = TRIMMING_HOLDINGS_SOURCES.includes(r.format) || (p.ltQty != null && p.cost != null);
     if (opts.openingDate && p.qty && p.qty > 0 && !hasHistory && !filledByEngine) {
       const cost = p.cost ?? Math.round((p.price * p.qty) / 10_000);
       s.txns.push({
@@ -257,6 +291,12 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
     id: importId, memberId, fileName, format: r.format, at: new Date().toISOString(), txns: added, prices: r.prices.length, warnings: r.warnings,
   });
   return s;
+}
+
+/** True when `after` (from `applyImport`) holds the same transactions and positions as `before`: the file was already in. */
+export function importAddedNothing(before: AppState, after: AppState): boolean {
+  const strip = (ps: AppState['positions']) => JSON.stringify(ps.map(({ importId: _i, ...p }) => JSON.stringify(p)).sort());
+  return after.txns.length === before.txns.length && strip(after.positions) === strip(before.positions);
 }
 
 export function removeImport(state: AppState, importId: string): AppState {

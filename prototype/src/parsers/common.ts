@@ -96,6 +96,8 @@ export interface ParsedTxn {
   /** For a share named without its ISIN: the name as written (`SYM:<NAME>`). The transaction id uses it, so the same
    * row keeps one id whether or not the name was matched to an ISIN at import. */
   ref?: string;
+  /** A buyback exit booked from a broker Tax P&L (a capital gain from 1 Apr 2026): see `Txn.buyback`. */
+  buyback?: true;
 }
 
 export interface ParsedPrice {
