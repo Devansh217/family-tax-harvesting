@@ -205,15 +205,17 @@ function capHeldCost(lots: HeldPart[], keep: Qty, fileCost: Paise): Map<Txn, Pai
  * never cost more than the file's total cost (cost never stacks):
  *
  * - **Split or consolidation:** the file's units are a whole multiple or fraction of the history's held units and its
- *   cost matches theirs within 1%: the history's units are rescaled (`scaled`), dates and costs kept, nothing filled in.
+ *   cost matches theirs within 1%: when the held units all come from buys on one date, the history's units are
+ *   rescaled (`scaled`), dates and costs kept, nothing filled in. From several dates (a later buy may postdate the
+ *   split), nothing is rescaled: the held buys and the fill-in are guessed, so the share gets no moves.
  * - **No cost in the file:** one guessed lot at the latest price (0 without one).
  * - **No cost left** after the history's held lots (a bonus, a demerger credit): the held units come in at cost 0,
  *   guessed (`opening-ca`), and the share gets a corporate-action note. Units sold before the history then take the
- *   file's average (`perUnit`), as no leftover cost is there to lower it.
+ *   file's average (`perUnit`), an estimate of their real cost.
  * - **Otherwise** the cost left over, `file cost − history's held cost`, goes to the units held. With a long-term count:
  *   long-term units at that cost, marked `approx`, and any short-term rest guessed (`opening-lt` / `opening-st`).
  *   Without one (funds): one guessed lot (`opening-est`). Units sold from before the history take the lower of the
- *   file's average and that cost; with a long-term count they get their own guessed lot (`opening-sold`), whose
+ *   file's average and that cost, an estimate (their real cost may differ either way); with a long-term count they get their own guessed lot (`opening-sold`), whose
  *   sales are term unknown (`buildLedger`).
  *
  * Fill-in lots take the account label of the history's trades in that account, so one account is one ledger queue.
@@ -284,8 +286,9 @@ function fillIn(out: Txn[], p: HeldPosition, ref: ISODate, price: Paise | undefi
   const perUnit = p.cost / p.qty;
   const leftover = p.cost - replayHeld(hist, opening, ref).cost;
   const lots: Txn[] = [];
-  // Units held: the cost the file has left after the history's held lots. Units sold: the lower of that and the
-  // average, so neither the held cost nor a past sale's cost is overstated.
+  // Units held: the cost the file has left after the history's held lots, so the held cost is never overstated.
+  // Units sold before the file: the lower of that and the file's average. That is an estimate: the file only knows
+  // what is held now, so a past sale's real cost can be higher or lower than this (a Tax P&L covering it wins).
   let held = heldOpening;
   let sale = soldFromOpening;
   let unit = heldOpening > 0 ? Math.min(perUnit, Math.max(0, leftover) / heldOpening) : perUnit;
