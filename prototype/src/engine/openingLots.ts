@@ -208,7 +208,8 @@ function capHeldCost(lots: HeldPart[], keep: Qty, fileCost: Paise): Map<Txn, Pai
  *   cost matches theirs within 1%: the history's units are rescaled (`scaled`), dates and costs kept, nothing filled in.
  * - **No cost in the file:** one guessed lot at the latest price (0 without one).
  * - **No cost left** after the history's held lots (a bonus, a demerger credit): the held units come in at cost 0,
- *   guessed (`opening-ca`), and the share gets a corporate-action note.
+ *   guessed (`opening-ca`), and the share gets a corporate-action note. Units sold before the history then take the
+ *   file's average (`perUnit`), as no leftover cost is there to lower it.
  * - **Otherwise** the cost left over, `file cost − history's held cost`, goes to the units held. With a long-term count:
  *   long-term units at that cost, marked `approx`, and any short-term rest guessed (`opening-lt` / `opening-st`).
  *   Without one (funds): one guessed lot (`opening-est`). Units sold from before the history take the lower of the

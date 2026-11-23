@@ -83,10 +83,13 @@ export function planGaps(
       .reduce((a, h) => a + h.lots.filter((l) => !l.certain).reduce((b, l) => b + (l.value ?? 0), 0), 0)
       + [...missing.keys()].filter((isin) => isin.startsWith('INF') === fund).reduce((a, isin) => a + unexplained(isin), 0);
     const shares = undated(false);
+    // Set when a gap already asks for the holdings file again, so the undated-file gap below doesn't repeat it.
+    let askedAgain = false;
     if (shares > 0) {
       const mine = positions.filter((p) => p.memberId === id && p.ltQty != null);
       const stale = mine.some((p) => p.cost == null);
       const filled = mine.some((p) => p.cost != null);
+      askedAgain = stale;
       out.push({
         memberId: id, key: 'shares_no_dates', href: importHref(id), action: 'Import',
         text: stale
@@ -107,7 +110,6 @@ export function planGaps(
     // Not when a dated file for that account decides instead, or another gap already asks for the file again.
     const holdingsFile = positions.filter((p) => p.memberId === id && p.source != null && TRIMMING_HOLDINGS_SOURCES.includes(p.source));
     const datedAccounts = new Set(holdingsFile.filter((p) => p.asOf).map((p) => normAccount(p.account)));
-    const askedAgain = out.some((g) => g.memberId === id && g.text.includes('holdings file again'));
     if (!askedAgain && holdingsFile.some((p) => !p.asOf && !datedAccounts.has(normAccount(p.account)))) {
       const whose = possessive(name);
       out.push({

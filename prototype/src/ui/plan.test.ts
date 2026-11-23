@@ -37,6 +37,8 @@ describe('what the plan is missing', () => {
     // Rekha's holdings file was read before it kept cost: importing it again fills the dates.
     expect(gaps.find((g) => g.memberId === 'r')).toMatchObject({ key: 'shares_no_dates' });
     expect(gaps.find((g) => g.memberId === 'r')!.text).toMatch(/holdings file again/);
+    // That gap already asks for the file again, so the undated-file gap isn't added too.
+    expect(gaps.filter((g) => g.memberId === 'r').map((g) => g.key)).toEqual(['shares_no_dates']);
   });
 
   it('counts fund units the holdings file shows but the history does not explain', () => {

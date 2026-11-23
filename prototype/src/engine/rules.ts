@@ -83,8 +83,10 @@ export const FY_2026_27: TaxRules = {
   },
 };
 
-/** Buyback exits from this date until the capital-gain rule began were taxed as dividend income (Finance Act 2024). */
-// The dividend period ends the day before FY_2026_27.start.
+/**
+ * Buyback exits from this date until the capital-gain rule began were taxed as dividend income (Finance Act 2024).
+ * The dividend period ends the day before `FY_2026_27.start`.
+ */
 export const BUYBACK_DIVIDEND_FROM: ISODate = '2024-10-01';
 
 /** Every tax year's rules the app knows, oldest first. Add a year here when a Budget changes the numbers. */
