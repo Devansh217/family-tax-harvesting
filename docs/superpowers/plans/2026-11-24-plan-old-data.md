@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - "Old" means `daysBetween(newest, asOf) >= 30` (`OLD_DATA_DAYS = 30`). 29 days is not old.
-- Newest evidence per `${memberId}|${normAccount(account)}` is the max of any dated holdings position's `asOf` for that account (Zerodha holdings, Angel fund holdings, demat CAS), the newest txn whose `source` starts `Mutual fund CAS` (a fund CAS adds no positions; its account is the folio label), the last `isTradebook` trade, and `summary.to` of each `countingSummaries` P&L. Accounts with none of these get no entry and no mark. The guided import (B1) calls this same function; if B1 was built first, `engine/freshness.ts` already exists: extend it to this definition instead of adding a second one.
+- Newest evidence per `${memberId}|${normAccount(account)}` is the max of any dated holdings position's `asOf` for that account (Zerodha holdings, Angel fund holdings, demat CAS), the newest txn whose `source` starts `Mutual fund CAS` or `Combined CAS` (match as `isFolio` in `engine/openingLots.ts` does; a fund CAS adds no positions, and its account is the folio label), the last `isTradebook` trade, and `summary.to` of each `countingSummaries` P&L. Accounts with none of these get no entry and no mark. The guided import (B1) calls this same function; if B1 was built first, `engine/freshness.ts` already exists: extend it to this definition instead of adding a second one.
 - Move sizing, move ids, `reasons`, `noRoom` moves and `fam.totals` don't change.
 - The engine imports only the engine (`boundaries.test.ts`).
 - Copy is verbatim from the spec, with dates through `dateLabel` (e.g. "31 Mar 2026"). It's plain English and has no advice wording (GUARDRAILS §6).
@@ -48,6 +48,7 @@
   - `ignores undated holdings, non-tradebook txns and P&Ls with no end`: a source `'test'` buy, a holdings position with no `asOf`, and a P&L with `to: null` → the map is empty.
   - `ignores a superseded P&L and an older holdings file`: P&L A from 2026-04-01 to 2026-09-30 and P&L B from 2026-04-01 to 2026-06-30, where A covers B's period → `'2026-09-30'`. Two holdings imports dated 2026-03-01 and 2026-05-01 → 2026-05-01. Assert the max per account.
   - `a fund CAS alone dates its account`: shaped like a real import (no positions, since `parseMutualFundCAS` gives prices with no `qty`): only txns with source `'Mutual fund CAS (CAMS / KFintech)'`, account `'Folio 123/45'`, the newest dated 2026-03-31 → the map has `accountKey('a', 'Folio 123/45')` → `'2026-03-31'`, so its moves are marked old on 2026-11-24.
+  - `a combined CAS dates its folio accounts too`: the same txns with source `'Combined CAS'` → the same `'2026-03-31'` entry for the folio account.
   - `isOld: 29 days is not old, 30 is`: `isOld('2026-10-16','2026-11-14')` is false; `isOld('2026-10-15','2026-11-14')` is true.
 - [ ] **Step 2: Run** `npx vitest run src/engine/freshness.test.ts`. Expected: FAIL (module not found).
 - [ ] **Step 3: Implement** `freshness.ts` to the interfaces above.

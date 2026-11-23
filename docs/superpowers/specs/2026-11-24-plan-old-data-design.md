@@ -52,7 +52,7 @@ export const isOld = (date: ISODate, today: ISODate) => daysBetween(date, today)
 
 Per account, newest evidence is the latest of:
 - the newest dated holdings position for that account, of any kind: a Zerodha holdings file, an Angel One fund holdings file, a demat CAS (any position's `asOf`). Not only the deciding file;
-- for a fund (CAMS / KFintech) CAS: a fund CAS creates no positions, so for its folio accounts (`Folio …`) the date is the newest transaction whose source starts `Mutual fund CAS`. That is no later than the statement date, so a CAS-only account can only look older than it is, never fresher. If the CAS parser exposes the statement's period end, the builder may use that instead. So a member whose only file is a fund CAS still gets marks;
+- for a fund (CAMS / KFintech) CAS: a fund CAS creates no positions, so for its folio accounts (`Folio …`) the date is the newest transaction whose source starts `Mutual fund CAS` or `Combined CAS` (a CAS PDF with both fund and demat sections imports as `Combined CAS`; `isFolio` in `engine/openingLots.ts` already treats both as folio transactions). That is no later than the statement date, so a CAS-only account can only look older than it is, never fresher. If the CAS parser exposes the statement's period end, the builder may use that instead. So a member whose only file is a fund CAS still gets marks;
 - the last tradebook trade (`isTradebook`);
 - the `to` date of each Tax P&L that counts (`countingSummaries`). A P&L with no `to` date adds nothing.
 

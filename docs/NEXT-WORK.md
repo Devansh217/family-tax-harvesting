@@ -64,7 +64,7 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 **Suggested order:**
 1. **B4** (small, saves real money).
 2. **C1** first. It adds the one "newest data" function (`engine/freshness.ts`) that B1 and A1 both use.
-3. **A1 and B1** after C1, one at a time or in separate worktrees. They overlap in `ui/plan.ts`, `e2e/smoke.spec.ts` and this file, so rebase the second on the first. (A1 and C1 also share `engine/family.ts` and `ui/screens/Plan.tsx`.)
+3. **A1 and B1** after C1, one at a time or in separate worktrees. A1 and B1 share only `e2e/smoke.spec.ts`; rebase the second on the first. C1 shares `engine/family.ts` and `ui/screens/Plan.tsx` with A1, and `ui/plan.ts` with B1, which is why it goes first.
 4. **B2**, then **B3**.
 5. **E1**, which sets the pattern for E2–E4.
 6. **D1** research.
