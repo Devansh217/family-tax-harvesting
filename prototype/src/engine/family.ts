@@ -253,6 +253,23 @@ function sellAcrossAccounts(ledger: Ledger, memberId: string, sec: Security, qty
   return out;
 }
 
+/**
+ * Tax for a preview (Simulate, planned sales) that includes `preview` rows. A sale from a guessed-date lot counts its
+ * gain long-term for room (`saleTerms`), but the preview can't know its real term, so the tax shown is the highest of
+ * the rows as given, every such equity row (ELSS aside: it is always long-term) as long-term and every one as
+ * short-term. Room is not changed here: the caller keeps the summary of the rows as given.
+ */
+function previewTax(member: Member, rows: Realised[], preview: Realised[], secs: Map<string, Security>, rules: TaxRules, business: BusinessIncome): Paise {
+  const base = summariseYear(member, rows, rules, business).tax;
+  const unknown = new Set(preview.filter((r) => {
+    const sec = secs.get(r.isin);
+    return r.termUnknown && r.taxType === 'equity' && !(sec && isElssFund(sec));
+  }));
+  if (!unknown.size) return base;
+  const as = (term: Term) => summariseYear(member, rows.map((r) => (unknown.has(r) ? { ...r, term } : r)), rules, business).tax;
+  return Math.max(base, as('lt'), as('st'));
+}
+
 /** What selling `qty` units now would realise, first-in-first-out. Does not mutate the lots. Guessed lots get the unknown-term rule. */
 export function previewSale(lots: Lot[], qty: Qty, sec: Security, saleDate: ISODate, rules: TaxRules): Realised[] {
   const out: Realised[] = [];
@@ -438,7 +455,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
     v.plan = mine.length ? summariseYear(v.member, [...booked, ...mine], rules, v.business) : v.year;
     v.planned = {
       gain: mine.reduce((a, r) => a + r.gain, 0),
-      tax: v.plan.tax - v.year.tax,
+      tax: (mine.length ? previewTax(v.member, [...booked, ...mine], mine, secs, rules, v.business) : v.plan.tax) - v.year.tax,
       roomUsed: v.plan.exemptionUsed + v.plan.bonus.used - (v.year.exemptionUsed + v.year.bonus.used),
     };
     v.roomAfterPlan = v.plan.room.free + v.plan.bonus.free;
@@ -756,6 +773,8 @@ export interface SaleResult {
   extraTax: Paise;
   roomUsed: Paise;
   available: Qty;
+  /** Gain from units whose buy date is unknown: counted long-term for room, taxed the higher way in `extraTax`. */
+  unknownTermGain: Paise;
 }
 
 /**
@@ -768,14 +787,17 @@ export function simulateSale(fam: FamilyView, memberId: string, isin: string, qt
   const available = queues(fam.ledger, memberId, isin).reduce((a, q) => a + q.lots.reduce((b, l) => b + l.qty, 0), 0);
   const sold = sellAcrossAccounts(fam.ledger, memberId, sec, Math.min(qty, available), asOf, rules, false);
   const plannedMine = fam.plannedRealised.filter((r) => r.memberId === memberId);
-  const after = summariseYear(v.member, [...fam.booked, ...plannedMine, ...sold], rules, v.business);
+  const rows = [...fam.booked, ...plannedMine, ...sold];
+  const after = summariseYear(v.member, rows, rules, v.business);
   const s = (t: Term) => sold.filter((r) => r.term === t).reduce((a, r) => a + r.gain, 0);
   return {
     qty: Math.min(qty, available), available,
     proceeds: sold.reduce((a, r) => a + r.proceeds, 0),
     gain: sold.reduce((a, r) => a + r.gain, 0),
     stGain: s('st'), ltGain: s('lt'),
-    extraTax: after.tax - v.plan.tax,
+    unknownTermGain: sold.filter((r) => r.termUnknown).reduce((a, r) => a + r.gain, 0),
+    // Room as the rows are given; tax the higher way for units whose term is unknown (`previewTax`).
+    extraTax: previewTax(v.member, rows, sold, fam.securities, rules, v.business) - v.plan.tax,
     roomUsed: after.exemptionUsed + after.bonus.used - (v.plan.exemptionUsed + v.plan.bonus.used),
   };
 }

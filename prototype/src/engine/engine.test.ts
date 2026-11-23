@@ -351,8 +351,9 @@ describe('units sold from the opening lot', () => {
   it('a planned sale from a guessed lot at a gain uses long-term room', () => {
     // A guessed lot: 10 units at ₹500, dated 1 Mar 2026 (under 12 months before today). The price is ₹900, so a
     // planned sale of all 10 gains ₹4,000. Its buy date is unknown: the gain counts long-term, so room falls
-    // ₹1,25,000 → ₹1,21,000 and no tax is added (inside the exemption). By the guessed date it would read short-term
-    // (₹800 + cess) and leave the room at ₹1,25,000, more than the truth may allow.
+    // ₹1,25,000 → ₹1,21,000 (inside the exemption). By the guessed date it would read short-term and leave the room
+    // at ₹1,25,000, more than the truth may allow. The tax shown is the higher of the two treatments: short-term,
+    // 20% × ₹4,000 = ₹800 plus 4% cess = ₹832 (long-term would be ₹0).
     const guess: Txn = { ...tx('a', 'G', '2026-03-01', 'buy', 10, 500), estimated: true };
     const fam = computeFamily({
       members: [who], securities: [sec('G', { price: rs(900) })], txns: [guess], plannedSales: [{ id: 'p1', memberId: 'a', isin: 'G', qty: q(10) }],
@@ -360,7 +361,7 @@ describe('units sold from the opening lot', () => {
     expect(fam.plannedRealised).toMatchObject([{ gain: rs(4_000), term: 'lt', termUnknown: true }]);
     const v = fam.members[0]!;
     expect(v.plan.room.free).toBe(rs(1_21_000));
-    expect(v.planned).toMatchObject({ gain: rs(4_000), tax: 0, roomUsed: rs(4_000) });
+    expect(v.planned).toMatchObject({ gain: rs(4_000), tax: rs(832), roomUsed: rs(4_000) });
   });
 
   it('answer buyDate: the term comes from the holding period', () => {

@@ -196,6 +196,48 @@ describe('family totals and simulator', () => {
   });
 });
 
+describe('previews of sales from guessed-date lots', () => {
+  // A holdings file alone: 10 shares, none long-term, ₹10,000 at the broker's average; the price is ₹2,000 a share.
+  // The fill-in lot is guessed (`estimated`), so a sale's term is unknown. Income ₹20 L (new regime, no rebate, no
+  // surcharge). As long-term the ₹10,000 gain sits inside the ₹1,25,000 exemption: no tax. As short-term (what the
+  // file says): 20% × ₹10,000 = ₹2,000, plus 4% cess = ₹2,080. The preview shows the higher, ₹2,080; room still
+  // counts it long-term, ₹10,000 used.
+  const held = {
+    members: [person('a', 'self')],
+    securities: [{ isin: 'X', name: 'X', taxType: 'equity' as const, listed: true, price: rs(2000) }],
+    txns: [],
+    positions: [{ memberId: 'a', isin: 'X', account: 'Zerodha', qty: q(10), ltQty: 0, cost: rs(10_000), asOf: '2026-11-20', source: 'Zerodha holdings', importId: 'h', canTrim: true }],
+  };
+  const DAY = '2026-11-23';
+
+  it('Simulate shows the higher of the long-term and short-term tax, and room used as long-term', () => {
+    const fam = computeFamily(held, DAY, R);
+    const r = simulateSale(fam, 'a', 'X', q(10), DAY, R);
+    expect(r.gain).toBe(rs(10_000));
+    expect(r.extraTax).toBe(rs(2_080));
+    expect(r.roomUsed).toBe(rs(10_000));
+    expect(r.unknownTermGain).toBe(rs(10_000));
+  });
+
+  it('a planned sale shows the same higher tax and uses the same room', () => {
+    const fam = computeFamily({ ...held, plannedSales: [{ id: 'p', memberId: 'a', isin: 'X', qty: q(10) }] }, DAY, R);
+    expect(fam.members[0]!.planned).toMatchObject({ gain: rs(10_000), tax: rs(2_080), roomUsed: rs(10_000) });
+    expect(fam.members[0]!.plan.room.free).toBe(rs(1_15_000));
+  });
+
+  it('a booked sale from a guessed lot keeps the long-term rule', () => {
+    const fam = computeFamily({
+      ...held, positions: [],
+      txns: [
+        { id: 'g', memberId: 'a', isin: 'X', date: '2026-06-01', side: 'buy' as const, qty: q(10), amount: rs(10_000), source: 'test', estimated: true },
+        { id: 's', memberId: 'a', isin: 'X', date: '2026-11-01', side: 'sell' as const, qty: q(10), amount: rs(20_000), source: 'test' },
+      ],
+    }, DAY, R);
+    expect(fam.members[0]!.year.tax).toBe(0);
+    expect(fam.members[0]!.year.exemptionUsed).toBe(rs(10_000));
+  });
+});
+
 describe('funds to check', () => {
   it('a fund whose tax type is unknown gets no moves until it is set', () => {
     const st = (taxType: 'check' | 'equity') => ({
