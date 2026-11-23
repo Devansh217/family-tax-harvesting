@@ -7,7 +7,7 @@ Design, 24 Nov 2026. Covers points 5 and 6 of the founder's 24 Nov feedback. Res
 Today the Plan only uses other members to fill this season's tax-free room. It never says where family money should sit over the years. The founder noticed two things missing:
 
 - **Point 5:** the app never said "put the next investment in this person's name".
-- **Point 6:** the app never said "move this from Devansh to a member who pays less tax on it".
+- **Point 6:** the app never said "move this from the earner to a member who pays less tax on it".
 
 The app should answer both with moves that show how much tax they save. It should not show a calculator the user has to drive. The founder said "What it brings home" (the Compare page) doesn't help for exactly that reason.
 
@@ -15,8 +15,8 @@ The app should answer both with moves that show how much tax they save. It shoul
 
 | # | Decision | Who |
 |---|---|---|
-| D1 | Monthly investing is **guessed from tradebooks** (a fund bought in the same account on a steady day for a steady amount, in at least 3 of the last 4 months) and **confirmed by the user**, e.g. "You invest about ₹80k a month. Right?" The user can correct the amount and add SIPs the files don't show. | Founder agreed |
-| D2 | New money for a non-clubbed relative goes as **one yearly gift**. The receiver runs the SIP from their own bank account. The move reads "Gift Rekha ₹2.4 L once a year; she runs the ₹20k SIP in fund X." | Founder agreed |
+| D1 | Monthly investing is **guessed from tradebooks** (a fund bought in the same account on a steady day for a steady amount, in at least 3 of the last 4 months) and **confirmed by the user**, e.g. "You invest about ₹50k a month. Right?" The user can correct the amount and add SIPs the files don't show. | Founder agreed |
+| D2 | New money for a non-clubbed relative goes as **one yearly gift**. The receiver runs the SIP from their own bank account. The move reads "Gift Mum ₹1.2 L once a year; she runs the ₹10k SIP in fund X." | Founder agreed |
 | D3 | Existing holdings move by **gifting the units**, never "sell and buy again". A gift keeps the cost and dates and books nothing in the giver's name. | Founder agreed |
 | D4 | **No ceiling** on how much goes to one member. Show the savings. | Founder |
 | D5 | Approach **B, full family placement** (§4), not the simpler rule-by-rule version. | Founder |
@@ -91,8 +91,8 @@ The headroom-bucket method (placement note §3.6, close to A) is kept as a **tes
 4. **Clean-up:** drop any placement saving less than ₹1,000 a year. Round amounts to ₹1,000 (SIPs to ₹500 a month).
 5. **This season first:** placement runs **after** this season's harvest and gift moves are sized. Their gains count in the receiver's current-year buckets, so placement never takes room the season's moves use.
 6. **Moves out:** one move per (giver, receiver, fund):
-   - `place_sip`: "Gift Rekha ₹2.4 L once a year · she runs the ₹20k SIP in Parag Parikh Conservative Hybrid · about ₹X less tax a year".
-   - `place_holding`: "Gift Rekha 1,200 units of Parag Parikh Conservative Hybrid · about ₹X less tax a year".
+   - `place_sip`: "Gift Mum ₹1.2 L once a year · she runs the ₹10k SIP in a conservative hybrid fund · about ₹X less tax a year".
+   - `place_holding`: "Gift Mum 1,200 units of a conservative hybrid fund · about ₹X less tax a year".
 
    Moves get stable ids and go into `recommendations` as other moves do (GUARDRAILS §3).
 
@@ -101,9 +101,9 @@ The headroom-bucket method (placement note §3.6, close to A) is kept as a **tes
 - **Headline:** one line, the saving in bold.
 - **"Why?" tooltip:** whose name now and whose after, the tax in each name, and that the money becomes the receiver's for good, counts as their income and passes by their will or nominee. Gifts over ₹5 L get the 15 Nov cooling-off step.
 - **Gift paperwork checklist:** bank transfer from the giver's account, signed gift letter, and for units the off-market or AMC transmission route.
-- **Clubbed members, once per section:** "Not suggested for Nidhi or the HUF: money you give them is still taxed as yours."
+- **Clubbed members, once per section:** "Not suggested for your spouse or the HUF: money you give them is still taxed as yours."
 - **No room anywhere:** "Your money is already in the lowest-tax names."
-- **Income missing:** "Add Rekha's income to see what moving money to her saves."
+- **Income missing:** "Add Mum's income to see what moving money to her saves."
 - **Wording:** "could save", never "recommended" or "you should" (GUARDRAILS §6). The Plan's disclaimer covers the section.
 
 ## 6. Constraints
