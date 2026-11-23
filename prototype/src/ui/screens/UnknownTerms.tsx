@@ -4,7 +4,7 @@ import type { Term } from '../../engine/types';
 import { setTermAnswer } from '../../store';
 import { useApp } from '../app-context';
 import { dateLabel } from '../format';
-import { answeredSales, buyDateAnswer, needsConfirm, pnlCoverage, unknownTermSales, type UnknownTermSale } from '../warnings';
+import { answeredSales, buyDateAnswer, unknownTermLine, needsConfirm, pnlCoverage, unknownTermSales, type UnknownTermSale } from '../warnings';
 
 /** This year's open unknown-term sales the member can answer (uncovered by a Tax P&L, never ELSS). */
 export function useOpenUnknownTerms(memberId: string): UnknownTermSale[] {
@@ -41,9 +41,7 @@ export function UnknownTermRow({ sale, needsChecking = false }: { sale: UnknownT
   return (
     <div className="li" style={{ flexWrap: 'wrap', gap: 8 }}>
       <span className="grow small" style={{ minWidth: 220 }}>
-        {needsChecking
-          ? <>{name}, sold {dateLabel(sale.sellDate)}: Buy date unknown: counted the safe way for your tax-free room. Import {sale.account.trim() || 'your broker'}&apos;s tax P&amp;L for the exact figure. Was it{' '}</>
-          : <>{name}, sold {dateLabel(sale.sellDate)}: buy date unknown, so we assumed {TERM_LABEL[sale.term]}. Room left assumes this. Was it{' '}</>}
+        {unknownTermLine(name, sale, needsChecking)}{' '}
         <button className="btn sm" type="button" onClick={() => pick('lt')}>Long-term</button>{' '}
         <button className="btn sm" type="button" onClick={() => pick('st')}>Short-term</button>? Not sure?{' '}
         <button className="btn sm ghost" type="button" onClick={() => setDating(true)}>Add buy date</button>

@@ -5,7 +5,7 @@ import { computeFamily, type FamilyState } from '../engine/family';
 import { FY_2026_27 as R } from '../engine/rules';
 import { QTY_SCALE, type LedgerWarning, type Member, type Realised, type Txn } from '../engine/types';
 import {
-  answeredSales, buyDateAnswer, bookedDisplay, hasYearPnl, currentPnls, holdingsNoteLines, monthRange, needsConfirm, oversellLine, pnlCoverage, unknownTermSales, visibleGapCount, visibleOversells,
+  answeredSales, buyDateAnswer, bookedDisplay, hasYearPnl, currentPnls, unknownTermLine, holdingsNoteLines, monthRange, needsConfirm, oversellLine, pnlCoverage, unknownTermSales, visibleGapCount, visibleOversells,
 } from './warnings';
 
 const q = (n: number) => n * QTY_SCALE;
@@ -111,6 +111,12 @@ describe('unknown-term sales the member can answer', () => {
     const [plain] = unknownTermSales([sale()], 'a', R, none);
     expect(needsConfirm(plain!, 'lt')).toBe(false);
     expect(needsConfirm(plain!, 'st')).toBe(true);
+  });
+
+  it('the row reads in lower case after the sale date, in both places it shows', () => {
+    const [plain] = unknownTermSales([sale()], 'a', R, none);
+    expect(unknownTermLine('X Ltd', plain!, true)).toBe("X Ltd, sold 10 Jun 2026: buy date unknown: counted the safe way for your tax-free room. Import Zerodha's tax P&L for the exact figure. Was it");
+    expect(unknownTermLine('X Ltd', plain!, false)).toBe('X Ltd, sold 10 Jun 2026: buy date unknown, so we assumed long-term. Room left assumes this. Was it');
   });
 
   it('a buy date asks first when the term it gives could free room, like picking that term', () => {

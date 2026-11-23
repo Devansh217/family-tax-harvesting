@@ -138,6 +138,15 @@ export interface UnknownTermSale {
 /** Picking a term asks first whenever any piece of the sale has another term: that answer can free room. */
 export const needsConfirm = (sale: Pick<UnknownTermSale, 'pieceTerms'>, picked: Realised['term']) => sale.pieceTerms.some((t) => t !== picked);
 
+const TERM_WORD: Record<Realised['term'], string> = { lt: 'long-term', st: 'short-term' };
+
+/** The words before a sale's Long-term / Short-term buttons; `needsChecking` words it for a "to check" list. */
+export function unknownTermLine(name: string, sale: Pick<UnknownTermSale, 'sellDate' | 'account' | 'term'>, needsChecking: boolean): string {
+  return needsChecking
+    ? `${name}, sold ${dateLabel(sale.sellDate)}: buy date unknown: counted the safe way for your tax-free room. Import ${brokerOf(sale.account)}'s tax P&L for the exact figure. Was it`
+    : `${name}, sold ${dateLabel(sale.sellDate)}: buy date unknown, so we assumed ${TERM_WORD[sale.term]}. Room left assumes this. Was it`;
+}
+
 /**
  * The term a buy date the family enters gives the sale (the engine's own 12/24/36-month rules, `lotTerms`), and
  * whether storing it asks first: the same check as picking that term, since it can free room just the same.
