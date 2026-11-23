@@ -14,3 +14,4 @@ harvesting-backup-*.json
 # Editor folders (can hold run configurations with environment variables)
 .idea/
 .vscode/
+.superpowers/
