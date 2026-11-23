@@ -6,21 +6,28 @@
  *   PDF_PASSWORD=ABCDE1234F npm run check:private
  *   SHOW_SHAPES=1 npm run check:private    # also print unparsed line shapes (digits→9, letters→a) to debug layouts
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import readXlsxFile from 'read-excel-file/node';
-import { extractLines, isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseStatementLines, parseTablePreview, parseZerodhaTaxPnl, PdfPasswordError, previewRows, previewTable, type PdfJsLike } from '../src/parsers';
+import { extractLines, isAngelFundHoldings, isAngelTrades, parseAngelFundHoldings, parseAngelTrades, resolveNames, isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseStatementLines, parseTablePreview, parseZerodhaTaxPnl, PdfPasswordError, previewRows, previewTable, type PdfJsLike } from '../src/parsers';
+import { addMonths } from '../src/engine/dates';
 import { computeFamily } from '../src/engine/family';
 import { FY_2026_27 } from '../src/engine/rules';
 import { reconcile } from '../src/reconcile';
-import { applyImport, emptyState, type AppState } from '../src/store';
+import { normAccount } from '../src/engine/ledger';
+import { applyImport, emptyState, guessAccount, type AppState } from '../src/store';
+import { decidingFiles, effectiveTxnsWithNotes, isTradebook } from '../src/engine/openingLots';
+import { pnlCoverage, unknownTermSales, visibleOversells } from '../src/ui/warnings';
+import type { ParseResult } from '../src/parsers';
 
 const dir = resolve(process.argv[2] ?? join(import.meta.dirname, '../../data/private'));
 const shape = (l: string) => l.replace(/[A-Za-z]/g, 'a').replace(/\d/g, '9').replace(/a{2,}/g, 'aa').replace(/9{2,}/g, '99');
 
-const files = readdirSync(dir).filter((f) => !f.startsWith('.'));
-if (files.length === 0) console.log(`No files in ${dir}. Put your statements there (it is git-ignored).`);
+const entries = readdirSync(dir).filter((f) => !f.startsWith('.'));
+// Folders are members (replayed below, by index only); only loose files are described one by one.
+const files = entries.filter((f) => statSync(join(dir, f)).isFile());
+if (entries.length === 0) console.log(`No files in ${dir}. Put your statements there (it is git-ignored).`);
 
 for (const f of files) {
   const path = join(dir, f);
@@ -78,5 +85,150 @@ for (const f of files) {
     }
   } catch (e) {
     console.log(`\n${f}: could not read (${(e as Error).message})`);
+  }
+}
+
+/**
+ * Holdings-first proof: replays each member folder (one subfolder per member) the way the app would, and prints counts
+ * only, by member index. No names, ISINs, amounts or per-holding units are ever printed.
+ */
+const memberDirs = entries.filter((f) => statSync(join(dir, f)).isDirectory()).sort();
+if (memberDirs.length) {
+  const sharesPath = resolve(import.meta.dirname, '../public/prices/shares.json');
+  const shares = existsSync(sharesPath) ? JSON.parse(readFileSync(sharesPath, 'utf8')) : null;
+
+  async function readStatement(path: string): Promise<ParseResult | 'locked' | null> {
+    const lower = path.toLowerCase();
+    if (lower.endsWith('.pdf')) {
+      try { return parseStatementLines(await extractLines(pdfjs as unknown as PdfJsLike, new Uint8Array(readFileSync(path)), process.env.PDF_PASSWORD)); }
+      catch (e) { return e instanceof PdfPasswordError ? 'locked' : null; }
+    }
+    if (lower.endsWith('.xlsx')) {
+      try {
+        const sheets = (await readXlsxFile(path)).map((s) => ({ sheet: s.sheet, data: s.data as unknown[][] }));
+        if (isZerodhaTaxPnl(sheets)) return parseZerodhaTaxPnl(sheets);
+        if (isZerodhaHoldings(sheets)) return parseZerodhaHoldings(sheets);
+        if (isAngelTrades(sheets)) return resolveNames(parseAngelTrades(sheets), shares);
+        if (isAngelFundHoldings(sheets)) return parseAngelFundHoldings(sheets);
+        const p = sheets.map((s) => previewRows(s.data)).find((x) => x.kind !== 'unknown');
+        return p ? parseTablePreview(p, p.mapping, 'file.xlsx') : null;
+      } catch { return null; } // password-protected or unreadable
+    }
+    if (lower.endsWith('.csv')) { const p = previewTable(readFileSync(path, 'utf8')); return parseTablePreview(p, p.mapping, 'file.csv'); }
+    return null;
+  }
+
+  let st: AppState = emptyState();
+  let unreadable = 0;
+  for (const [i, d] of memberDirs.entries()) {
+    const id = `m${i + 1}`;
+    st = { ...st, members: [...st.members, { id, name: `Member ${i + 1}`, relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: 20_00_000_00, from: 'manual' as const }] }] };
+    for (const f of readdirSync(join(dir, d)).filter((x) => !x.startsWith('.') && statSync(join(dir, d, x)).isFile()).sort()) {
+      const r = await readStatement(join(dir, d, f));
+      if (!r || r === 'locked') { unreadable++; continue; }
+      // As the Import screen does by default: holdings with no history get an opening lot dated 13 months back.
+      st = applyImport(st, id, f, r, { account: guessAccount(f, r.format) || undefined, openingDate: addMonths(new Date().toISOString().slice(0, 10), -13) });
+    }
+  }
+  const asOf = FY_2026_27.end > new Date().toISOString().slice(0, 10) ? new Date().toISOString().slice(0, 10) : FY_2026_27.end;
+  const fam = computeFamily(st, asOf, FY_2026_27);
+  const covered = pnlCoverage(st.brokerSummaries, FY_2026_27);
+  const isFund = (isin: string) => isin.startsWith('INF') && !(st.securities.find((x) => x.isin === isin)?.listed);
+
+  console.log(`\nHoldings-first replay: ${memberDirs.length} members, ${unreadable} files unreadable or locked, ${st.txns.length} transactions, ${st.positions.length} positions`);
+  console.log(`  securities with no ISIN yet (SYM rows): ${st.securities.filter((x) => x.isin.startsWith('SYM:')).length}`);
+  for (const [i] of memberDirs.entries()) {
+    const id = `m${i + 1}`;
+    const trimmed = fam.holdingsNotes.trimmed.filter((t) => t.memberId === id).reduce((a, t) => a + t.isins.length, 0);
+    const stale = fam.holdingsNotes.staleFiles.filter((t) => t.memberId === id).length;
+    const corp = fam.holdingsNotes.corporateActions.filter((t) => t.memberId === id).length;
+    // Funds: the newest position per account and fund against the units the ledger holds for the member.
+    const latest = new Map<string, { isin: string; qty: number; asOf: string }>();
+    for (const p of st.positions.filter((x) => x.memberId === id && isFund(x.isin))) {
+      const k = `${p.isin}|${p.account ?? ''}`;
+      const b = latest.get(k);
+      if (!b || (p.asOf ?? '') >= b.asOf) latest.set(k, { isin: p.isin, qty: p.qty, asOf: p.asOf ?? '' });
+    }
+    const fileUnits = new Map<string, number>();
+    for (const v of latest.values()) fileUnits.set(v.isin, (fileUnits.get(v.isin) ?? 0) + v.qty);
+    let fundMismatch = 0;
+    for (const [isin, q] of fileUnits) {
+      let held = 0;
+      for (const [k, lots] of fam.ledger.lots) if (k.startsWith(`${id}|${isin}|`)) held += lots.reduce((a, l) => a + l.qty, 0);
+      if (held !== q) {
+        fundMismatch++;
+        if (process.env.DIAG) console.log(`    diag fund: ${held === 0 ? 'held none' : held > q ? 'held more' : 'held fewer'}; sources ${[...new Set(st.positions.filter((p) => p.memberId === id && p.isin === isin).map((p) => p.source))].join(' / ').replace(/[^/ A-Za-z()]/g, '')}; txns ${st.txns.filter((t) => t.memberId === id && t.isin === isin).length}; |diff| ratio ${(Math.abs(held - q) / q).toFixed(3)}`);
+      }
+    }
+    const unknown = unknownTermSales(fam.booked, id, FY_2026_27, covered).length;
+    const over = visibleOversells(fam.ledger.warnings.filter((w) => w.memberId === id), FY_2026_27, covered);
+    console.log(`  member ${i + 1}: trimmed shares ${trimmed}; stale holdings files ${stale}; corporate-action notes ${corp}; funds with file units: ${fileUnits.size}, held units differ from file: ${fundMismatch}; unknown-term sales ${unknown}; visible oversells now ${over.now.length} (older ${over.older.length})`);
+    // Why trims may be off: holdings files that cannot trim, by reason. Counts only.
+    const files = [...decidingFiles(st.positions.filter((p) => p.memberId === id)).values()];
+    const no = files.filter((f) => !f.canTrim);
+    if (files.length) {
+      const noDate = st.positions.filter((p) => p.memberId === id && p.source === 'Zerodha holdings' && !p.asOf).length;
+      const flagged = st.positions.filter((p) => p.memberId === id && p.source === 'Zerodha holdings' && p.canTrim === false).length;
+      console.log(`    deciding holdings files ${files.length}, cannot trim ${no.length}; positions with canTrim false ${flagged}, without date ${noDate}`);
+    }
+  }
+
+  // Diagnostics, counts only (by member index).
+  const monthsBetween = (a: string, b: string) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7));
+  const rel = (a: string, b: string) => `${a === b ? 'same day' : a < b ? 'earlier' : 'later'} by ${Math.abs(monthsBetween(a, b))} months`;
+  const allDeciding = [...decidingFiles(st.positions).entries()];
+  const eff = effectiveTxnsWithNotes(st.txns, st.positions, asOf, st.securities);
+  for (const [i] of memberDirs.entries()) {
+    const id = `m${i + 1}`;
+    // 1. Trimmed shares by cause.
+    const notes = eff.trimmed.filter((n) => n.memberId === id);
+    if (notes.length) {
+      const b = { otherMember: 0, soldAfterLastBuy: 0, neither: 0, neitherWithPnlExit: 0 };
+      for (const n of notes) {
+        const acct = normAccount(n.account);
+        for (const isin of n.isins) {
+          const hist = st.txns.filter((t) => t.memberId === id && t.isin === isin && normAccount(t.account) === acct && !t.id.includes('|opening') && !t.left);
+          const lastBuy = hist.filter((t) => t.side === 'buy').map((t) => t.date).sort().at(-1) ?? '';
+          const otherHolds = allDeciding.some(([k, f]) => !k.startsWith(`${id}|`) && f.positions.some((p) => p.isin === isin && p.qty > 0));
+          const soldBetween = hist.some((t) => t.side === 'sell' && t.date >= lastBuy && t.date <= n.asOf && !t.source.startsWith('Zerodha Tax P&L'));
+          if (otherHolds) b.otherMember++;
+          else if (soldBetween) b.soldAfterLastBuy++;
+          else {
+            b.neither++;
+            if (st.txns.some((t) => t.memberId === id && t.isin === isin && t.source.startsWith('Zerodha Tax P&L') && t.side === 'sell' && t.date >= FY_2026_27.start && t.date <= FY_2026_27.end)) b.neitherWithPnlExit++;
+          }
+        }
+      }
+      console.log(`  diag trims member ${i + 1}: (a) held by another member ${b.otherMember}; (b) sold after last buy, before file ${b.soldAfterLastBuy}; (c) neither ${b.neither}, of which with a Tax P&L exit this year ${b.neitherWithPnlExit}`);
+    }
+    for (const [k, f] of allDeciding.filter(([k]) => k.startsWith(`${id}|`))) {
+      const tb = st.txns.filter((t) => t.memberId === id && normAccount(t.account) === k.slice(id.length + 1) && isTradebook(t)).map((t) => t.date).sort().at(-1);
+      console.log(`  diag member ${i + 1} deciding file: latest tradebook ${tb ? `${rel(tb, f.asOf)} than the file date (tradebook ${tb < f.asOf ? 'before' : 'after'} file)` : 'none in this account'}`);
+    }
+    // 2. This year's realised rows by the lot they came from.
+    const kinds = new Map<string, number>();
+    const bump = (k: string) => kinds.set(k, (kinds.get(k) ?? 0) + 1);
+    for (const r of fam.ledger.realised.filter((x) => x.memberId === id && x.sellDate >= FY_2026_27.start && x.sellDate <= FY_2026_27.end)) {
+      const cands = eff.txns.filter((t) => t.memberId === id && t.isin === r.isin && t.side === 'buy' && normAccount(t.account) === normAccount(r.account) && t.date === r.buyDate && !!t.estimated === !!r.termUnknown);
+      const c = cands[0];
+      if (!c) { bump('unmatched'); continue; }
+      const kind = /\|(opening-[a-z]+)$/.exec(c.id)?.[1];
+      if (c.source.startsWith('Zerodha Tax P&L')) bump('tax-pnl pair');
+      else if (kind) bump(kind);
+      else if (c.estimated) bump('other estimated');
+      else bump('real tradebook/history lot');
+    }
+    console.log(`  diag realised this year member ${i + 1}: ${[...kinds].sort().map(([k, n]) => `${k} ${n}`).join('; ') || 'none'}`);
+    // 3. Visible oversell groups against Tax P&L files.
+    const groups = visibleOversells(fam.ledger.warnings.filter((w) => w.memberId === id), FY_2026_27, covered).now;
+    const mine = st.brokerSummaries.filter((b) => b.memberId === id);
+    for (const g of groups) {
+      const inYearPnl = mine.filter((b) => (b.summary.from ?? FY_2026_27.start) <= FY_2026_27.end && (b.summary.to ?? FY_2026_27.end) >= FY_2026_27.start);
+      const label = inYearPnl.length === 0 ? 'no label to compare' : inYearPnl.some((b) => b.account === g.account) ? 'label matches exactly' : inYearPnl.some((b) => normAccount(b.account) === normAccount(g.account)) ? 'label matches after normAccount only' : 'label does not match';
+      const range = inYearPnl.some((b) => g.from >= (b.summary.from ?? FY_2026_27.start) && g.to <= (b.summary.to ?? FY_2026_27.end)) ? 'sale dates inside a P&L range' : inYearPnl.length ? 'sale dates outside the P&L range' : 'n/a';
+      const sameAcct = st.txns.filter((t) => t.memberId === id && t.isin === g.isin && normAccount(t.account) === normAccount(g.account));
+      const extra = `account label ${g.account.trim() ? 'set' : 'blank'}; buys of it in that account ${sameAcct.filter((t) => t.side === 'buy' && !t.id.includes('|opening')).length}; buys of it in another account ${st.txns.filter((t) => t.memberId === id && t.isin === g.isin && t.side === 'buy' && normAccount(t.account) !== normAccount(g.account)).length}; held by another member's file ${allDeciding.some(([k, f]) => !k.startsWith(`${id}|`) && f.positions.some((p) => p.isin === g.isin)) ? 'yes' : 'no'}; deciding holdings file for the account ${allDeciding.some(([k]) => k === `${id}|${normAccount(g.account)}`) ? 'yes' : 'no'}`;
+      console.log(`  diag oversell member ${i + 1}: Tax P&L this year for member: ${inYearPnl.length ? `yes (${inYearPnl.length})` : 'no'}; ${label}; ${range}; ${extra}`);
+    }
   }
 }
