@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { computeFamily } from '../engine/family';
 import { FY_2026_27 } from '../engine/rules';
 import type { Member, Security, Txn } from '../engine/types';
-import { datePickerBounds, dateVerb, importHref, importMemberOf, planGaps } from './plan';
+import type { Move } from '../engine/family';
+import { cushionNudge, datePickerBounds, dateVerb, importHref, importMemberOf, planGaps } from './plan';
 
 describe('date picker (m2, m4)', () => {
   it('max is the last safe day, or the end of the tax year when the holiday list is not out; min is today', () => {
@@ -86,5 +87,30 @@ describe('import links for one member', () => {
   it('gap links go to the member they are about', () => {
     const empty = computeFamily({ members: [{ id: 'd', name: 'D', relation: 'self', age: 40, regime: 'new' }], securities: [], txns: [] }, '2026-11-22', FY_2026_27);
     expect(planGaps(empty, [])[0]!.href).toBe('#import-d');
+  });
+});
+
+describe('nudge to recover the cushion', () => {
+  const member: Member = { id: 'd', name: 'Devansh', relation: 'self', age: 40, regime: 'new', income: [] };
+  const sec: Security = { isin: 'INE1', name: 'Share', taxType: 'equity', listed: true, price: 100_00 };
+  const tb = (date: string, account: string): Txn => ({ id: `${date}${account}`, memberId: 'd', isin: 'INE1', date, side: 'buy', qty: 10 * 10_000, amount: 500_00, source: 'Trade history · Zerodha', account });
+  const fam = computeFamily({ members: [member], securities: [sec], txns: [tb('2025-03-10', 'Zerodha'), tb('2024-05-02', 'Zerodha'), tb('2020-01-01', 'Angel One')] }, '2026-11-22', FY_2026_27);
+  const move = (gain: number, over: Partial<Move> = {}) => ({ kind: 'harvest_gain', id: 'x', memberId: 'd', isin: 'INE1', name: 'Share', account: 'Zerodha', gain: gain * 100, approx: true, ...over }) as unknown as Move;
+
+  it('an approx move names the tax year before the oldest tradebook and the room left spare', () => {
+    expect(cushionNudge(move(56_400), fam)).toEqual({ fy: 'FY 2023-24', rupees: 5_600_00 });
+    // An account label differing in case or spaces is the same account; a January date is in the year before it starts.
+    expect(cushionNudge(move(56_400, { account: ' zerodha ' }), fam)!.fy).toBe('FY 2023-24');
+    expect(cushionNudge(move(56_400, { account: 'Angel One' }), fam)!.fy).toBe('FY 2018-19');
+  });
+  it('has no year when the account has no tradebook', () => {
+    expect(cushionNudge(move(56_400, { account: 'Groww' }), fam)).toEqual({ fy: null, rupees: 5_600_00 });
+  });
+  it('exact moves and small amounts give nothing', () => {
+    expect(cushionNudge(move(56_400, { approx: false }), fam)).toBeNull();
+    expect(cushionNudge(move(8_000), fam)).toBeNull();
+    // 9,400 x 10% = 940 rounds to 900: under the 1,000 threshold. 9,600 rounds to 1,000: shown.
+    expect(cushionNudge(move(9_400 * 1), fam)).toBeNull();
+    expect(cushionNudge(move(9_600 * 1), fam)).not.toBeNull();
   });
 });

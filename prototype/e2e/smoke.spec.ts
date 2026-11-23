@@ -200,6 +200,28 @@ for (const size of SIZES) {
         await expect(page.getByText('Free ₹1,15,000', { exact: true })).toBeVisible();
       });
 
+      test('importing the same tradebook twice says nothing is new the second time', async ({ page }) => {
+        await open(page, 'home');
+        await page.getByRole('button', { name: 'Start my own family' }).click();
+        await expect(page).toHaveURL(/#family$/);
+        await page.evaluate(() => { location.hash = 'import'; });
+        await expect(h1(page, 'Import statements')).toBeVisible();
+        const csv = 'symbol,isin,trade_date,segment,trade_type,quantity,price\nINFY,INE009A01021,2024-03-12,EQ,buy,10,1500\n';
+        const files = page.locator('input[type="file"]');
+        const addFile = async (name: string) => {
+          await files.setInputFiles({ name, mimeType: 'text/csv', buffer: Buffer.from(csv) });
+          const card = page.getByRole('article', { name });
+          await card.getByRole('button', { name: /^Add to / }).click();
+          return card;
+        };
+        const first = await addFile('tradebook-a.csv');
+        await expect(first.getByText('Added', { exact: true })).toBeVisible();
+        await expect(page.getByText('Nothing new: these trades are already in')).toHaveCount(0);
+        await addFile('tradebook-b.csv');
+        await expect(page.getByText('Nothing new: these trades are already in')).toHaveCount(1);
+        await expectNoSideScroll(page);
+      });
+
       test('download a backup on Family', async ({ page }) => {
         await open(page, 'family');
         const [download] = await Promise.all([

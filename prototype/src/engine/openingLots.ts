@@ -24,7 +24,7 @@ export const TRIMMING_HOLDINGS_SOURCES = ['Zerodha holdings'];
  */
 export const APPROX_MARGIN = 0.1;
 
-const isTradebook = (t: Txn) => t.source.startsWith('Trade history');
+export const isTradebook = (t: Txn) => t.source.startsWith('Trade history');
 const isTaxPnl = (t: Txn) => t.source.startsWith('Zerodha Tax P&L');
 const key = (memberId: string, isin: string, account = '') => `${memberId}|${isin}|${account}`;
 

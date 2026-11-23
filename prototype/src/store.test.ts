@@ -3,7 +3,7 @@ import { computeFamily } from './engine/family';
 import { FY_2026_27 } from './engine/rules';
 import { parseTablePreview, previewTable } from './parsers';
 import { sampleState } from './sample';
-import { applyImport, emptyState, hasRealData, normalizeState, backupHadSeasonHelp, parseBackup, removeImport, RESTORE_ALERTS_NOTE, setTermAnswer, type AppState } from './store';
+import { applyImport, importAddedNothing, emptyState, hasRealData, normalizeState, backupHadSeasonHelp, parseBackup, removeImport, RESTORE_ALERTS_NOTE, setTermAnswer, type AppState } from './store';
 import { ageOn } from './engine/dates';
 import { QTY_SCALE } from './engine/types';
 
@@ -340,3 +340,18 @@ describe('review: restoring a backup', () => {
   });
 });
 
+
+describe('an import that adds nothing', () => {
+  it('is spotted for the same tradebook or the same holdings file again, not for new data', () => {
+    const opts = { account: 'Zerodha' };
+    const run = (s: AppState, csv: string) => { const n = applyImport(s, 'a', 'f.csv', parse(csv), opts); return [n, importAddedNothing(s, n)] as const; };
+    const [s1, first] = run(withMember(), tradebook);
+    expect(first).toBe(false);
+    const [s2, again] = run(s1, tradebook);
+    expect(again).toBe(true);
+    const more = tradebook + '\nINFY,INE009A01021,2024-04-01,EQ,buy,5,1600';
+    expect(run(s2, more)[1]).toBe(false);
+    const [h1] = run(s2, holdings);
+    expect(run(h1, holdings)[1]).toBe(true);
+  });
+});

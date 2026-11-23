@@ -7,7 +7,8 @@ import { Avatar, Disclaimer, Svg, Icon } from '../parts';
 import { SampleBanner } from './Home';
 import { NSE_HOLIDAYS_2027, lastSafeDay } from '../../engine/season';
 import { buildIcs } from '../calendar';
-import { datePickerBounds, dateVerb, planGaps, planView, type PlanGap } from '../plan';
+import { brokerOf } from '../warnings';
+import { cushionNudge, datePickerBounds, dateVerb, planGaps, planView, type PlanGap } from '../plan';
 
 export const movesNotDone = (moves: Move[], done: Record<string, boolean>) => moves.filter((m) => !done[m.id]);
 
@@ -84,6 +85,7 @@ export function MoveRow({ move }: { move: Move }) {
   const done = !!state.done[move.id] || seenDone;
   const d = describe(move, nameOf, (id) => fam.members.find((v) => v.member.id === id)?.year.bonus.free ?? 0);
   const who = state.members.find((m) => m.id === d.who);
+  const nudge = cushionNudge(move, fam);
   const later = isLaterBenefit(move);
   const switching = move.kind === 'switch_direct';
   const gain = taxFreeGainOf(move);
@@ -116,6 +118,7 @@ export function MoveRow({ move }: { move: Move }) {
         )}
         {move.noRoom && <p className="tiny" style={{ color: 'var(--time)' }}>{move.reasons[0]}</p>}
         {move.approx && !move.noRoom && <p className="tiny muted">Some units were bought before your trade history, so this uses their average cost and leaves 10% of the room spare. After selling, check the gain in your broker&rsquo;s tax P&amp;L.</p>}
+        {nudge && <p className="tiny muted">{nudge.fy ? `Import the ${nudge.fy} tradebook` : 'Import older tradebooks'} from {brokerOf(move.account)} to use the {inr(nudge.rupees)} of room left spare.</p>}
         {move.date && !move.noRoom && <p className="tiny">{`${move.kind === 'gift' ? 'Gift and sell' : 'Sell'} on ${dateLabel(move.date)}`}{move.buyOn && ` · ${move.kind === 'switch_direct' ? 'Buy the direct plan' : 'Buy back'} on ${dateLabel(move.buyOn)}`}</p>}
         {move.date && !move.noRoom && <p className="tiny muted">Units for today&rsquo;s prices; check again on the day</p>}
         {!done && isDatable(move) && <DatePicker move={move} />}

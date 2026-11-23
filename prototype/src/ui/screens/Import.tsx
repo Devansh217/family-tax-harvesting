@@ -4,7 +4,7 @@ import {
   detectKind, FIELD_LABELS, FIELDS, parseStatementLines, parseTablePreview, PdfPasswordError, previewTable,
   type Field, type Mapping, type ParseResult, type TablePreview,
 } from '../../parsers';
-import { guessAccount, removeImport } from '../../store';
+import { applyImport, guessAccount, importAddedNothing, removeImport } from '../../store';
 import { importAndDetect } from '../importFlow';
 import { useApp } from '../app-context';
 import { dateLabel, inr, units } from '../format';
@@ -16,9 +16,9 @@ type Item =
   | { id: string; name: string; file?: File; status: 'reading' }
   | { id: string; name: string; file: File; status: 'password'; wrong: boolean }
   | { id: string; name: string; status: 'error'; error: string }
-  | { id: string; name: string; status: 'pdf'; lines: string[]; result: ParseResult; added?: boolean }
-  | { id: string; name: string; status: 'statement'; result: ParseResult; added?: boolean }
-  | { id: string; name: string; status: 'table'; preview: TablePreview; mapping: Mapping; added?: boolean };
+  | { id: string; name: string; status: 'pdf'; lines: string[]; result: ParseResult; added?: boolean; nothingNew?: boolean }
+  | { id: string; name: string; status: 'statement'; result: ParseResult; added?: boolean; nothingNew?: boolean }
+  | { id: string; name: string; status: 'table'; preview: TablePreview; mapping: Mapping; added?: boolean; nothingNew?: boolean };
 
 let seq = 0;
 
@@ -97,11 +97,13 @@ export function Import({ memberId: picked }: { memberId?: string } = {}) {
     if (!r || !member) return;
     // The moves as the family last saw them (before this import changes anything) are what a sale is matched against.
     const seen = fam.moves;
+    // A tax P&L is checked against, not added as trades, so only trades and holdings can be "already in".
+    const nothingNew = !r.brokerSummary && !checkOnly && importAddedNothing(state, applyImport(state, member.id, item.name, r, { openingDate: opening ? openingDate : undefined, account: account.trim() || undefined }));
     update((s) => importAndDetect(s, {
       memberId: member.id, fileName: item.name, result: r, seen, rules: fam.rules, at: new Date().toISOString(),
       opts: { openingDate: opening ? openingDate : undefined, account: account.trim() || undefined, checkOnly },
     }));
-    setItems((xs) => xs.map((x) => (x.id === item.id && (x.status === 'pdf' || x.status === 'table' || x.status === 'statement') ? { ...x, added: true } : x)));
+    setItems((xs) => xs.map((x) => (x.id === item.id && (x.status === 'pdf' || x.status === 'table' || x.status === 'statement') ? { ...x, added: true, nothingNew } : x)));
     toast(`Added to ${member.name}`);
   };
 
@@ -305,6 +307,7 @@ function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDismiss, ha
               <span>Also import its exits as trades. If you import tradebooks for this account later, they replace these exits.</span>
             </label>
           )}
+          {added && item.nothingNew && <p className="small muted" role="status">Nothing new: these trades are already in</p>}
           <div className="row wrap" style={{ alignItems: 'flex-end' }}>
             <label className="field" style={{ width: 220 }}>
               {hasFolios ? 'Account (folios are read from the CAS)' : 'Demat account or platform'}

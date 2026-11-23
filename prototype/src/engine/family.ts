@@ -1,7 +1,7 @@
 import { isElssFund } from './categories';
 import { addMonths, daysBetween, isLongTerm, longTermFrom } from './dates';
 import { buildLedger, effectiveCost, lotKey, lotTerms, prorate, saleTerms } from './ledger';
-import { APPROX_MARGIN, effectiveTxnsWithNotes, type CorporateActionNote, type HeldPosition, type TrimNote } from './openingLots';
+import { APPROX_MARGIN, effectiveTxnsWithNotes, isTradebook, normAccount, type CorporateActionNote, type HeldPosition, type TrimNote } from './openingLots';
 import { terGapFor } from './data/ter-gap';
 import { directTwin, type FundsMap } from './directTwin';
 import { giftTransferCost, ltRate, roundTripCost, slabRate, stRate, type TaxRules } from './rules';
@@ -153,6 +153,8 @@ export interface FamilyView {
   brokerAdjustments: BrokerAdjustment[];
   /** What the holdings files changed: units that left, files older than the trades, units changed without a trade. */
   holdingsNotes: HoldingsNotes;
+  /** The date of the oldest tradebook trade, per `${memberId}|${normAccount(account)}`. */
+  tradebookFrom: Record<string, ISODate>;
   /** Realised gains used for tax: the ledger's plus any broker adjustments. */
   booked: Realised[];
   /** Gains the planned sales would realise. Their lots are already removed from `ledger.lots`. */
@@ -314,6 +316,12 @@ function harvestableQty(lots: Lot[], sec: Security, asOf: ISODate, rules: TaxRul
 export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules): FamilyView {
   const { txns: effective, ...holdingsNotes } = effectiveTxnsWithNotes(state.txns, state.positions ?? [], asOf, state.securities);
   const ledger = buildLedger(effective, state.securities, rules, state.termAnswers);
+  const tradebookFrom: Record<string, ISODate> = {};
+  for (const t of state.txns) {
+    if (!isTradebook(t)) continue;
+    const k = `${t.memberId}|${normAccount(t.account)}`;
+    if (!tradebookFrom[k] || t.date < tradebookFrom[k]!) tradebookFrom[k] = t.date;
+  }
   const secs = new Map(state.securities.map((s) => [s.isin, s]));
   const moves: Move[] = [];
   // Dated moves: the family's picked days, by move id. Later entries for the same id win.
@@ -721,7 +729,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   const later = moves.filter(isLaterBenefit);
   const now = moves.filter((m) => !isLaterBenefit(m));
   return {
-    asOf, rules, members: views, moves, ledger, brokerAdjustments, holdingsNotes, booked, plannedRealised, securities: secs,
+    asOf, rules, members: views, moves, ledger, brokerAdjustments, holdingsNotes, tradebookFrom, booked, plannedRealised, securities: secs,
     totals: {
       freeRoom: sum((v) => v.plan.room.free),
       bonusFree: sum((v) => v.plan.bonus.free),

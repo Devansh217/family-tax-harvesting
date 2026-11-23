@@ -31,7 +31,7 @@ export function hasYearPnl(summaries: SummaryLike[], rules: TaxRules) {
 }
 
 const inYear = (d: ISODate, fy: TaxRules) => d >= fy.start && d <= fy.end;
-const brokerOf = (account: string) => account.trim() || 'your broker';
+export const brokerOf = (account: string) => account.trim() || 'your broker';
 
 /** Units a warning saved before it carried them: read from "Sold N more units…". */
 function warningUnits(w: LedgerWarning): Qty {

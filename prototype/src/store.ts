@@ -285,6 +285,12 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
   return s;
 }
 
+/** True when `after` (from `applyImport`) holds the same transactions and positions as `before`: the file was already in. */
+export function importAddedNothing(before: AppState, after: AppState): boolean {
+  const strip = (ps: AppState['positions']) => JSON.stringify(ps.map(({ importId: _i, ...p }) => JSON.stringify(p)).sort());
+  return after.txns.length === before.txns.length && strip(after.positions) === strip(before.positions);
+}
+
 export function removeImport(state: AppState, importId: string): AppState {
   return {
     ...state,

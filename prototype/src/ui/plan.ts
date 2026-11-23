@@ -1,7 +1,7 @@
 import { taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
 import { doneThisSeason, type RecommendationRecord } from '../engine/records';
-import { normAccount, TRIMMING_HOLDINGS_SOURCES } from '../engine/openingLots';
-import { QTY_SCALE, type ISODate } from '../engine/types';
+import { APPROX_MARGIN, normAccount, TRIMMING_HOLDINGS_SOURCES } from '../engine/openingLots';
+import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
 import { possessive } from './format';
 import { hasYearPnl } from './warnings';
 
@@ -132,4 +132,29 @@ export function planGaps(
     }
   }
   return out;
+}
+
+/** Shown only when the room left spare is at least this much. */
+const NUDGE_MIN: Paise = 1_000_00;
+
+/** The tax year before the one `date` falls in, e.g. "FY 2023-24" for 2 May 2024. */
+function yearBefore(date: ISODate): string {
+  const [y, m] = date.split('-').map(Number) as [number, number];
+  const start = (m >= 4 ? y : y - 1) - 1;
+  return `FY ${start}-${String((start + 1) % 100).padStart(2, '0')}`;
+}
+
+/**
+ * For a move sized from units bought before the trade history (`approx`): the room it left spare, and the tax year
+ * whose tradebook would let it be used. `fy` is the year before the account's oldest tradebook, or null when there is
+ * none. Null for an exact move or when the room is under ₹1,000 (rounded to ₹100).
+ */
+export function cushionNudge(move: Move, fam: Pick<FamilyView, 'tradebookFrom'>): { fy: string | null; rupees: Paise } | null {
+  if (!move.approx || move.noRoom) return null;
+  const gain = move.kind === 'harvest_loss' ? move.loss : move.gain;
+  const rupees = Math.round((Math.abs(gain) * APPROX_MARGIN) / 10_000) * 10_000;
+  if (rupees < NUDGE_MIN) return null;
+  const memberId = move.kind === 'gift' ? move.fromId : move.memberId;
+  const oldest = fam.tradebookFrom[`${memberId}|${normAccount(move.account)}`];
+  return { fy: oldest ? yearBefore(oldest) : null, rupees };
 }
