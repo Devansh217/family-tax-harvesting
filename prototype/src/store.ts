@@ -246,7 +246,13 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
     if (p.qty != null) {
       // Demat rows keep one source whatever the statement is called, so the engine treats them as a snapshot.
       const source = p.demat ? DEMAT_SNAPSHOT_SOURCE : r.format;
-      s.positions = s.positions.filter((x) => !(x.memberId === memberId && x.isin === isin && (x.source === source || (p.demat && x.source.startsWith('Combined CAS')))));
+      // A holdings file is kept per import: the engine picks the newest per account (`countingPositions`), so an older
+      // file, another account's file or removing the newest file never drops shares still held. Only the same file
+      // downloaded again (same account and date) replaces it.
+      const replaces = TRIMMING_HOLDINGS_SOURCES.includes(source)
+        ? (x: Position) => x.source === source && normAccount(x.account) === normAccount(opts.account) && x.asOf === p.priceDate
+        : (x: Position) => x.source === source || (!!p.demat && x.source.startsWith('Combined CAS'));
+      s.positions = s.positions.filter((x) => !(x.memberId === memberId && x.isin === isin && replaces(x)));
       s.positions.push({
         memberId, isin, qty: p.qty, ltQty: p.ltQty, asOf: p.priceDate, source, importId,
         ...(p.cost != null ? { cost: p.cost } : {}), account: opts.account ?? '',

@@ -6,6 +6,7 @@ import { sampleState } from './sample';
 import { applyImport, importAddedNothing, emptyState, hasRealData, normalizeState, backupHadSeasonHelp, parseBackup, removeImport, RESTORE_ALERTS_NOTE, setTermAnswer, type AppState } from './store';
 import { ageOn } from './engine/dates';
 import { QTY_SCALE } from './engine/types';
+import { unitMismatches } from './ui/units';
 
 const withMember = (): AppState => ({ ...emptyState(), members: [{ id: 'a', name: 'A', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: 0 , from: 'manual' as const }]}] });
 const parse = (csv: string) => { const p = previewTable(csv); return parseTablePreview(p, p.mapping, 'f.csv'); };
@@ -59,6 +60,84 @@ describe('importing', () => {
     const movesOf = (s: AppState) => computeFamily(s, '2026-11-22', FY_2026_27).moves.map((m) => [m.kind, m.qty, m.approx]);
     expect(movesOf(a)).toEqual(movesOf(b));
     expect(movesOf(a)[0]).toEqual(['harvest_gain', expect.any(Number), true]);
+  });
+
+  describe('holdings files are kept per import, so order and removal never trim shares still held', () => {
+    const U = QTY_SCALE;
+    // Synthetic shares X, Y and Z, bought at ₹1,000 and listed at ₹2,000 a share.
+    const file = (date: string, rows: Array<[string, number]>) => ({
+      format: 'Zerodha holdings', txns: [], skipped: 0, warnings: [],
+      prices: rows.map(([isin, u]) => ({ isin, name: isin, price: 2000_00, priceDate: date, qty: u * U, cost: u * 1000_00, ltQty: u * U })),
+    });
+    const tb = (rows: Array<[string, number]>) => ({
+      format: 'Trade history · tb.xlsx', skipped: 0, warnings: [], prices: [],
+      txns: rows.map(([isin, u]) => ({ isin, name: isin, date: '2024-01-10', side: 'buy' as const, qty: u * U, amount: u * 1000_00 })),
+    });
+    const held = (s: AppState) => {
+      const out: Record<string, number> = {};
+      for (const [k, lots] of computeFamily(s, '2026-11-23', FY_2026_27).ledger.lots) {
+        const q = lots.reduce((a, l) => a + l.qty, 0) / U;
+        if (q) out[k.replace(/^a\|/, '')] = q;
+      }
+      return out;
+    };
+    const Z = 'Zerodha';
+    const start = () => applyImport(withMember(), 'a', 'tb.xlsx', tb([['INEX', 10], ['INEY', 10]]), { account: Z });
+    const nov = file('2026-11-20', [['INEX', 10], ['INEY', 10]]);
+    const mar = file('2026-03-31', [['INEX', 10], ['INEZ', 5]]);
+
+    it('a November file then a March file gives the same as March then November: the newest file decides', () => {
+      const novMar = applyImport(applyImport(start(), 'a', 'nov.xlsx', nov, { account: Z }), 'a', 'mar.xlsx', mar, { account: Z });
+      const marNov = applyImport(applyImport(start(), 'a', 'mar.xlsx', mar, { account: Z }), 'a', 'nov.xlsx', nov, { account: Z });
+      expect(held(novMar)).toEqual({ 'INEX|Zerodha': 10, 'INEY|Zerodha': 10 });
+      expect(held(marNov)).toEqual(held(novMar));
+    });
+
+    it('two accounts for one member each keep their own shares', () => {
+      let s = start();
+      s = applyImport(s, 'a', 'tb2.xlsx', tb([['INEX', 10]]), { account: 'Zerodha 2' });
+      s = applyImport(s, 'a', 'h1.xlsx', file('2026-11-20', [['INEX', 10], ['INEY', 10]]), { account: Z });
+      s = applyImport(s, 'a', 'h2.xlsx', file('2026-11-20', [['INEX', 10]]), { account: 'Zerodha 2' });
+      expect(held(s)).toEqual({ 'INEX|Zerodha': 10, 'INEY|Zerodha': 10, 'INEX|Zerodha 2': 10 });
+    });
+
+    it('removing the newest file falls back to the previous file, intact', () => {
+      const withMar = applyImport(start(), 'a', 'mar.xlsx', mar, { account: Z });
+      const both = applyImport(withMar, 'a', 'nov.xlsx', nov, { account: Z });
+      const novId = both.imports.at(-1)!.id;
+      const back = removeImport(both, novId);
+      // March lists X and Z: Y (not listed) left the account, Z is filled in from the file.
+      expect(held(back)).toEqual({ 'INEX|Zerodha': 10, 'INEZ|Zerodha': 5 });
+      expect(held(back)).toEqual(held(withMar));
+    });
+
+    it('unit checks read only the positions that count, per account', () => {
+      const mismatchesOf = (s: AppState) => {
+        const fam = computeFamily(s, '2026-11-23', FY_2026_27);
+        const holdings = fam.members[0]!.holdings.map((h) => ({
+          isin: h.isin, qty: h.qty, ltQty: h.lots.filter((l) => l.term === 'lt').reduce((a, l) => a + l.qty, 0), lots: h.lots,
+        }));
+        return unitMismatches('a', holdings, s.txns, fam.positions.filter((p) => p.memberId === 'a'));
+      };
+      // The March file's Z is not held (November decides): no "statement 5, history 0" line.
+      const novMar = applyImport(applyImport(start(), 'a', 'nov.xlsx', nov, { account: Z }), 'a', 'mar.xlsx', mar, { account: Z });
+      expect(mismatchesOf(novMar)).toEqual([]);
+      // Two accounts with 10 each: each file matches its own account, not the member's 20.
+      let s = start();
+      s = applyImport(s, 'a', 'tb2.xlsx', tb([['INEX', 10]]), { account: 'Zerodha 2' });
+      s = applyImport(s, 'a', 'h1.xlsx', file('2026-11-20', [['INEX', 10], ['INEY', 10]]), { account: Z });
+      s = applyImport(s, 'a', 'h2.xlsx', file('2026-11-20', [['INEX', 10]]), { account: 'Zerodha 2' });
+      expect(mismatchesOf(s)).toEqual([]);
+    });
+
+    it('a same-day download again replaces the earlier one: nothing is counted twice', () => {
+      const first = applyImport(start(), 'a', 'nov.xlsx', nov, { account: Z });
+      const again = applyImport(first, 'a', 'nov (1).xlsx', file('2026-11-20', [['INEX', 10], ['INEY', 6]]), { account: ' zerodha ' });
+      expect(again.positions).toHaveLength(2);
+      expect(held(again)).toEqual({ 'INEX|Zerodha': 10, 'INEY|Zerodha': 6 });
+      // The identical file again adds nothing.
+      expect(importAddedNothing(first, applyImport(first, 'a', 'nov (2).xlsx', nov, { account: Z }))).toBe(true);
+    });
   });
 
   it('a combined CAS keeps its demat rows as a snapshot, so broker shares are not counted twice', () => {

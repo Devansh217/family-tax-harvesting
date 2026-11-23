@@ -1,7 +1,7 @@
 import { isElssFund } from './categories';
 import { addMonths, daysBetween, isLongTerm, longTermFrom } from './dates';
 import { buildLedger, effectiveCost, lotKey, lotTerms, prorate, saleTerms } from './ledger';
-import { APPROX_MARGIN, effectiveTxnsWithNotes, isTradebook, normAccount, type CorporateActionNote, type HeldPosition, type TrimNote } from './openingLots';
+import { APPROX_MARGIN, countingPositions, effectiveTxnsWithNotes, isTradebook, normAccount, type CorporateActionNote, type HeldPosition, type TrimNote } from './openingLots';
 import { terGapFor } from './data/ter-gap';
 import { directTwin, type FundsMap } from './directTwin';
 import { giftTransferCost, ltRate, roundTripCost, slabRate, stRate, type TaxRules } from './rules';
@@ -153,6 +153,8 @@ export interface FamilyView {
   brokerAdjustments: BrokerAdjustment[];
   /** What the holdings files changed: units that left, files older than the trades, units changed without a trade. */
   holdingsNotes: HoldingsNotes;
+  /** The saved positions that count (`countingPositions`): older holdings files of an account with a newer one left out. */
+  positions: HeldPosition[];
   /** The date of the oldest tradebook trade, per `${memberId}|${normAccount(account)}`. */
   tradebookFrom: Record<string, ISODate>;
   /** Realised gains used for tax: the ledger's plus any broker adjustments. */
@@ -729,7 +731,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   const later = moves.filter(isLaterBenefit);
   const now = moves.filter((m) => !isLaterBenefit(m));
   return {
-    asOf, rules, members: views, moves, ledger, brokerAdjustments, holdingsNotes, tradebookFrom, booked, plannedRealised, securities: secs,
+    asOf, rules, members: views, moves, ledger, brokerAdjustments, holdingsNotes, positions: countingPositions(state.positions ?? []), tradebookFrom, booked, plannedRealised, securities: secs,
     totals: {
       freeRoom: sum((v) => v.plan.room.free),
       bonusFree: sum((v) => v.plan.bonus.free),

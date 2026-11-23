@@ -131,10 +131,10 @@ export function MemberScreen({ id }: { id: string }) {
     }
   }
   const soon = [...soonByDay.values()].sort((a, b) => a.l.longTermOn.localeCompare(b.l.longTermOn)).slice(0, 6);
-  const positions = state.positions.filter((p) => p.memberId === id);
+  const positions = fam.positions.filter((p) => p.memberId === id);
   const mismatches = unitMismatches(
     id,
-    holdings.map((h) => ({ isin: h.isin, qty: h.qty, ltQty: h.lots.filter((l) => l.term === 'lt').reduce((a, l) => a + l.qty, 0) })),
+    holdings.map((h) => ({ isin: h.isin, qty: h.qty, ltQty: h.lots.filter((l) => l.term === 'lt').reduce((a, l) => a + l.qty, 0), lots: h.lots })),
     txns,
     positions,
     myWarnings,

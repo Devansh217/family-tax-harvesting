@@ -175,7 +175,7 @@ function CalendarButton() {
 export function Plan() {
   const { fam, state, update, nameOf } = useApp();
   const { open, done, gainDone, gainTotal, nowDone, nowTotal, doneCount, liveCount } = planView(fam, state.recommendations);
-  const gaps = state.isSample ? [] : planGaps(fam, state.positions, state.brokerSummaries);
+  const gaps = state.isSample ? [] : planGaps(fam, fam.positions, state.brokerSummaries);
   const empty = fam.moves.length === 0 && done.length === 0;
 
   return (

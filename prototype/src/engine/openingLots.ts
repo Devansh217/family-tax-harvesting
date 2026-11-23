@@ -55,6 +55,33 @@ export function decidingFiles(positions: HeldPosition[]): Map<string, DecidingFi
   return out;
 }
 
+/**
+ * The positions that count: every statement's rows, but of the holdings files kept per import only the deciding file's
+ * for each account (`decidingFiles`). A row from another file of that account counts only when it is that share's
+ * newest row and the deciding file neither may trim nor lists the share (a file drops units only when it may trim).
+ * Every consumer of saved positions (fill-in, unit checks, Plan gaps) uses these, never every stored import's rows.
+ */
+export function countingPositions<P extends HeldPosition>(positions: P[], files: Map<string, DecidingFile> = decidingFiles(positions)): P[] {
+  const acctKey = (p: HeldPosition) => `${p.memberId}|${normAccount(p.account)}`;
+  const isHoldingsFile = (p: HeldPosition) => TRIMMING_HOLDINGS_SOURCES.includes(p.source);
+  // Per share and account, one holdings-file position at most: the newest (latest date, undated oldest; on a tie the
+  // last import), so several files listing the same share never fill it in twice.
+  const newest = new Map<string, HeldPosition>();
+  for (const p of positions) {
+    if (!isHoldingsFile(p)) continue;
+    const k = `${acctKey(p)}|${p.isin}`;
+    const b = newest.get(k);
+    if (!b || (p.asOf ?? '') >= (b.asOf ?? '')) newest.set(k, p);
+  }
+  return positions.filter((p) => {
+    if (!isHoldingsFile(p)) return true;
+    const f = files.get(acctKey(p));
+    if (f?.positions.includes(p)) return true;
+    const onlyOne = newest.get(`${acctKey(p)}|${p.isin}`) === p;
+    return onlyOne && (!f || (!f.canTrim && !f.positions.some((x) => x.isin === p.isin)));
+  });
+}
+
 /** Shares in an account's history that its newest holdings file doesn't list (or lists fewer of): they left the account. */
 export interface TrimNote { memberId: string; account: string; asOf: ISODate; isins: string[] }
 
@@ -93,28 +120,10 @@ export function effectiveTxnsWithNotes(
   let out = txns.filter((t) => !(isTaxPnl(t) && tradebookAccounts.has(`${t.memberId}|${t.account ?? ''}`)));
 
   const files = decidingFiles(positions);
-  const acctKey = (memberId: string, account?: string) => `${memberId}|${normAccount(account)}`;
   const isHoldingsFile = (p: HeldPosition) => TRIMMING_HOLDINGS_SOURCES.includes(p.source);
-  // Per share and account, one holdings-file position at most: the newest (latest date, undated oldest; on a tie the
-  // last import), so several files listing the same share never fill it in twice.
-  const newest = new Map<string, HeldPosition>();
-  for (const p of positions) {
-    if (!isHoldingsFile(p)) continue;
-    const k = `${acctKey(p.memberId, p.account)}|${p.isin}`;
-    const b = newest.get(k);
-    if (!b || (p.asOf ?? '') >= (b.asOf ?? '')) newest.set(k, p);
-  }
-  // An older file's positions for an account with a newer dated file count for nothing, unless that file can't trim
-  // and doesn't list the share: a file only drops units when it may trim.
-  const counts = (p: HeldPosition) => {
-    if (!isHoldingsFile(p)) return true;
-    const f = files.get(acctKey(p.memberId, p.account));
-    if (f?.positions.includes(p)) return true;
-    const onlyOne = newest.get(`${acctKey(p.memberId, p.account)}|${p.isin}`) === p;
-    return onlyOne && (!f || (!f.canTrim && !f.positions.some((x) => x.isin === p.isin)));
-  };
+  const counting = countingPositions(positions, files);
   // Holdings files fill in every row; other statements only rows with cost and long-term units.
-  const fills = positions.filter((p) => p.qty > 0 && counts(p) && (isHoldingsFile(p) || (p.cost != null && p.ltQty != null)));
+  const fills = counting.filter((p) => p.qty > 0 && (isHoldingsFile(p) || (p.cost != null && p.ltQty != null)));
   const holdingKey = (memberId: string, isin: string, account?: string) => `${memberId}|${isin}|${normAccount(account)}`;
   const replaced = new Set(fills.map((p) => holdingKey(p.memberId, p.isin, p.account)));
   const holdingsImports = new Set(positions.filter((p) => isHoldingsFile(p) && p.importId).map((p) => p.importId!));
