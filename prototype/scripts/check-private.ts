@@ -11,7 +11,7 @@ import { join, resolve } from 'node:path';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import readXlsxFile from 'read-excel-file/node';
 import { extractLines, isAngelFundHoldings, isAngelTrades, parseAngelFundHoldings, parseAngelTrades, resolveNames, isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseStatementLines, parseTablePreview, parseZerodhaTaxPnl, PdfPasswordError, previewRows, previewTable, type PdfJsLike } from '../src/parsers';
-import { addMonths } from '../src/engine/dates';
+import { addDays, addMonths, inRange } from '../src/engine/dates';
 import { computeFamily } from '../src/engine/family';
 import { FY_2026_27 } from '../src/engine/rules';
 import { reconcile } from '../src/reconcile';
@@ -19,6 +19,7 @@ import { normAccount } from '../src/engine/ledger';
 import { applyImport, emptyState, guessAccount, type AppState } from '../src/store';
 import { decidingFiles, effectiveTxnsWithNotes, isTradebook } from '../src/engine/openingLots';
 import { pnlCoverage, unknownTermSales, visibleOversells } from '../src/ui/warnings';
+import { planGaps } from '../src/ui/plan';
 import type { ParseResult } from '../src/parsers';
 
 const dir = resolve(process.argv[2] ?? join(import.meta.dirname, '../../data/private'));
@@ -144,7 +145,8 @@ if (memberDirs.length) {
     const corp = fam.holdingsNotes.corporateActions.filter((t) => t.memberId === id).length;
     // Funds: the newest position per account and fund against the units the ledger holds for the member.
     const latest = new Map<string, { isin: string; qty: number; asOf: string }>();
-    for (const p of st.positions.filter((x) => x.memberId === id && isFund(x.isin))) {
+    // Only the positions that count (the deciding holdings file per account), as the app reads them.
+    for (const p of fam.positions.filter((x) => x.memberId === id && isFund(x.isin))) {
       const k = `${p.isin}|${p.account ?? ''}`;
       const b = latest.get(k);
       if (!b || (p.asOf ?? '') >= b.asOf) latest.set(k, { isin: p.isin, qty: p.qty, asOf: p.asOf ?? '' });
@@ -162,7 +164,25 @@ if (memberDirs.length) {
     }
     const unknown = unknownTermSales(fam.booked, id, FY_2026_27, covered).length;
     const over = visibleOversells(fam.ledger.warnings.filter((w) => w.memberId === id), FY_2026_27, covered);
-    console.log(`  member ${i + 1}: trimmed shares ${trimmed}; stale holdings files ${stale}; corporate-action notes ${corp}; funds with file units: ${fileUnits.size}, held units differ from file: ${fundMismatch}; unknown-term sales ${unknown}; visible oversells now ${over.now.length} (older ${over.older.length})`);
+    const gaps = planGaps(fam, fam.positions, st.brokerSummaries).filter((g) => g.memberId === id).length;
+    console.log(`  member ${i + 1}: trimmed shares ${trimmed}; stale holdings files ${stale}; corporate-action notes ${corp}; funds with file units: ${fileUnits.size}, held units differ from file: ${fundMismatch}; unknown-term sales ${unknown}; visible oversells now ${over.now.length} (older ${over.older.length}); Plan gaps ${gaps}`);
+    // After the broker correction, booked gains per Tax P&L and category against the broker's own total: match / no match.
+    const isEq = (isin: string) => st.securities.find((x) => x.isin === isin)?.listed ?? true;
+    for (const b of st.brokerSummaries.filter((x) => x.memberId === id)) {
+      const from = b.summary.from ?? FY_2026_27.start, to = b.summary.to ?? FY_2026_27.end;
+      const cats: Array<[string, number | null, 'st' | 'lt', boolean]> = [
+        ['Shares, short-term', b.summary.equityShortTerm, 'st', true], ['Shares, long-term', b.summary.equityLongTerm, 'lt', true],
+        ['Mutual funds, short-term', b.summary.mfShortTerm, 'st', false], ['Mutual funds, long-term', b.summary.mfLongTerm, 'lt', false],
+      ];
+      const out: string[] = [];
+      for (const [label, broker, term, eq] of cats) {
+        if (broker == null) continue;
+        const ours = fam.ledger.realised.filter((r) => r.memberId === id && (r.account ?? '') === b.account && inRange(r.sellDate, from, to) && r.term === term && isEq(r.isin) === eq).reduce((a, r) => a + r.gain, 0)
+          + fam.brokerAdjustments.filter((a) => a.memberId === id && a.account === b.account && a.label === label).reduce((a, x) => a + x.gain, 0);
+        out.push(`${label} ${Math.abs(ours - broker) <= Math.max(100, Math.abs(broker) * 0.0005) ? 'match' : 'no match'}`);
+      }
+      console.log(`    after adjustment vs broker Tax P&L: ${out.join('; ') || 'no totals'}`);
+    }
     // Why trims may be off: holdings files that cannot trim, by reason. Counts only.
     const files = [...decidingFiles(st.positions.filter((p) => p.memberId === id)).values()];
     const no = files.filter((f) => !f.canTrim);
@@ -183,12 +203,13 @@ if (memberDirs.length) {
     // 1. Trimmed shares by cause.
     const notes = eff.trimmed.filter((n) => n.memberId === id);
     if (notes.length) {
-      const b = { otherMember: 0, soldAfterLastBuy: 0, neither: 0, neitherWithPnlExit: 0 };
+      const b = { otherMember: 0, soldAfterLastBuy: 0, neither: 0, neitherWithPnlExit: 0, lastBuyWithin3Days: 0 };
       for (const n of notes) {
         const acct = normAccount(n.account);
         for (const isin of n.isins) {
           const hist = st.txns.filter((t) => t.memberId === id && t.isin === isin && normAccount(t.account) === acct && !t.id.includes('|opening') && !t.left);
           const lastBuy = hist.filter((t) => t.side === 'buy').map((t) => t.date).sort().at(-1) ?? '';
+          if (lastBuy && lastBuy >= addDays(n.asOf, -3) && lastBuy <= n.asOf) b.lastBuyWithin3Days++;
           const otherHolds = allDeciding.some(([k, f]) => !k.startsWith(`${id}|`) && f.positions.some((p) => p.isin === isin && p.qty > 0));
           const soldBetween = hist.some((t) => t.side === 'sell' && t.date >= lastBuy && t.date <= n.asOf && !t.source.startsWith('Zerodha Tax P&L'));
           if (otherHolds) b.otherMember++;
@@ -199,7 +220,7 @@ if (memberDirs.length) {
           }
         }
       }
-      console.log(`  diag trims member ${i + 1}: (a) held by another member ${b.otherMember}; (b) sold after last buy, before file ${b.soldAfterLastBuy}; (c) neither ${b.neither}, of which with a Tax P&L exit this year ${b.neitherWithPnlExit}`);
+      console.log(`  diag trims member ${i + 1}: (a) held by another member ${b.otherMember}; (b) sold after last buy, before file ${b.soldAfterLastBuy}; (c) neither ${b.neither}, of which with a Tax P&L exit this year ${b.neitherWithPnlExit}; last buy within 3 days of the file date ${b.lastBuyWithin3Days}`);
     }
     for (const [k, f] of allDeciding.filter(([k]) => k.startsWith(`${id}|`))) {
       const tb = st.txns.filter((t) => t.memberId === id && normAccount(t.account) === k.slice(id.length + 1) && isTradebook(t)).map((t) => t.date).sort().at(-1);
