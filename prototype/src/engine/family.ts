@@ -256,8 +256,8 @@ function sellAcrossAccounts(ledger: Ledger, memberId: string, sec: Security, qty
 /**
  * Tax for a preview (Simulate, planned sales) that includes `preview` rows. A sale from a guessed-date lot counts its
  * gain long-term for room (`saleTerms`), but the preview can't know its real term, so the tax shown is the highest of
- * the rows as given, every such equity row (ELSS aside: it is always long-term) as long-term and every one as
- * short-term. Room is not changed here: the caller keeps the summary of the rows as given.
+ * the rows as given, every such equity row (ELSS aside: it is always long-term) as long-term, every one as
+ * short-term, and their gains short-term with their losses long-term. Room is not changed here: the caller keeps the summary of the rows as given.
  */
 function previewTax(member: Member, rows: Realised[], preview: Realised[], secs: Map<string, Security>, rules: TaxRules, business: BusinessIncome): Paise {
   const base = summariseYear(member, rows, rules, business).tax;
@@ -266,8 +266,10 @@ function previewTax(member: Member, rows: Realised[], preview: Realised[], secs:
     return r.termUnknown && r.taxType === 'equity' && !(sec && isElssFund(sec));
   }));
   if (!unknown.size) return base;
-  const as = (term: Term) => summariseYear(member, rows.map((r) => (unknown.has(r) ? { ...r, term } : r)), rules, business).tax;
-  return Math.max(base, as('lt'), as('st'));
+  const as = (gain: Term, loss: Term) =>
+    summariseYear(member, rows.map((r) => (unknown.has(r) ? { ...r, term: r.gain >= 0 ? gain : loss } : r)), rules, business).tax;
+  // The fourth, gains short-term and losses long-term, bounds a preview that mixes the two.
+  return Math.max(base, as('lt', 'lt'), as('st', 'st'), as('st', 'lt'));
 }
 
 /** What selling `qty` units now would realise, first-in-first-out. Does not mutate the lots. Guessed lots get the unknown-term rule. */
