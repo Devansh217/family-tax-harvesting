@@ -4,7 +4,7 @@ import { FY_2026_27 } from '../engine/rules';
 import { QTY_SCALE, type Member } from '../engine/types';
 import type { BrokerSummary, ParseResult } from '../parsers';
 import { applyImport, emptyState, removeImport, type AppState } from '../store';
-import { accountGuide, brokerOf, evidenceDate, familyGuide, familyRow, fyOf, memberAccounts, memberGuide, pct, usableShare } from './importGuide';
+import { accountGuide, brokerOf, evidenceDate, familyGuide, familyRow, fileNotes, fyOf, guideSummary, memberAccounts, memberGuide, pct, readLine, successDiff, UNCHANGED, usableShare } from './importGuide';
 
 const ASOF = '2026-11-24';
 const asha: Member = { id: 'a', name: 'Asha', relation: 'self', age: 40, regime: 'new', income: [] };
@@ -423,5 +423,152 @@ describe('member and family guide', () => {
     const first = out(all[0]!);
     expect(JSON.parse(first).members[1].accounts).toHaveLength(2);
     for (const order of all.slice(1)) expect(out(order)).toBe(first);
+  });
+});
+
+describe('wrong files', () => {
+  /** The state before and after adding one file, with every saved import's date pinned so the notes are fixed. */
+  const pin = (s: AppState): AppState => ({ ...s, imports: s.imports.map((i, n) => ({ ...i, at: `2026-11-${String(10 + n).padStart(2, '0')}T09:00:00.000Z` })) });
+  const notes = (before: AppState, step: (s: AppState) => AppState, today = ASOF) => {
+    const b = pin(before);
+    const after = step(b);
+    const id = after.imports[after.imports.length - 1]!.id;
+    return fileNotes(b, after, id, fam(after), today);
+  };
+  const h = (asOf: string) => add('a', `h-${asOf}.xlsx`, zHoldings(asOf, [['INE1', 100, 100, 100, 150]]), 'Zerodha');
+  const tb26 = add('a', 'tb26.csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100]]), 'Zerodha');
+  const tb25 = add('a', 'tb25.csv', tradebook([['INE2', '2025-07-01', 'buy', 5, 100]]), 'Zerodha');
+
+  it('a fresh file today gives no notes', () => {
+    expect(notes(family(), h(ASOF))).toEqual([]);
+    expect(notes(family(h(ASOF)), add('a', 'p.xlsx', zPnl('2026-04-01', ASOF), 'Zerodha'))).toEqual([]);
+  });
+
+  it('same file names the earlier one', () => {
+    // The holdings file again: its positions match the first import's (pinned to 10 Nov).
+    expect(notes(family(tb26, h('2026-11-20')), h('2026-11-20'))).toEqual(['Same as h-2026-11-20.xlsx you added on 11 Nov 2026. Nothing new was added.']);
+    // The same tradebook again, under another name.
+    expect(notes(family(tb26), add('a', 'tb26 (1).csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100]]), 'Zerodha')))
+      .toEqual(['Same as tb26.csv you added on 10 Nov 2026. Nothing new was added.']);
+  });
+
+  it('same trades with no file to name', () => {
+    // Two tradebooks of the same kind: the trades can't be traced to one of them.
+    const both = add('a', 'both.csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100], ['INE2', '2025-07-01', 'buy', 5, 100]]), 'Zerodha');
+    expect(notes(family(tb26, tb25), add('a', 'tb.csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100]]), 'Zerodha')))
+      .toEqual(['Nothing new: these trades are already in.']);
+    expect(notes(family(both), add('a', 'again.csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100]]), 'Zerodha')))
+      .toEqual(['Same as both.csv you added on 10 Nov 2026. Nothing new was added.']);
+  });
+
+  it('older holdings file', () => {
+    expect(notes(family(h('2026-11-20')), h('2026-11-01'))).toEqual([
+      "This holdings file is from 1 Nov 2026. You already have one from 20 Nov 2026, so this one changes nothing. Shares sold since 1 Nov 2026 won't come back.",
+    ]);
+  });
+
+  it('old sole file: 30 days, not 29', () => {
+    expect(notes(family(), h('2026-10-25'))).toEqual([
+      "This holdings file is from 25 Oct 2026 and it's 1 month old. Download today's from Console → Portfolio → Holdings → Download (.xlsx).",
+    ]);
+    expect(notes(family(), h('2026-10-26'))).toEqual([]);
+    expect(notes(family(), h('2026-08-20'))).toEqual([
+      "This holdings file is from 20 Aug 2026 and it's 3 months old. Download today's from Console → Portfolio → Holdings → Download (.xlsx).",
+    ]);
+  });
+
+  it('stale sole file: traded since', () => {
+    const later = add('a', 'tb.csv', tradebook([['INE2', '2026-11-22', 'buy', 5, 100]]), 'Zerodha');
+    expect(notes(family(later), h('2026-11-20'))).toEqual([
+      "This holdings file is from 20 Nov 2026 and you've traded since. Download today's from Console → Portfolio → Holdings → Download (.xlsx).",
+    ]);
+  });
+
+  it("last year's P&L", () => {
+    expect(notes(family(h(ASOF)), add('a', 'p25.xlsx', zPnl('2025-04-01', '2026-03-31'), 'Zerodha'))).toEqual([
+      "This is the FY 2025-26 tax P&L. It's kept, but this year's room needs FY 2026-27, from 1 Apr 2026 to today.",
+    ]);
+  });
+
+  it('gap year', () => {
+    const tb24 = add('a', 'tb24.csv', tradebook([['INE2', '2024-07-01', 'buy', 5, 100]]), 'Zerodha');
+    const tb23 = add('a', 'tb23.csv', tradebook([['INE2', '2023-07-01', 'buy', 5, 100]]), 'Zerodha');
+    expect(notes(family(h(ASOF), tb26), tb24)).toEqual(['No trades from FY 2025-26 are in. If you traded that year, add its tradebook.']);
+    expect(notes(family(h(ASOF), tb26), tb23)).toEqual([
+      'No trades from FY 2025-26 are in. If you traded that year, add its tradebook.',
+      'No trades from FY 2024-25 are in. If you traded that year, add its tradebook.',
+    ]);
+    expect(notes(family(h(ASOF), tb26), tb25)).toEqual([]);
+  });
+
+  it('missing current year', () => {
+    expect(notes(family(h(ASOF)), tb25)).toEqual(["This year's tradebook isn't in, so trades since 1 Apr come only from the holdings file."]);
+    expect(notes(family(h(ASOF), add('a', 'p.xlsx', zPnl('2026-04-01', ASOF), 'Zerodha')), tb25))
+      .toEqual(["This year's tradebook isn't in, so trades since 1 Apr come only from the tax P&L."]);
+    // Nothing dated this year: nothing to say.
+    expect(notes(family(), tb25)).toEqual([]);
+  });
+
+  it('is deterministic', () => {
+    const b = pin(family(h('2026-11-20')));
+    const after = h('2026-11-01')(b);
+    const id = after.imports[1]!.id;
+    expect(fileNotes(b, after, id, fam(after), ASOF)).toEqual(fileNotes(b, after, id, fam(after), ASOF));
+  });
+});
+
+describe('success', () => {
+  const summary = (s: AppState) => guideSummary(s, fam(s), 'a', ASOF);
+
+  it('read lines', () => {
+    expect(readLine(zHoldings('2026-11-20', [['INE1', 100, 100, 100, 150], ['INE2', 20, 0, 100, 100], ['INF1', 1000, null, 10, 12]])))
+      .toBe('Holdings · as on 20 Nov 2026 · 2 shares and 1 fund, ₹29,000');
+    expect(readLine({ ...zPnl('2026-04-01', '2026-11-20'), brokerSummary: { ...zPnl('2026-04-01', '2026-11-20').brokerSummary!, equityLongTerm: 1_20_000_00, mfLongTerm: 5_000_00, equityShortTerm: -3_000_00 } }))
+      .toBe('Tax P&L · 1 Apr 2026 – 20 Nov 2026 · booked ₹1.25 L long-term, −₹3,000 short-term');
+    expect(readLine(tradebook([['INE2', '2026-07-01', 'buy', 5, 100], ['INE2', '2025-07-01', 'buy', 5, 100], ['INE3', '2026-01-02', 'sell', 1, 100]])))
+      .toBe('Tradebook · 3 trades, 1 Jul 2025 to 1 Jul 2026');
+    expect(readLine(tradebook([['INF1', '2026-07-01', 'buy', 5, 100], ['INF2', '2025-07-01', 'buy', 5, 100], ['INF1', '2025-01-02', 'buy', 1, 100]], 'Mutual fund CAS (CAMS / KFintech)')))
+      .toBe('Fund statement · 2 funds, 3 transactions');
+  });
+
+  it('moves use 67% → 100% after a tradebook dates the guessed lots', () => {
+    // Before: INE1 10 units, all long-term, ₹400 each = ₹4,000 usable (from average cost); INE2 20 units, none long-term,
+    // ₹100 each = ₹2,000 guessed. 4,000 / 6,000 = 66.7% → 67%. After the tradebook dates INE2's 20 units:
+    // 6,000 / 6,000 = 100%.
+    const hold = add('a', 'h.xlsx', zHoldings('2026-11-20', [['INE1', 10, 10, 100, 400], ['INE2', 20, 0, 100, 100]]), 'Zerodha');
+    const before = family(hold);
+    const after = add('a', 'tb.csv', tradebook([['INE2', '2026-07-01', 'buy', 20, 100]]), 'Zerodha')(before);
+    const [b, a] = [summary(before), summary(after)];
+    expect([b.pct, a.pct, b.undatedShares, a.undatedShares]).toEqual([67, 100, 1, 0]);
+    const s = successDiff(b, a, 'Tradebook · 1 trade, 1 Jul 2026 to 1 Jul 2026');
+    expect(s).toMatchObject({ read: 'Tradebook · 1 trade, 1 Jul 2026 to 1 Jul 2026', pctFrom: 67, pctTo: 100, unchanged: false });
+    expect(s.changes).toEqual(['Moves use 67% → 100%', '1 undated share now dated']);
+  });
+
+  it('room change, matching the broker once the P&L is in', () => {
+    const b = { pct: 80, room: 1_02_000_00, bookedLt: 0, bookedSt: 0, undatedShares: 2, undatedFunds: 3, stepsDone: ['a|zerodha:holdings'] };
+    const a = { ...b, room: 1_01_000_00, undatedFunds: 1, stepsDone: ['a|zerodha:holdings', 'a|zerodha:pnl'] };
+    expect(successDiff(b, a, 'x').changes).toEqual(["Tax-free room left ₹1.02 L → ₹1.01 L, now matching Zerodha's figures", '2 undated funds now dated']);
+    expect(successDiff({ ...b, stepsDone: a.stepsDone }, a, 'x').changes[0]).toBe('Tax-free room left ₹1.02 L → ₹1.01 L');
+  });
+
+  it('a check-only P&L that leaves the room alone changes nothing', () => {
+    const before = family(add('a', 'h.xlsx', zHoldings('2026-11-20', [['INE1', 10, 10, 100, 400]]), 'Zerodha'));
+    const after = applyImport(before, 'a', 'p.xlsx', zPnl('2026-04-01', '2026-11-20'), { account: 'Zerodha', checkOnly: true });
+    const [b, a] = [summary(before), summary(after)];
+    expect(a.room).toBe(b.room);
+    expect(a.stepsDone).toContain('a|zerodha:pnl');
+    const s = successDiff(b, a, readLine(zPnl('2026-04-01', '2026-11-20')));
+    expect(s).toMatchObject({ changes: [], unchanged: true, pctFrom: 100, pctTo: 100 });
+    expect(UNCHANGED).toBe('Read. Your plan is unchanged by this file.');
+  });
+
+  it('summary fields', () => {
+    const s = family(
+      add('a', 'h.xlsx', zHoldings('2026-11-20', [['INE1', 10, 10, 100, 400], ['INF1', 1000, null, 10, 12]]), 'Zerodha'),
+    );
+    const g = summary(s);
+    const m = fam(s).members.find((x) => x.member.id === 'a')!;
+    expect(g).toMatchObject({ room: m.roomAfterPlan, bookedLt: 0, bookedSt: 0, undatedShares: 0, undatedFunds: 1, stepsDone: ['a|zerodha:holdings'] });
   });
 });

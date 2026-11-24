@@ -3,7 +3,8 @@ import { countingSummaries, type FamilyView } from '../engine/family';
 import { accountKey, isOld, newestEvidence } from '../engine/freshness';
 import { APPROX_MARGIN, decidingFiles, isTradebook, normAccount, TRIMMING_HOLDINGS_SOURCES, type DecidingFile } from '../engine/openingLots';
 import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
-import type { AppState } from '../store';
+import type { ParseResult } from '../parsers';
+import { importAddedNothing, type AppState } from '../store';
 import { dateLabel, inr, inrShort } from './format';
 import { planGaps, unexplainedValue, type PlanGap } from './plan';
 
@@ -435,4 +436,196 @@ export function familyRow(g: MemberGuide): FamilyRow {
   const tradebooks = cell(g, ['tradebook', 'fund_tradebook'], (_a, st) =>
     open(st) ? [3, 'Next'] : st.status === 'suggestion' ? [1, 'Optional'] : [0, `✓ ${plural(st.years?.length ?? 0, 'year')}`]);
   return { holdings, pnl, tradebooks, usable: g.pct == null ? '—' : `${g.pct}%` };
+}
+
+/** What the success card compares before and after a file is added. */
+export interface GuideSummary {
+  pct: number | null;
+  /** Tax-free room left, as the member page shows it (`roomAfterPlan`). */
+  room: Paise;
+  /** Gains booked this tax year, net of this year's losses. */
+  bookedLt: Paise; bookedSt: Paise;
+  /** Shares with a lot no date covers (not even an average-cost one), and funds with an uncertain lot. */
+  undatedShares: number; undatedFunds: number;
+  /** `${accountKey}:${kind}` for every done step. */
+  stepsDone: string[];
+}
+
+export function guideSummary(state: GuideState, fam: FamilyView, memberId: string, today: ISODate): GuideSummary {
+  const g = memberGuide(state, fam, memberId, today);
+  const view = fam.members.find((m) => m.member.id === memberId);
+  const holdings = view?.holdings ?? [];
+  const count = (fund: boolean, undated: (l: (typeof holdings)[number]['lots'][number]) => boolean) =>
+    holdings.filter((h) => isFund(h.isin) === fund && h.lots.some(undated)).length;
+  return {
+    pct: g.pct,
+    room: view?.roomAfterPlan ?? 0,
+    bookedLt: view ? view.year.ltGains - view.year.ltLosses : 0,
+    bookedSt: view ? view.year.stGains - view.year.stLosses : 0,
+    undatedShares: count(false, (l) => !l.certain && !l.approx),
+    undatedFunds: count(true, (l) => !l.certain),
+    stepsDone: g.accounts.flatMap((a) => a.steps.filter((st) => st.status === 'done').map((st) => `${accountKey(memberId, a.key)}:${st.kind}`)).sort(),
+  };
+}
+
+export interface Success { read: string; changes: string[]; pctFrom: number | null; pctTo: number | null; unchanged: boolean }
+
+/** The success card's line when a file changed nothing in the plan. */
+export const UNCHANGED = 'Read. Your plan is unchanged by this file.';
+
+/** What a file changed, in the card's order: completeness, room, then undated shares and funds now dated. */
+export function successDiff(before: GuideSummary, after: GuideSummary, read: string): Success {
+  const changes: string[] = [];
+  if (after.pct != null && after.pct !== before.pct) {
+    changes.push(before.pct == null ? `Moves use ${after.pct}%` : `Moves use ${before.pct}% → ${after.pct}%`);
+  }
+  if (after.room !== before.room) {
+    // Only Zerodha's Tax P&L is read, so a P&L step that turned done is Zerodha's.
+    const pnlDone = after.stepsDone.some((k) => k.endsWith(':pnl') && !before.stepsDone.includes(k));
+    changes.push(`Tax-free room left ${inrShort(before.room)} → ${inrShort(after.room)}${pnlDone ? ", now matching Zerodha's figures" : ''}`);
+  }
+  const shares = before.undatedShares - after.undatedShares;
+  if (shares > 0) changes.push(`${plural(shares, 'undated share')} now dated`);
+  const funds = before.undatedFunds - after.undatedFunds;
+  if (funds > 0) changes.push(`${plural(funds, 'undated fund')} now dated`);
+  return { read, changes, pctFrom: before.pct, pctTo: after.pct, unchanged: changes.length === 0 };
+}
+
+/** One line saying what a file held, by kind: Tax P&L, fund statement, holdings or tradebook. */
+export function readLine(r: ParseResult): string {
+  const b = r.brokerSummary;
+  if (b) {
+    const lt = (b.equityLongTerm ?? 0) + (b.mfLongTerm ?? 0);
+    const st = (b.equityShortTerm ?? 0) + (b.mfShortTerm ?? 0);
+    const period = b.from && b.to ? `${dateLabel(b.from)} – ${dateLabel(b.to)} · ` : '';
+    return `Tax P&L · ${period}booked ${inrShort(lt)} long-term, ${inrShort(st)} short-term`;
+  }
+  if (isFundFormat(r.format)) {
+    return `Fund statement · ${plural(new Set(r.txns.map((t) => t.isin)).size, 'fund')}, ${plural(r.txns.length, 'transaction')}`;
+  }
+  const held = r.prices.filter((p) => p.qty != null && p.qty > 0);
+  if (held.length) {
+    const asOf = held.reduce<ISODate | undefined>((a, p) => (p.priceDate && (!a || p.priceDate > a) ? p.priceDate : a), undefined);
+    const shares = new Set(held.filter((p) => !isFund(p.isin)).map((p) => p.isin)).size;
+    const funds = new Set(held.filter((p) => isFund(p.isin)).map((p) => p.isin)).size;
+    const value = held.reduce((a, p) => a + Math.round((p.price * (p.qty ?? 0)) / QTY_SCALE), 0);
+    const parts = [shares ? plural(shares, 'share') : '', funds ? plural(funds, 'fund') : ''].filter(Boolean);
+    return `Holdings${asOf ? ` · as on ${dateLabel(asOf)}` : ''} · ${parts.join(' and ')}, ${inrShort(value)}`;
+  }
+  const dates = r.txns.map((t) => t.date).sort();
+  if (dates.length) return `Tradebook · ${plural(dates.length, 'trade')}, ${dateLabel(dates[0]!)} to ${dateLabel(dates[dates.length - 1]!)}`;
+  return 'Nothing read from this file.';
+}
+
+/** Whole calendar months from `from` to `to`, at least 1. */
+const monthsOld = (from: ISODate, to: ISODate) => {
+  let n = 0;
+  while (addMonths(from, n + 1) <= to) n++;
+  return Math.max(1, n);
+};
+
+/** Position fields that make two saved rows the same holding, whichever import saved them. */
+const sameRow = (p: AppState['positions'][number]) =>
+  JSON.stringify([p.memberId, p.isin, p.qty, p.ltQty ?? null, p.asOf ?? null, p.source, p.cost ?? null, normAccount(p.account)]);
+
+/**
+ * The earlier import a file that added nothing repeats: the first in `before.imports` that saved one of the rows the new
+ * file's positions match. For trades, which the new file never saves, the member's only earlier import of the same
+ * format that saved trades, or one with the same file name. Undefined when no single file can be named.
+ */
+function repeatedImport(before: GuideState, after: GuideState, importId: string) {
+  const mine = after.imports.find((i) => i.id === importId);
+  if (!mine) return undefined;
+  const rows = new Set(after.positions.filter((p) => p.importId === importId).map(sameRow));
+  const owners = new Set(before.positions.filter((p) => rows.has(sameRow(p))).map((p) => p.importId));
+  const byPosition = before.imports.find((i) => owners.has(i.id));
+  if (byPosition) return byPosition;
+  if (rows.size) return undefined;
+  const withTrades = new Set(before.txns.map((t) => t.importId));
+  const sameKind = before.imports.filter((i) => i.memberId === mine.memberId && i.format === mine.format && withTrades.has(i.id));
+  return sameKind.find((i) => i.fileName === mine.fileName) ?? (sameKind.length === 1 ? sameKind[0] : undefined);
+}
+
+/**
+ * Amber notes for a file just added (design §7), in order: the same file again (alone, as it changed nothing); an
+ * older holdings file than the account's; an old or stale holdings file that decides the account; a Tax P&L of an
+ * earlier tax year; tax years missing between a tradebook's oldest and newest; this year's tradebook missing.
+ */
+export function fileNotes(before: GuideState, after: GuideState, importId: string, famAfter: FamilyView, today: ISODate): string[] {
+  const imp = after.imports.find((i) => i.id === importId);
+  if (!imp) return [];
+  const memberId = imp.memberId;
+  const rules = famAfter.rules;
+  const summaries = after.brokerSummaries.filter((b) => b.importId === importId);
+
+  if (!summaries.length && importAddedNothing(before as AppState, after as AppState)) {
+    const earlier = repeatedImport(before, after, importId);
+    return [earlier
+      ? `Same as ${earlier.fileName} you added on ${dateLabel(earlier.at.slice(0, 10))}. Nothing new was added.`
+      : 'Nothing new: these trades are already in.'];
+  }
+
+  const out: string[] = [];
+  const positions = after.positions.filter((p) => p.importId === importId);
+  const txns = after.txns.filter((t) => t.importId === importId);
+  const accounts = [...new Set([...positions.map((p) => p.account), ...txns.map((t) => t.account), ...summaries.map((b) => b.account)].map(normAccount))].sort();
+  const deciding = decidingFiles(famAfter.positions);
+
+  // Holdings files: older than the account's, or old (or traded since) while deciding it.
+  const files = new Map<string, ISODate>();
+  for (const p of positions) {
+    if (!TRIMMING_HOLDINGS_SOURCES.includes(p.source) || !p.asOf) continue;
+    const k = normAccount(p.account);
+    if (!files.has(k) || p.asOf > files.get(k)!) files.set(k, p.asOf);
+  }
+  const older: string[] = [];
+  const old: string[] = [];
+  for (const k of [...files.keys()].sort()) {
+    const asOf = files.get(k)!;
+    const d = dateLabel(asOf);
+    const dec = deciding.get(accountKey(memberId, k));
+    if (!dec) continue;
+    if (dec.importId !== importId) {
+      if (asOf < dec.asOf) older.push(`This holdings file is from ${d}. You already have one from ${dateLabel(dec.asOf)}, so this one changes nothing. Shares sold since ${d} won't come back.`);
+      continue;
+    }
+    const stale = famAfter.holdingsNotes.staleFiles.some((f) => f.memberId === memberId && normAccount(f.account) === k && f.asOf === asOf);
+    if (!stale && !isOld(asOf, today)) continue;
+    const where = memberGuide(after, famAfter, memberId, today).accounts.find((a) => a.key === k)?.steps.find((st) => st.kind === 'holdings')?.where ?? '';
+    old.push(`This holdings file is from ${d} and ${stale ? "you've traded since" : `it's ${plural(monthsOld(asOf, today), 'month')} old`}. Download today's from ${where}.`);
+  }
+  out.push(...older, ...old);
+
+  // A Tax P&L of an earlier tax year.
+  const startYear = Number(rules.start.slice(0, 4));
+  for (const b of summaries) {
+    const to = b.summary.to;
+    if (to && to < rules.start) {
+      out.push(`This is the ${fyOf(to)} tax P&L. It's kept, but this year's room needs ${rules.label}, from 1 Apr ${startYear} to today.`);
+    }
+  }
+
+  // Tradebook years per account this file touched.
+  const yearsOf = (k: string) => [...new Set(after.txns
+    .filter((t) => t.memberId === memberId && isTradebook(t) && normAccount(t.account) === k).map((t) => fyStart(t.date)))];
+  if (txns.some(isTradebook)) {
+    for (const k of accounts) {
+      const years = yearsOf(k);
+      if (!years.length) continue;
+      for (let y = Math.max(...years) - 1; y > Math.min(...years); y--) {
+        if (!years.includes(y)) out.push(`No trades from ${fyFromStart(y)} are in. If you traded that year, add its tradebook.`);
+      }
+    }
+  }
+  for (const k of accounts) {
+    const years = yearsOf(k);
+    if (!years.length || years.includes(startYear)) continue;
+    const hasPnl = countingSummaries(after.brokerSummaries)
+      .some((b) => b.memberId === memberId && normAccount(b.account) === k && (b.summary.to ?? '') >= rules.start);
+    const hasHoldings = after.positions.some((p) => p.memberId === memberId && normAccount(p.account) === k && (p.asOf ?? '') >= rules.start);
+    if (hasPnl || hasHoldings) {
+      out.push(`This year's tradebook isn't in, so trades since 1 Apr come only from ${hasPnl ? 'the tax P&L' : 'the holdings file'}.`);
+    }
+  }
+  return out;
 }
