@@ -4,11 +4,11 @@ import { accountKey, isOld, newestEvidence } from '../engine/freshness';
 import { APPROX_MARGIN, decidingFiles, isTradebook, normAccount, TRIMMING_HOLDINGS_SOURCES, type DecidingFile } from '../engine/openingLots';
 import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
 import type { ParseResult } from '../parsers';
-import { importAddedNothing, type AppState } from '../store';
+import { importAddedNothing, importTxnIds, type AppState, type ImportOptions } from '../store';
 import { dateLabel, inr, inrShort } from './format';
 import { planGaps, unexplainedValue, type PlanGap } from './plan';
 
-export type GuideState = Pick<AppState, 'members' | 'txns' | 'positions' | 'imports' | 'brokerSummaries'>;
+export type GuideState = Pick<AppState, 'members' | 'securities' | 'txns' | 'positions' | 'imports' | 'brokerSummaries'>;
 export type Broker = 'Zerodha' | 'Angel One' | 'Other' | 'Mutual funds';
 export interface AccountRef { label: string; key: string; broker: Broker }
 
@@ -529,29 +529,28 @@ const sameRow = (p: AppState['positions'][number]) =>
   JSON.stringify([p.memberId, p.isin, p.qty, p.ltQty ?? null, p.asOf ?? null, p.source, p.cost ?? null, normAccount(p.account)]);
 
 /**
- * The earlier import a file that added nothing repeats: the first in `before.imports` that saved one of the rows the new
- * file's positions match. For trades, which the new file never saves, the member's only earlier import of the same
- * format that saved trades, or one with the same file name. Undefined when no single file can be named.
+ * The earlier import a file that added nothing repeats: the first in `before.imports` that saved one of the trades the
+ * file holds (by the exact id `applyImport` gives it) or a holdings row its positions match. Undefined when none does.
  */
-function repeatedImport(before: GuideState, after: GuideState, importId: string) {
-  const mine = after.imports.find((i) => i.id === importId);
-  if (!mine) return undefined;
+function repeatedImport(before: GuideState, after: GuideState, importId: string, memberId: string, parsed?: ParsedFile) {
+  const ids = new Set(parsed ? importTxnIds(before, memberId, parsed.result, parsed.opts) : []);
   const rows = new Set(after.positions.filter((p) => p.importId === importId).map(sameRow));
-  const owners = new Set(before.positions.filter((p) => rows.has(sameRow(p))).map((p) => p.importId));
-  const byPosition = before.imports.find((i) => owners.has(i.id));
-  if (byPosition) return byPosition;
-  if (rows.size) return undefined;
-  const withTrades = new Set(before.txns.map((t) => t.importId));
-  const sameKind = before.imports.filter((i) => i.memberId === mine.memberId && i.format === mine.format && withTrades.has(i.id));
-  return sameKind.find((i) => i.fileName === mine.fileName) ?? (sameKind.length === 1 ? sameKind[0] : undefined);
+  const owners = new Set([
+    ...before.txns.filter((t) => ids.has(t.id)).map((t) => t.importId),
+    ...before.positions.filter((p) => rows.has(sameRow(p))).map((p) => p.importId),
+  ]);
+  return before.imports.find((i) => owners.has(i.id));
 }
+
+/** The file as parsed and the options it was added with, so a repeat can be traced to the file that holds its trades. */
+export interface ParsedFile { result: ParseResult; opts?: ImportOptions }
 
 /**
  * Amber notes for a file just added (design §7), in order: the same file again (alone, as it changed nothing); an
  * older holdings file than the account's; an old or stale holdings file that decides the account; a Tax P&L of an
  * earlier tax year; tax years missing between a tradebook's oldest and newest; this year's tradebook missing.
  */
-export function fileNotes(before: GuideState, after: GuideState, importId: string, famAfter: FamilyView, today: ISODate): string[] {
+export function fileNotes(before: GuideState, after: GuideState, importId: string, famAfter: FamilyView, today: ISODate, parsed?: ParsedFile): string[] {
   const imp = after.imports.find((i) => i.id === importId);
   if (!imp) return [];
   const memberId = imp.memberId;
@@ -559,7 +558,7 @@ export function fileNotes(before: GuideState, after: GuideState, importId: strin
   const summaries = after.brokerSummaries.filter((b) => b.importId === importId);
 
   if (!summaries.length && importAddedNothing(before as AppState, after as AppState)) {
-    const earlier = repeatedImport(before, after, importId);
+    const earlier = repeatedImport(before, after, importId, memberId, parsed);
     return [earlier
       ? `Same as ${earlier.fileName} you added on ${dateLabel(earlier.at.slice(0, 10))}. Nothing new was added.`
       : 'Nothing new: these trades are already in.'];

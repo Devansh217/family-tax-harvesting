@@ -444,21 +444,51 @@ describe('wrong files', () => {
     expect(notes(family(h(ASOF)), add('a', 'p.xlsx', zPnl('2026-04-01', ASOF), 'Zerodha'))).toEqual([]);
   });
 
+  /** Like `notes`, with the parsed file passed through, as the import screen does. */
+  const exact = (before: AppState, m: string, file: string, r: ParseResult, account: string) => {
+    const b = pin(before);
+    const after = applyImport(b, m, file, r, { account });
+    return fileNotes(b, after, after.imports[after.imports.length - 1]!.id, fam(after), ASOF, { result: r, opts: { account } });
+  };
+  const tb26rows: Array<[string, string, 'buy' | 'sell', number, number]> = [['INE2', '2026-07-01', 'buy', 5, 100]];
+
   it('same file names the earlier one', () => {
     // The holdings file again: its positions match the first import's (pinned to 10 Nov).
     expect(notes(family(tb26, h('2026-11-20')), h('2026-11-20'))).toEqual(['Same as h-2026-11-20.xlsx you added on 11 Nov 2026. Nothing new was added.']);
     // The same tradebook again, under another name.
-    expect(notes(family(tb26), add('a', 'tb26 (1).csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100]]), 'Zerodha')))
+    expect(exact(family(tb26), 'a', 'tb26 (1).csv', tradebook(tb26rows), 'Zerodha'))
       .toEqual(['Same as tb26.csv you added on 10 Nov 2026. Nothing new was added.']);
   });
 
-  it('same trades with no file to name', () => {
-    // Two tradebooks of the same kind: the trades can't be traced to one of them.
+  it('two earlier tradebooks: names the one holding the trades', () => {
+    expect(exact(family(tb25, tb26), 'a', 'tb.csv', tradebook(tb26rows), 'Zerodha'))
+      .toEqual(['Same as tb26.csv you added on 11 Nov 2026. Nothing new was added.']);
     const both = add('a', 'both.csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100], ['INE2', '2025-07-01', 'buy', 5, 100]]), 'Zerodha');
-    expect(notes(family(tb26, tb25), add('a', 'tb.csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100]]), 'Zerodha')))
-      .toEqual(['Nothing new: these trades are already in.']);
-    expect(notes(family(both), add('a', 'again.csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100]]), 'Zerodha')))
-      .toEqual(['Same as both.csv you added on 10 Nov 2026. Nothing new was added.']);
+    expect(exact(family(tb25, both), 'a', 'again.csv', tradebook(tb26rows), 'Zerodha'))
+      .toEqual(['Same as both.csv you added on 11 Nov 2026. Nothing new was added.']);
+  });
+
+  it('trades already in from a file of another format name that file', () => {
+    // A Tax P&L whose exits were saved as trades, then a tradebook with the same sale. The only earlier file of the
+    // tradebook's own format (tb26) doesn't hold it.
+    const sale: Array<[string, string, 'buy' | 'sell', number, number]> = [['INE3', '2026-08-01', 'sell', 2, 300]];
+    const pnlTrades = add('a', 'pnl.xlsx', { ...zPnl('2026-04-01', '2026-11-20'), txns: tradebook(sale).txns }, 'Zerodha');
+    expect(exact(family(tb26, pnlTrades), 'a', 'tb-aug.csv', tradebook(sale), 'Zerodha'))
+      .toEqual(['Same as pnl.xlsx you added on 11 Nov 2026. Nothing new was added.']);
+  });
+
+  it("another account's file of the same format is not named for trades it doesn't hold", () => {
+    // Zerodha's tradebook is the only earlier 'Trade history' file; the Groww trade came in through a Groww-format file.
+    const groww: Array<[string, string, 'buy' | 'sell', number, number]> = [['INE5', '2026-05-01', 'buy', 3, 200]];
+    const growwFile = add('a', 'groww.csv', tradebook(groww, 'Trade history · Groww'), 'Groww');
+    expect(exact(family(tb26, growwFile), 'a', 'groww-again.csv', tradebook(groww), 'Groww'))
+      .toEqual(['Same as groww.csv you added on 11 Nov 2026. Nothing new was added.']);
+  });
+
+  it('without the parsed file, trades fall back', () => {
+    expect(notes(family(tb26), add('a', 'tb26 (1).csv', tradebook(tb26rows), 'Zerodha'))).toEqual(['Nothing new: these trades are already in.']);
+    expect(exact(family(tb26, tb25), 'a', 'tb.csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100], ['INE2', '2025-07-01', 'buy', 5, 100]]), 'Zerodha'))
+      .toEqual(['Same as tb26.csv you added on 10 Nov 2026. Nothing new was added.']);
   });
 
   it('older holdings file', () => {
