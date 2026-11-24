@@ -298,8 +298,8 @@ const STEPS: Record<Broker, (c: Ctx) => Draft[]> = {
 /**
  * The checklist for one account: its broker's steps in order, each done, unreadable or a suggestion by its own test,
  * the first remaining one next and the rest later. When the account's newest data is old (`isOld`), its holdings step
- * (the statement step for funds) reopens, titled as a refresh when it was done (its done line kept), and a "Newest data
- * from" note is added.
+ * reopens, titled as a refresh when it was done (its done line kept), and a "Newest data from" note is added. The
+ * Mutual funds section never goes stale: a fresh CAS adds no newer transaction for a fund only held.
  */
 export function accountGuide(state: GuideState, fam: FamilyView, memberId: string, acct: AccountRef, today: ISODate): AccountGuide {
   return sectionGuide(state, fam, memberId, acct, [acct.key], today);
@@ -315,14 +315,16 @@ function sectionGuide(state: GuideState, fam: FamilyView, memberId: string, acct
   const drafts = STEPS[acct.broker]({ state, fam, memberId, acct, today, file, lots, trades, keys, notes });
 
   const newest = accountKeys.map((k) => evidenceDate(state, memberId, k)).reduce<ISODate | null>((a, d) => (d && (!a || d > a) ? d : a), null);
-  const stale = newest != null && isOld(newest, today);
+  // A fund CAS dates its evidence by the newest transaction, which a buy-and-hold investor never moves: refreshing it
+  // can't clear the line, so the Mutual funds section never goes stale here (the Plan's marks still use the date).
+  const stale = acct.broker !== 'Mutual funds' && newest != null && isOld(newest, today);
   if (stale) {
-    const h = drafts.find((d) => d.kind === 'holdings' || d.kind === 'cas');
+    const h = drafts.find((d) => d.kind === 'holdings');
     if (h) {
       const wasDone = h.status === 'done';
       Object.assign(h, {
         status: 'open', unlocks: `Download today's: your newest data is from ${dateLabel(newest)}.`,
-        ...(wasDone ? { refresh: true, title: h.kind === 'holdings' ? 'Holdings file: refresh' : `${h.title}: refresh` } : {}),
+        ...(wasDone ? { refresh: true, title: 'Holdings file: refresh' } : {}),
       });
     }
     notes.push(`Newest data from ${dateLabel(newest)}.`);

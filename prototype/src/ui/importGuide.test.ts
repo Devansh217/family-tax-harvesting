@@ -334,6 +334,22 @@ describe('member and family guide', () => {
     expect(familyRow(a)).toMatchObject({ holdings: '✓ 20 Nov', pnl: '—', tradebooks: '—' });
   });
 
+  it('a fund CAS never goes stale', () => {
+    const oldCas = add('r', 'cas.pdf', tradebook([['INF1', '2026-08-26', 'buy', 5, 100]], 'Mutual fund CAS (CAMS / KFintech)'), 'Folio 1/1');
+    const only = g(family(oldCas));
+    expect(only.done).toBe(true);
+    expect(only.accounts[0]!.stale).toBe(false);
+    expect(only.accounts[0]!.steps[0]).toMatchObject({ kind: 'cas', status: 'done' });
+    expect(only.accounts[0]!.notes.some((n) => n.includes('Newest data from'))).toBe(false);
+    const withZerodha = g(family(
+      add('r', 'h.xlsx', zHoldings('2026-11-20', [['INE1', 100, 100, 100, 150]]), 'Zerodha'),
+      add('r', 'p.xlsx', zPnl('2026-04-01', '2026-11-20'), 'Zerodha'),
+      oldCas,
+    ));
+    expect(withZerodha.accounts.map((a) => a.broker)).toEqual(['Zerodha', 'Mutual funds']);
+    expect(withZerodha.done).toBe(true);
+  });
+
   it('removing the P&L reopens its step', () => {
     const s = family(add('r', 'h.xlsx', zHoldings('2026-11-20', [['INE1', 100, 100, 100, 150]]), 'Zerodha'), add('r', 'p.xlsx', zPnl('2026-04-01', '2026-11-20'), 'Zerodha'));
     expect(statuses(g(s))).toEqual(['done', 'done']);
