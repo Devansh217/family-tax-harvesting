@@ -39,7 +39,7 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 | **B** | **Import and readers** | | | |
 | B1 | Guided import | Ready to build | `guided-import` | C1 |
 | B2 | Generic Tax P&L reader (Excel and CSV first, PDF best-effort) | Cause known, approach agreed | — | — |
-| B3 | Angel One holdings reader: shares and gold bonds | Needs brainstorm | — | — |
+| B3 | Angel holdings (shares, gold bonds) via the generic reader | Approach agreed | — | B2 |
 | B4 | Direct vs regular from the ISIN | Cause known | — | — |
 | B5 | Recognise gifts within the family | Needs brainstorm | — | B3 helps |
 | B6 | Fund statement and Coin gaps | Needs brainstorm | — | — |
@@ -160,7 +160,7 @@ The app tells the family where money should sit to pay less tax over the years, 
   - **Small per-broker hints** only for quirks: buyback lines, 31 Jan 2018 values, Angel's long-term/short-term split. The existing Zerodha reader stays.
   - **PDF is best-effort:** rebuild columns from pdf.js word positions and accept only high confidence. Otherwise ask for the Excel version.
   - **Ruled out:** server-side PDF tools (Tabula, Camelot, pdfplumber), cloud document AI and LLM APIs, because statements must stay in the browser (GUARDRAILS §4) and the app is free tier only. An in-browser model is too heavy for phones.
-  - **B3 uses the same reader.**
+  - **B3 uses the same reader** (founder, 25 Nov).
 - **Build:**
   - The generic reader, tested on the Zerodha and Angel files in both formats.
   - "Broker totals win" for Angel accounts (`brokerAdjustments`), as Zerodha has.
@@ -168,12 +168,18 @@ The app tells the family where money should sit to pay less tax over the years, 
   - **Last year's Tax P&L feeds carried-forward losses** (`Member.carriedLoss`): the user confirms the figure, and it applies only if that year's return was filed on time.
 - **Done when:** both files read, and the Plan's booked gains match the broker for an Angel account.
 
-### B3. Angel One holdings reader: shares and gold bonds: Needs brainstorm
-- **Today:** the unlocked "Your Holding Details" workbook is read for its fund sheet only. Its Equity (ISIN, quantity, average price, LTP, **LTCG and STCG quantity and value**), SGB and Bonds sheets are dropped silently (fresh-run findings 14, 17a).
+### B3. Angel One holdings (shares and gold bonds) through the generic reader: Approach agreed 25 Nov
+- **Today:** the unlocked "Your Holding Details" workbook is read for its fund sheet only. Its Equity (ISIN, total quantity, average price, LTP, **LTCG and STCG quantity and value**), SGB and Bonds sheets are dropped silently (fresh-run findings 14, 17a).
+- **Founder (25 Nov):** use the same generic reader as B2, not a dedicated Angel reader.
 - **Build:**
-  - Find the sheets by header. A copy saved from Numbers adds an "Export Summary" sheet first.
-  - Join the holdings-first trimming list (`TRIMMING_HOLDINGS_SOURCES`).
-  - Warn when the holdings show more units than the trade history.
+  - **Holdings fields** in the B2 field dictionary: name or ISIN, quantity, average cost, current price. Optional: long-term quantity, short-term quantity, and their values.
+  - **Find sheets by header,** never by position. A copy saved from Numbers adds an "Export Summary" sheet first.
+  - **Read every holdings block:** equity, SGB, bonds and funds. The same confidence rules and remembered layouts as B2.
+  - **Long-term and short-term quantities, when present,** date the opening lots the way the holdings-first engine does for Zerodha. Join `TRIMMING_HOLDINGS_SOURCES` so the file decides what's held.
+  - **Warn** when the holdings show more units than the trade history (finding 17a).
+  - Replace the fund-sheet-only path in `parsers/angel.ts` once the generic one reads the same funds.
+- **Depends on:** B2 (the generic reader). Build B2 first, or both together.
+- **Done when:** the test family's Angel holdings file gives shares, gold bonds and funds with the right units, and no rows are dropped silently.
 
 ### B4. Direct vs regular from the ISIN: Cause known
 - **Today:** a fund is "regular" only when a CAS says so (`parsers/cas.ts`). Angel's files list bare fund names, so funds held through Angel never get a switch-to-direct move (founder feedback point 2). The nightly `funds.json` also strips "Direct Plan" / "Regular Plan" from every name, so the ISIN can't tell them apart either.
