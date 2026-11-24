@@ -377,6 +377,26 @@ describe('member and family guide', () => {
     expect(g(family()).otherGaps).toEqual([]);
   });
 
+  it('undated shares outside Zerodha stay in other gaps: no tradebook step asks for them', () => {
+    // A Groww holdings export shows 100 units; the trade history explains 10.
+    const groww = (s: AppState) => add('r', 'groww.csv', {
+      format: 'Groww holdings', txns: [], skipped: 0, warnings: [],
+      prices: [{ isin: 'INE7', name: 'INE7', price: 100_00, priceDate: '2026-11-20', qty: 100 * QTY_SCALE }],
+    }, 'Groww')(add('r', 'groww-tb.csv', tradebook([['INE7', '2026-06-01', 'buy', 10, 100]], 'Trade history · Groww'), 'Groww')(s));
+    const r = g(family(groww));
+    expect(r.accounts.map((a) => a.broker)).toEqual(['Other']);
+    expect(r.otherGaps.map((x) => x.key)).toContain('shares_no_dates');
+    // A Zerodha-only member's undated shares are the tradebook step's, so they don't repeat.
+    const z = g(family(add('r', 'h.xlsx', zHoldings('2026-11-20', [['INE1', 100, 0, 100, 150]]), 'Zerodha')));
+    expect(z.accounts.map((a) => a.broker)).toEqual(['Zerodha']);
+    expect(z.otherGaps.map((x) => x.key)).not.toContain('shares_no_dates');
+  });
+
+  it("Angel's holdings step doesn't promise moves", () => {
+    const h = g(family(angelTrades)).accounts[0]!.steps[0]!;
+    expect(h.unlocks).toBe('The funds held today, so the plan can see them.');
+  });
+
   describe('cushion', () => {
     // One long-term share whose whole gain is harvested from approx lots (bought before the trade history).
     const build = (gainRupees: number) => family(

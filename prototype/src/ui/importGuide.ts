@@ -250,7 +250,7 @@ function angelSteps(c: Ctx): Draft[] {
     {
       kind: 'holdings', status: funds.length ? 'done' : 'open', title: 'Holdings file',
       where: 'Open "Your Holding Details" with its password, save a copy as .xlsx, import the copy.',
-      unlocks: 'The funds held today, so they can get moves.',
+      unlocks: 'The funds held today, so the plan can see them.',
       ...(funds.length ? { doneLine: "Funds read. Shares and SGBs in this file aren't read yet: they come from your tradebooks for now.", ...(asOf ? { asOf } : {}) } : {}),
     },
     {
@@ -360,6 +360,15 @@ export interface FamilyGuide { members: MemberGuide[]; pct: number | null }
 const CUSHION_MIN: Paise = 4_000_00;
 /** Gaps the steps already ask for. */
 const STEP_GAPS: Array<PlanGap['key']> = ['no_holdings', 'shares_no_dates', 'funds_no_dates'];
+/**
+ * A gap the steps already ask for. Undated shares are only a step's in Zerodha accounts (the tradebook step): an Angel
+ * One or other account has no step that dates them, so the gap stays when the member has one.
+ */
+function coveredBySteps(g: PlanGap, refs: AccountRef[]): boolean {
+  if (!STEP_GAPS.includes(g.key)) return false;
+  if (g.key === 'shares_no_dates') return !refs.some((a) => a.broker === 'Angel One' || a.broker === 'Other');
+  return true;
+}
 const MUTUAL_FUNDS: AccountRef = { label: 'Mutual funds', key: 'mutual funds', broker: 'Mutual funds' };
 const to100 = (p: Paise) => Math.round(p / 10_000) * 10_000;
 
@@ -377,7 +386,7 @@ export function memberGuide(state: GuideState, fam: FamilyView, memberId: string
   return {
     memberId, name, first, accounts, usable, pct: pct(usable), done,
     cushion: done ? cushionOf(fam, memberId, refs) : [],
-    otherGaps: planGaps(fam, state.positions, state.brokerSummaries, state.imports).filter((g) => g.memberId === memberId && !STEP_GAPS.includes(g.key)),
+    otherGaps: planGaps(fam, state.positions, state.brokerSummaries, state.imports).filter((g) => g.memberId === memberId && !coveredBySteps(g, refs)),
   };
 }
 

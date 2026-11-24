@@ -45,6 +45,18 @@ const h1 = (page: Page, name: string) => page.getByRole('heading', { level: 1, n
 /** Plan's "Done this season" list. */
 const doneSection = (page: Page) => page.locator('section').filter({ has: page.getByRole('heading', { level: 2, name: 'Done this season' }) });
 
+/** Leaves the sample for an own family and opens the Import screen's family table. */
+async function startOwnFamilyImport(page: Page) {
+  await open(page, 'home');
+  await page.getByRole('button', { name: 'Start my own family' }).click();
+  await expect(page).toHaveURL(/#family$/);
+  await page.evaluate(() => { location.hash = 'import'; });
+  await expect(h1(page, 'Import statements')).toBeVisible();
+}
+
+/** The family table's member rows. */
+const memberRows = (page: Page) => page.getByRole('button', { name: /: open checklist$/ });
+
 async function expectNoSideScroll(page: Page) {
   const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
   expect(scroll, 'page scrolls sideways').toBeLessThanOrEqual(client);
@@ -209,26 +221,42 @@ for (const size of SIZES) {
         await expect(page.getByText(/Test Share A, sold 10 Jun 2026: Buy date entered by you/)).toBeVisible();
       });
 
-      test('importing the same tradebook twice says nothing is new the second time', async ({ page }) => {
-        await open(page, 'home');
-        await page.getByRole('button', { name: 'Start my own family' }).click();
-        await expect(page).toHaveURL(/#family$/);
-        await page.evaluate(() => { location.hash = 'import'; });
-        await expect(h1(page, 'Import statements')).toBeVisible();
-        const csv = 'symbol,isin,trade_date,segment,trade_type,quantity,price\nINFY,INE009A01021,2024-03-12,EQ,buy,10,1500\n';
-        const files = page.locator('input[type="file"]');
-        const addFile = async (name: string) => {
-          await files.setInputFiles({ name, mimeType: 'text/csv', buffer: Buffer.from(csv) });
-          const card = page.getByRole('article', { name });
+      test('importing the same tradebook twice names the earlier file the second time', async ({ page }) => {
+        await startOwnFamilyImport(page);
+        // The family table's first row opens that member's checklist.
+        const row = memberRows(page).first();
+        const name = (await row.getAttribute('aria-label'))!.replace(/: open checklist$/, '');
+        await row.click();
+        await expect(page.getByRole('heading', { level: 2, name, exact: true })).toBeVisible();
+        const csv = 'symbol,isin,trade_date,segment,trade_type,quantity,price\nINFY,INE009A01021,2024-03-12,EQ,buy,10,1500\nINFY,INE009A01021,2024-03-14,EQ,buy,5,1510\n';
+        const addFile = async (file: string) => {
+          // Every drop zone takes any file.
+          await page.locator('input[type="file"]').first().setInputFiles({ name: file, mimeType: 'text/csv', buffer: Buffer.from(csv) });
+          const card = page.getByRole('article', { name: file });
           await card.getByRole('button', { name: /^Add to / }).click();
           return card;
         };
         const first = await addFile('tradebook-a.csv');
         await expect(first.getByText('Added', { exact: true })).toBeVisible();
-        await expect(page.getByText('Nothing new: these trades are already in')).toHaveCount(0);
-        await addFile('tradebook-b.csv');
-        await expect(page.getByText('Nothing new: these trades are already in')).toHaveCount(1);
+        await expect(page.getByRole('status').filter({ hasText: /Read: .*trades/ })).toBeVisible();
+        const second = await addFile('tradebook-b.csv');
+        await expect(second.getByText(/^Same as tradebook-a.csv you added on /)).toBeVisible();
+        // A file that changed nothing gets no success card.
+        await expect(page.getByRole('status').filter({ hasText: /Read: / })).toHaveCount(0);
         await expectNoSideScroll(page);
+      });
+
+      test('#import shows a row per member, and Stop here opens the plan', async ({ page }) => {
+        await startOwnFamilyImport(page);
+        const table = page.getByRole('table');
+        await expect(table).toBeVisible();
+        const rows = memberRows(page);
+        expect(await rows.count()).toBeGreaterThan(0);
+        await expect(table.locator('tbody tr')).toHaveCount(await rows.count());
+        await expectNoSideScroll(page);
+        await page.getByRole('button', { name: 'Stop here, show my plan' }).click();
+        await expect(page).toHaveURL(/#plan$/);
+        await expect(h1(page, 'Plan')).toBeVisible();
       });
 
       test('download a backup on Family', async ({ page }) => {
