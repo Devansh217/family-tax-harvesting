@@ -38,7 +38,7 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 | A1 | Holding in another name: SIPs and units to a lower-taxed relative | Ready to build | `family-placement` | C1 |
 | **B** | **Import and readers** | | | |
 | B1 | Guided import | Ready to build | `guided-import` | C1 |
-| B2 | Angel One Tax P&L reader (Excel and PDF) | Cause known | — | — |
+| B2 | Generic Tax P&L reader (Excel and CSV first, PDF best-effort) | Cause known, approach agreed | — | — |
 | B3 | Angel One holdings reader: shares and gold bonds | Needs brainstorm | — | — |
 | B4 | Direct vs regular from the ISIN | Cause known | — | — |
 | B5 | Recognise gifts within the family | Needs brainstorm | — | B3 helps |
@@ -61,20 +61,31 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 | F4 | Minors in the family | Blocked: deferred until after the beta | — | — |
 | F5 | Scrub real figures from the public fresh-run notes | Needs a short review | — | — |
 
-**Suggested order:**
-1. **B4** (small, saves real money).
-2. **C1** first. It adds the one "newest data" function (`engine/freshness.ts`) that B1 and A1 both use.
-3. **A1 and B1** after C1, one at a time or in separate worktrees. A1 and B1 share only `e2e/smoke.spec.ts`; rebase the second on the first. C1 shares `engine/family.ts` and `ui/screens/Plan.tsx` with A1, and `ui/plan.ts` with B1, which is why it goes first.
-4. **B2**, then **B3**.
-5. **E1**, which sets the pattern for E2–E4.
-6. **D1** research.
-7. The rest.
+**Founder's priority (25 Nov 2026):**
+1. **B1** guided import
+2. **A1** holding in another name
+3. **C1** old-data marks
+4. **E2** drop the Compare page
+5. **B2** generic Tax P&L reader
+6. **B3** Angel holdings: shares and gold bonds
+7. **B4** direct vs regular
+8. **B5** gifts within the family
+9. **C2** missed long-term holding
+10. **C3** wording fixes
+11. **E1** less text everywhere
+12. **E3** rework Simulate
+13. **E4** transfer animations
+14. **F5** scrub public figures
 
-## Branches and PRs (24 Nov 2026)
+Not yet placed by the founder: B6, D1, F1, F2, F3, F4.
+
+**Dependency to settle (open):** A1's plan expects C1's old-data marks (`MoveBase.oldData`, `engine/freshness.ts`), and C1 shares `engine/family.ts` and `ui/screens/Plan.tsx` with A1. B1 can go before C1: its plan builds `freshness.ts` from C1's Task 1 if it isn't there yet. A1 before C1 needs either C1 moved up to second, or A1's plan changed to skip the marks and C1 adding them to placement moves later.
+
+## Branches and PRs (25 Nov 2026)
 
 | Branch | PR | Holds | State |
 |---|---|---|---|
-| `docs/next-work` | #19 | This file, the three ready designs and plans, the beta test plan | Open, for merge after the guardrail review |
+| `docs/next-work` | #19 | This file, the three ready designs and plans, the beta test plan | Merged 25 Nov 2026 (78d1c82) |
 | `plan-old-data` | #20 (draft) | C1 design and plan | Build first. The draft becomes the build PR |
 | `guided-import` | #21 (draft) | B1 design and plan | On hold until C1 merges |
 | `family-placement` | #22 (draft) | A1 design and plan | After C1 |
@@ -125,7 +136,7 @@ The app tells the family where money should sit to pay less tax over the years, 
 - **Needs from others:** B2 and B3 join by flipping a capability flag.
 - **Shared with C1:** the "Newest data from <date>" line calls C1's engine function.
 
-### B2. Angel One Tax P&L reader: Cause known
+### B2. Generic Tax P&L reader: Cause known (approach agreed 25 Nov)
 - **Today:** the app turns away every PDF that isn't a CAS ("Unrecognised PDF", `parsers/index.ts`), and there is no Angel Tax P&L reader in any format (founder feedback point 1).
 - **What we know:**
   - An Angel "Tax PNL" PDF (FY 2025-26, from the test family's HUF) has a real text layer that pdf.js reads.
@@ -138,8 +149,20 @@ The app tells the family where money should sit to pay less tax over the years, 
     - **p.9, dividends:** income the member must declare. Angel warns its dividend figures may be incomplete.
   - The test files also have the Excel version for FY 2026-27. Compare its layout before building; one reader may handle both.
   - In the test file, last year ends in a net short-term loss after set-off: a real carried-forward case.
+- **Founder's direction (25 Nov):** one generic reader, not a reader per broker. It looks for the fields it needs in any uploaded file.
+- **Approach (no new library or service):** extend the field dictionary in `parsers/table.ts`, which already reads trades and holdings by matching header words.
+  - **Fields per sold lot.** Needed: name or ISIN, quantity, buy date, sell date, buy value, sell value. Optional: gain, term, charges. Optional summary totals are a cross-check.
+  - **Term and gain are worked out from the dates and values.** The broker's labels never decide the tax.
+  - **Search every sheet and section,** for each block (equity, funds, buybacks).
+  - **Check every row:** dates parse, the sale is after the buy, quantity is above zero, and the values add up to the gain.
+  - **Confidence decides what happens:** high imports on its own, medium shows the existing column-check screen, low is rejected with a reason.
+  - **Remember confirmed layouts** by header pattern; ship the known ones (Zerodha, Angel).
+  - **Small per-broker hints** only for quirks: buyback lines, 31 Jan 2018 values, Angel's long-term/short-term split. The existing Zerodha reader stays.
+  - **PDF is best-effort:** rebuild columns from pdf.js word positions and accept only high confidence. Otherwise ask for the Excel version.
+  - **Ruled out:** server-side PDF tools (Tabula, Camelot, pdfplumber), cloud document AI and LLM APIs, because statements must stay in the browser (GUARDRAILS §4) and the app is free tier only. An in-browser model is too heavy for phones.
+  - **B3 uses the same reader.**
 - **Build:**
-  - A reader for both formats.
+  - The generic reader, tested on the Zerodha and Angel files in both formats.
   - "Broker totals win" for Angel accounts (`brokerAdjustments`), as Zerodha has.
   - The p.4–5 holdings and long-term/short-term split feed the holdings-first engine as a dated snapshot, as B3 will.
   - **Last year's Tax P&L feeds carried-forward losses** (`Member.carriedLoss`): the user confirms the figure, and it applies only if that year's return was filed on time.
