@@ -63,8 +63,8 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 
 **Founder's priority (25 Nov 2026):**
 1. **B1** guided import
-2. **A1** holding in another name
-3. **C1** old-data marks
+2. **C1** old-data marks (moved up by the founder so A1 builds on its marks)
+3. **A1** holding in another name
 4. **E2** drop the Compare page
 5. **B2** generic Tax P&L reader
 6. **B3** Angel holdings: shares and gold bonds
@@ -79,7 +79,7 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 
 Not yet placed by the founder: B6, D1, F1, F2, F3, F4.
 
-**Dependency to settle (open):** A1's plan expects C1's old-data marks (`MoveBase.oldData`, `engine/freshness.ts`), and C1 shares `engine/family.ts` and `ui/screens/Plan.tsx` with A1. B1 can go before C1: its plan builds `freshness.ts` from C1's Task 1 if it isn't there yet. A1 before C1 needs either C1 moved up to second, or A1's plan changed to skip the marks and C1 adding them to placement moves later.
+**Dependencies:** B1 goes first. If `engine/freshness.ts` doesn't exist yet, its plan builds it from C1's Task 1, and C1 then extends it rather than adding a second one. C1 shares `ui/plan.ts` with B1, so rebase C1 on B1. A1 builds on C1's marks (`MoveBase.oldData`) and shares `engine/family.ts` and `ui/screens/Plan.tsx` with it.
 
 ## Branches and PRs (25 Nov 2026)
 
