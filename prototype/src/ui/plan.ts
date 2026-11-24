@@ -51,6 +51,19 @@ type SummaryLike = { importId?: string; memberId: string; account: string; summa
 const rupees = (p: number) => `₹${Math.round(p / 100).toLocaleString('en-IN')}`;
 
 /**
+ * The value of units a holdings row shows that the member's lots do not explain: the row's units less the units held
+ * in that security, at its latest price. Zero when the lots cover the row.
+ */
+export function unexplainedValue(
+  fam: Pick<FamilyView, 'members'> & Partial<Pick<FamilyView, 'securities'>>, memberId: string, isin: string, positionQty: number,
+): Paise {
+  const held = fam.members.find((m) => m.member.id === memberId)?.holdings.find((h) => h.isin === isin);
+  const short = positionQty - (held?.qty ?? 0);
+  const price = fam.securities?.get(isin)?.price ?? held?.price ?? 0;
+  return short > 0 ? Math.round((short * price) / QTY_SCALE) : 0;
+}
+
+/**
  * What keeps the plan from being complete, per member, each with the file or step that fixes it. Holdings without
  * buy dates get no moves; funds with an unknown tax type get none either.
  */
@@ -79,12 +92,7 @@ export function planGaps(
       if (p.memberId !== id || !p.isin || p.qty == null) continue;
       missing.set(p.isin, Math.max(missing.get(p.isin) ?? 0, p.qty));
     }
-    const unexplained = (isin: string) => {
-      const held = v.holdings.find((h) => h.isin === isin);
-      const short = (missing.get(isin) ?? 0) - (held?.qty ?? 0);
-      const price = fam.securities?.get(isin)?.price ?? held?.price ?? 0;
-      return short > 0 ? Math.round((short * price) / QTY_SCALE) : 0;
-    };
+    const unexplained = (isin: string) => unexplainedValue(fam, id, isin, missing.get(isin) ?? 0);
     const undated = (fund: boolean) => v.holdings
       .filter((h) => h.isin.startsWith('INF') === fund && h.uncertainLots > 0)
       .reduce((a, h) => a + h.lots.filter((l) => !l.certain).reduce((b, l) => b + (l.value ?? 0), 0), 0)
