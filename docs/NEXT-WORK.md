@@ -37,14 +37,14 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 | **A** | **Family placement** | | | |
 | A1 | Holding in another name: SIPs and units to a lower-taxed relative | Ready to build | `family-placement` | C1 |
 | **B** | **Import and readers** | | | |
-| B1 | Guided import | Ready to build | `guided-import` | C1 |
+| B1 | Guided import | Building | `guided-import` | — (goes first) |
 | B2 | Generic Tax P&L reader (Excel and CSV first, PDF best-effort) | Cause known, approach agreed | — | — |
 | B3 | Angel holdings (shares, gold bonds) via the generic reader | Approach agreed | — | B2 |
 | B4 | Direct vs regular from the ISIN | Cause known | — | — |
 | B5 | Recognise gifts within the family | Needs brainstorm | — | B3 helps |
 | B6 | Fund statement and Coin gaps | Needs brainstorm | — | — |
 | **C** | **Plan you can trust** | | | |
-| C1 | Mark moves that rest on old data | Ready to build | `plan-old-data` | — |
+| C1 | Mark moves that rest on old data | Ready to build | `plan-old-data` | B1 (rebase on it) |
 | C2 | Why a long-term holding with room wasn't suggested | Needs brainstorm (debug) | — | — |
 | C3 | Wording fixes | Needs brainstorm (small) | — | — |
 | **D** | **Fund tax types** | | | |
@@ -86,8 +86,8 @@ Not yet placed by the founder: B6, D1, F1, F2, F3, F4.
 | Branch | PR | Holds | State |
 |---|---|---|---|
 | `docs/next-work` | #19 | This file, the three ready designs and plans, the beta test plan | Merged 25 Nov 2026 (78d1c82) |
-| `plan-old-data` | #20 (draft) | C1 design and plan | Build first. The draft becomes the build PR |
-| `guided-import` | #21 (draft) | B1 design and plan | On hold until C1 merges |
+| `plan-old-data` | #20 (draft) | C1 design and plan | Build after B1 merges, rebased on it. The draft becomes the build PR |
+| `guided-import` | #21 (draft) | B1 design and plan | Building now (first in the founder's order). The draft becomes the build PR |
 | `family-placement` | #22 (draft) | A1 design and plan | After C1 |
 
 - The design and plan files are identical on each feature branch and on `docs/next-work`, so they merge cleanly. Change them on both, or take them from `main` once #19 merges.
@@ -152,9 +152,10 @@ The app tells the family where money should sit to pay less tax over the years, 
 - **Founder's direction (25 Nov):** one generic reader, not a reader per broker. It looks for the fields it needs in any uploaded file.
 - **Approach (no new library or service):** extend the field dictionary in `parsers/table.ts`, which already reads trades and holdings by matching header words.
   - **Fields per sold lot.** Needed: name or ISIN, quantity, buy date, sell date, buy value, sell value. Optional: gain, term, charges. Optional summary totals are a cross-check.
-  - **Term and gain are worked out from the dates and values.** The broker's labels never decide the tax.
+  - **The reader passes dates and values; the engine decides the term** with its per-class rules in `engine/rules.ts` (12 months for listed equity, 24 for other assets, the 1 Apr 2023 cut-off for debt funds). The reader never applies a flat 12-month test, and the broker's per-lot labels never decide it.
+  - **Broker totals still win** for booked gains when the history is incomplete (`brokerAdjustments`, GUARDRAILS §1). The lot detail is a cross-check, not a replacement.
   - **Search every sheet and section,** for each block (equity, funds, buybacks).
-  - **Check every row:** dates parse, the sale is after the buy, quantity is above zero, and the values add up to the gain.
+  - **Check every row:** dates parse, the sale is after the buy, quantity is above zero, and the values add up to the gain. Apply the 31 Jan 2018 value first for lots bought before then, or grandfathered rows fail the sum.
   - **Confidence decides what happens:** high imports on its own, medium shows the existing column-check screen, low is rejected with a reason.
   - **Remember confirmed layouts** by header pattern; ship the known ones (Zerodha, Angel).
   - **Small per-broker hints** only for quirks: buyback lines, 31 Jan 2018 values, Angel's long-term/short-term split. The existing Zerodha reader stays.
@@ -256,12 +257,12 @@ Founder feedback, 24 Nov: "a lot of text … I would like a much cleaner website
 - **The pattern:** one headline per card; reasons behind "Why?" tooltips; alerts and nudges in a notification panel instead of inline paragraphs.
 - **Pages:** Home, Plan, Member, Import, Simulate.
 - Use the `impeccable` skill. Keep the disclaimer and the guardrail wording (GUARDRAILS §6).
-- **Order:** do it before E3, E4 and C3, which follow its pattern.
+- **Order:** do it before E3 and E4, which follow its pattern. C3 comes earlier in the founder's order and goes ahead without it; E1 then reuses C3's wording.
 
 ### E2. Remove the Compare page: Ready (no brainstorm)
 - **Founder (25 Nov):** just remove the Compare page. No replacement, and no waiting for A1.
-- **Remove:** the screen (`ui/screens/Compare.tsx`), its route and nav item, and any smoke or unit tests for the screen. Check links to it from other screens and the beta test plan (check A9).
-- **Keep:** `bringsHome` and `nominalReturn` in `engine/planner.ts` with their engine tests, because A1 reuses them.
+- **Remove:** the screen (`ui/screens/Compare.tsx`), its route and nav item, `securitiesForCompare` in `ui/market.ts` with its test in `prices/prices.test.ts`, the Compare cases in `e2e/smoke.spec.ts`, and `bringsHome` in `engine/planner.ts` with its test (only Compare uses it). Check links to it from other screens and the beta test plan (check A9).
+- **Keep:** `nominalReturn` in `engine/planner.ts` with its tests, because A1 uses it.
 - **Done when:** no route or link reaches Compare, the nav has no Compare item, and typecheck, unit and smoke pass.
 
 ### E3. Rework Simulate: Needs brainstorm
