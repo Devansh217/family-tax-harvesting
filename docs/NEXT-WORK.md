@@ -250,7 +250,7 @@ Founder feedback, 24 Nov: "a lot of text … I would like a much cleaner website
 - **The pattern:** one headline per card; reasons behind "Why?" tooltips; alerts and nudges in a notification panel instead of inline paragraphs.
 - **Pages:** Home, Plan, Member, Import, Simulate.
 - Use the `impeccable` skill. Keep the disclaimer and the guardrail wording (GUARDRAILS §6).
-- **Order:** do it before E2–E4 and C3, which follow its pattern.
+- **Order:** do it before E3, E4 and C3, which follow its pattern.
 
 ### E2. Remove the Compare page: Ready (no brainstorm)
 - **Founder (25 Nov):** just remove the Compare page. No replacement, and no waiting for A1.
