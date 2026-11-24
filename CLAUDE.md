@@ -4,7 +4,7 @@ The app lives in `prototype/` (React + Vite, tax engine in `prototype/src/engine
 
 ## Next work
 
-`docs/NEXT-WORK.md` is the one list of planned and unbuilt work, grouped into epics of one-session items. Update an item's status there in the same PR that changes it, and add new work you find to it.
+GitHub issues are the one list of planned and unbuilt work: one issue per one-session item, labelled by epic and status. Each issue says whether it is blocked (and by which issues) and how to pick it up. A PR closes its issue with `Closes #N`; new work found along the way becomes a new issue, never only a note in chat. `docs/NEXT-WORK.md` holds the conventions, the founder's priority order and the map from old item IDs (B2, F3…) to issue numbers.
 
 ## Guardrails
 
