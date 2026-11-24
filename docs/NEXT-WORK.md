@@ -14,6 +14,7 @@ Moved there on 25 Nov 2026. Each item from this file became one issue. The issue
 - **Not blocked** issues open with a green **Not blocked** box.
 - **Shares files with:** issues that change the same files say so. Don't build them at the same time; rebase on whichever merges first.
 - **Picking one up:** follow the "Picking this up" steps in the issue: check blockers, comment "Taking this", set `status: building`, read `CLAUDE.md`, `docs/GUARDRAILS.md` and `docs/fresh-run-notes.md`, then start with the skill the issue names.
+- **Fresh-run notes:** use `docs/fresh-run-notes.md` to fill gaps where an issue is silent, and before calling work done check the matching finding is fixed. If a finding is handled nowhere, or your change doesn't match what the notes describe, say so in the PR. Don't silently skip it.
 - **Closing:** the PR says `Closes #N`. Before merge, run the `guardrail-reviewer` agent and put its findings in the PR. After merge, remove the `blocked` label from any issue it blocked that has no other open blocker.
 - **New work:** open an issue with an epic and status label (and a Blocked by box if it needs one). Don't keep it only in a chat or in this file.
 - **Public repo:** no personal data in issues, PRs or commits. Real statements stay in the git-ignored `data/private/`.
@@ -35,7 +36,7 @@ Moved there on 25 Nov 2026. Each item from this file became one issue. The issue
 13. [#36](https://github.com/Devansh217/family-tax-harvesting/issues/36) E4 transfer animations (blocked by A1, E1)
 14. [#37](https://github.com/Devansh217/family-tax-harvesting/issues/37) F5 scrub public figures
 
-Not yet placed by the founder: [#38](https://github.com/Devansh217/family-tax-harvesting/issues/38) G1 split `engine/family.ts` (blocked by A1), [#39](https://github.com/Devansh217/family-tax-harvesting/issues/39) B6, [#40](https://github.com/Devansh217/family-tax-harvesting/issues/40) D1, [#41](https://github.com/Devansh217/family-tax-harvesting/issues/41) F1, [#42](https://github.com/Devansh217/family-tax-harvesting/issues/42) F2, [#43](https://github.com/Devansh217/family-tax-harvesting/issues/43) F3 (blocked by A1, B1, C1), [#44](https://github.com/Devansh217/family-tax-harvesting/issues/44) F4 (blocked: after the beta).
+Not yet placed by the founder: [#38](https://github.com/Devansh217/family-tax-harvesting/issues/38) G1 split `engine/family.ts` (blocked by A1), [#39](https://github.com/Devansh217/family-tax-harvesting/issues/39) B6, [#40](https://github.com/Devansh217/family-tax-harvesting/issues/40) D1, [#41](https://github.com/Devansh217/family-tax-harvesting/issues/41) F1, [#42](https://github.com/Devansh217/family-tax-harvesting/issues/42) F2, [#43](https://github.com/Devansh217/family-tax-harvesting/issues/43) F3 (blocked by A1, B1, C1, E2), [#44](https://github.com/Devansh217/family-tax-harvesting/issues/44) F4 (blocked: after the beta).
 
 ## Old item IDs → issues
 
@@ -59,7 +60,7 @@ Full detail, anonymised: `docs/fresh-run-notes.md`.
 | 2 | Old holdings file and a duplicate tradebook year gave moves on shares sold months ago, with no warning | Engine (PR #18), #24 B1 (files), #25 C1 (Plan marks) |
 | 3 | Shares that left an account stayed "held" | Done (PR #18) |
 | 4 | Dozens of "Sold N more units than the history shows" lines | Done (PR #18) |
-| 5 | Holdings card says "11 transactions" for guessed fund lots | #33 C3 |
+| 5 | Holdings card says "N transactions" for guessed fund lots | #33 C3 |
 | 6 | "1 lot have"; intraday label differs | #33 C3 |
 | 7 | Family gifts not recognised | #31 B5 |
 | 8 | Simulate shows "−₹X gain" for a loss | #33 C3, #35 E3 |
