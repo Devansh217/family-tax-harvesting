@@ -2,6 +2,8 @@
 
 **The backlog lives in GitHub issues:** https://github.com/Devansh217/family-tax-harvesting/issues
 
+**Board:** https://github.com/users/Devansh217/projects/1. Every issue has a **Status** (Blocked, Can start, In progress, Done) and a **Priority** number (1–14 is the founder's order below; 15+ are not yet placed). Sort by Priority and take the first "Can start" item.
+
 Moved there on 25 Nov 2026. Each item from this file became one issue. The issue holds the full detail and a "Picking this up" guide, so any session or agent can take it up without reading this file. This file keeps only the conventions and the map from the old item IDs (B2, F3 and so on, still used in designs and plans) to issue numbers.
 
 ## How the issues work
@@ -13,9 +15,9 @@ Moved there on 25 Nov 2026. Each item from this file became one issue. The issue
   - `blocked`: can't start yet. The issue opens with a red **Blocked by** box naming the issues that must close first, and GitHub's own "blocked by" link is set, so the issue shows as blocked in lists and boards.
 - **Not blocked** issues open with a green **Not blocked** box.
 - **Shares files with:** issues that change the same files say so. Don't build them at the same time; rebase on whichever merges first.
-- **Picking one up:** follow the "Picking this up" steps in the issue: check blockers, comment "Taking this", set `status: building`, read `CLAUDE.md`, `docs/GUARDRAILS.md` and `docs/fresh-run-notes.md`, then start with the skill the issue names.
+- **Picking one up:** follow the "Picking this up" steps in the issue: check blockers, comment "Taking this", set `status: building` and move its board card to In progress, read `CLAUDE.md`, `docs/GUARDRAILS.md` and `docs/fresh-run-notes.md`, then start with the skill the issue names.
 - **Fresh-run notes:** use `docs/fresh-run-notes.md` to fill gaps where an issue is silent, and before calling work done check the matching finding is fixed. If a finding is handled nowhere, or your change doesn't match what the notes describe, say so in the PR. Don't silently skip it.
-- **Closing:** the PR says `Closes #N`. Before merge, run the `guardrail-reviewer` agent and put its findings in the PR. After merge, remove the `blocked` label from any issue it blocked that has no other open blocker.
+- **Closing:** the PR says `Closes #N`. Before merge, run the `guardrail-reviewer` agent and put its findings in the PR. After merge, remove the `blocked` label from any issue it blocked that has no other open blocker, and move that issue's card from Blocked to Can start.
 - **New work:** open an issue with an epic and status label (and a Blocked by box if it needs one). Don't keep it only in a chat or in this file.
 - **Public repo:** no personal data in issues, PRs or commits. Real statements stay in the git-ignored `data/private/`.
 
