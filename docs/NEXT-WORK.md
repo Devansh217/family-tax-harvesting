@@ -51,7 +51,7 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 | D1 | Fund tax types from AMC documents, not user picks | Needs research | — | — |
 | **E** | **Cleaner app** | | | |
 | E1 | Less text everywhere: tooltips and a notification panel | Needs brainstorm | — | — |
-| E2 | Drop the Compare page | Needs brainstorm (small) | — | A1 |
+| E2 | Remove the Compare page | Ready (simple removal) | — | — |
 | E3 | Rework Simulate | Needs brainstorm | — | E1 |
 | E4 | Animations: how a transfer between members changes tax | Needs brainstorm | — | A1, E1 |
 | **F** | **Safety, compliance, testing** | | | |
@@ -65,7 +65,7 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 1. **B1** guided import
 2. **C1** old-data marks (moved up by the founder so A1 builds on its marks)
 3. **A1** holding in another name
-4. **E2** drop the Compare page
+4. **E2** remove the Compare page (simple removal)
 5. **B2** generic Tax P&L reader
 6. **B3** Angel holdings: shares and gold bonds
 7. **B4** direct vs regular
@@ -252,11 +252,11 @@ Founder feedback, 24 Nov: "a lot of text … I would like a much cleaner website
 - Use the `impeccable` skill. Keep the disclaimer and the guardrail wording (GUARDRAILS §6).
 - **Order:** do it before E2–E4 and C3, which follow its pattern.
 
-### E2. Drop the Compare page: Needs brainstorm (small)
-- **Founder:** "What it brings home" doesn't help; it's a calculator the user has to drive.
-- **Remove:** the screen (`ui/screens/Compare.tsx`) and its nav item.
-- **Keep:** `bringsHome` and `nominalReturn` in `engine/planner.ts`, which A1 reuses.
-- Do it after A1 lands, so the useful part has a home.
+### E2. Remove the Compare page: Ready (no brainstorm)
+- **Founder (25 Nov):** just remove the Compare page. No replacement, and no waiting for A1.
+- **Remove:** the screen (`ui/screens/Compare.tsx`), its route and nav item, and any smoke or unit tests for the screen. Check links to it from other screens and the beta test plan (check A9).
+- **Keep:** `bringsHome` and `nominalReturn` in `engine/planner.ts` with their engine tests, because A1 reuses them.
+- **Done when:** no route or link reaches Compare, the nav has no Compare item, and typecheck, unit and smoke pass.
 
 ### E3. Rework Simulate: Needs brainstorm
 - **Founder:** still interesting, but hard to understand and not usable today.
