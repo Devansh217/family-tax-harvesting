@@ -248,4 +248,4 @@
 ### Task 6: Review and PR
 
 - [ ] **Step 1:** Run the `guardrail-reviewer` agent on branch `family-placement`. Fix any blocking findings and re-run until it passes.
-- [ ] **Step 2:** Open the PR with the reviewer's findings in the body (CLAUDE.md), and note that the Compare page stays until the design pass for points 4, 7 and 8.
+- [ ] **Step 2:** Open the PR with the reviewer's findings in the body (CLAUDE.md). The Compare page is removed separately (NEXT-WORK E2).
