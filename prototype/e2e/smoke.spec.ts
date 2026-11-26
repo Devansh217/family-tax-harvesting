@@ -246,6 +246,23 @@ for (const size of SIZES) {
         await expectNoSideScroll(page);
       });
 
+      test('a member with no next step can still add a file', async ({ page }) => {
+        await startOwnFamilyImport(page);
+        await memberRows(page).first().click();
+        // A synthetic holdings export from another broker: holdings done, trade history a suggestion, no step next.
+        const csv = 'symbol,isin,quantity,ltp\nTEST,INE009A01021,10,1500\n';
+        await page.locator('input[type="file"]').first().setInputFiles({ name: 'groww-holdings.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+        const card = page.getByRole('article', { name: 'groww-holdings.csv' });
+        await card.getByRole('button', { name: /^Add to / }).click();
+        await expect(card.getByText('Added', { exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { level: 3, name: 'Groww', exact: true })).toBeVisible();
+        await expect(page.locator('.step.next')).toHaveCount(0);
+        // The checklist always has a drop zone, and the trade-history suggestion has its own.
+        await expect(page.getByRole('region', { name: 'Add another file' }).locator('input[type="file"]')).toHaveCount(1);
+        await expect(page.locator('.step.quiet').filter({ hasText: 'Trade history' }).locator('input[type="file"]')).toHaveCount(1);
+        await expectNoSideScroll(page);
+      });
+
       test('#import shows a row per member, and Stop here opens the plan', async ({ page }) => {
         await startOwnFamilyImport(page);
         const table = page.getByRole('table');

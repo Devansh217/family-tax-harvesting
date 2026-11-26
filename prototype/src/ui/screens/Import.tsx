@@ -238,6 +238,15 @@ function MemberChecklist({ memberId }: { memberId: string }) {
 
       {g.first ? <FirstStep onFiles={addFiles} /> : g.accounts.map((a) => <AccountSection key={a.key} a={a} onFiles={addFiles} />)}
 
+      {/* Always somewhere to add a file, even with no step next: a second broker, a fund statement, a newer file. */}
+      {!g.first && (
+        <section className="sheet pad stack" aria-labelledby="add-more-h">
+          <h3 id="add-more-h">Add another file</h3>
+          <p className="small muted">Another broker&rsquo;s file, a mutual fund statement or a newer download. Whichever step it fills ticks.</p>
+          <DropZone onFiles={addFiles} compact />
+        </section>
+      )}
+
       {(g.cushion.length > 0 || g.otherGaps.length > 0) && (
         <div className="stack" style={{ gap: 8 }}>
           {g.cushion.map((c) => (
@@ -403,12 +412,16 @@ function Step({ st, onFiles }: { st: GuideStep; onFiles: (files: FileList | File
       </li>
     );
   }
-  // Can't be read yet, or a suggestion that never blocks: quiet lines.
+  // Can't be read yet, or a suggestion that never blocks: quiet lines. A trade-history suggestion takes its files here.
+  const drop = st.status === 'suggestion' && st.kind === 'tradebook';
   return (
-    <li className="step quiet small muted">
-      <strong>{st.title}</strong>
-      {st.status === 'suggestion' && st.where && <> · {st.where}</>}
-      {st.unlocks && <> · {st.unlocks}</>}
+    <li className={`step quiet small ${drop ? 'stack' : 'muted'}`}>
+      <span className={drop ? 'muted' : undefined}>
+        <strong>{st.title}</strong>
+        {st.status === 'suggestion' && st.where && <> · {st.where}</>}
+        {st.unlocks && <> · {st.unlocks}</>}
+      </span>
+      {drop && <DropZone onFiles={onFiles} compact />}
     </li>
   );
 }
