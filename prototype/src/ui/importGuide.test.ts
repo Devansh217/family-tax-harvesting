@@ -384,24 +384,24 @@ describe('member and family guide', () => {
     });
     expect(r.accounts[0]!.notes).toContain("Angel shares are counted from your tradebooks only until Angel's holdings file can be read.");
     expect(familyRow(r)).toMatchObject({ holdings: 'Funds only', pnl: "Can't read yet", tradebooks: 'Optional' });
-    // Shares only, no funds: Angel's holdings file has nothing the app can read, so its step can't be read yet and the
-    // member is done.
+    // Shares only, no funds seen: funds bought before the oldest trade history leave no trace, so the holdings file
+    // (which reads funds) is offered as optional, with somewhere to add it, and the member is done.
     const noFile = g(family(angelTrades));
-    expect(statuses(noFile)).toEqual(['unreadable', 'unreadable', 'suggestion']);
-    expect(noFile.accounts[0]!.steps[0]).toMatchObject({ kind: 'holdings', unlocks: "Angel's holdings file can't be read for shares yet." });
+    expect(statuses(noFile)).toEqual(['suggestion', 'unreadable', 'suggestion']);
+    expect(noFile.accounts[0]!.steps[0]).toMatchObject({ kind: 'holdings', title: 'Holdings file', unlocks: "Hold mutual funds at Angel? Add the holdings file: its funds are read. Shares come from your trade history for now." });
     expect(noFile.done).toBe(true);
-    expect(familyRow(noFile).holdings).toBe("Can't read yet");
+    expect(familyRow(noFile).holdings).toBe('Optional');
     expect(noFile.accounts[0]!.notes).toContain("Angel shares are counted from your tradebooks only until Angel's holdings file can be read.");
     expect(g(family(angelFunds())).accounts[0]!.notes).toEqual([]);
   });
 
-  it("Angel funds all redeemed: the holdings file has nothing to read, so the member can be done", () => {
+  it("Angel funds all redeemed: the holdings file is optional, so the member can be done", () => {
     const s = family(add('r', 'angel-tb.xlsx', tradebook([
       ['INE2', '2026-11-10', 'buy', 5, 100], ['INF9', '2026-06-01', 'buy', 5, 100], ['INF9', '2026-10-01', 'sell', 5, 110],
     ], 'Trade history · Angel One · x'), 'Angel One'));
     const r = g(s);
-    expect(statuses(r)).toEqual(['unreadable', 'unreadable', 'suggestion']);
-    expect(r.accounts[0]!.steps[0]).toMatchObject({ kind: 'holdings', unlocks: "Angel's holdings file can't be read for shares yet." });
+    expect(statuses(r)).toEqual(['suggestion', 'unreadable', 'suggestion']);
+    expect(r.accounts[0]!.steps[0]).toMatchObject({ kind: 'holdings', unlocks: "Hold mutual funds at Angel? Add the holdings file: its funds are read. Shares come from your trade history for now." });
     expect(r.done).toBe(true);
   });
 

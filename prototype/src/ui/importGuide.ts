@@ -258,14 +258,16 @@ function angelSteps(c: Ctx): Draft[] {
   const txns = c.state.txns.filter((t) => t.memberId === c.memberId && c.keys.has(normAccount(t.account)));
   const shares = txns.some((t) => !isFund(t.isin));
   if (shares) c.notes.push("Angel shares are counted from your tradebooks only until Angel's holdings file can be read.");
-  // Only the file's funds are read: with shares and no fund units held (none bought, or all redeemed), it has nothing
-  // to add, so its step can't be read yet.
-  const nothingToRead = !funds.length && shares && !c.lots.some((l) => isFund(l.isin));
+  // Only the file's funds are read. With no fund units the app has seen (none bought in the trade history, all
+  // redeemed, or bought before it), funds may still be held: the file is offered, optional, never blocking done.
+  const noFundsSeen = !funds.length && !c.lots.some((l) => isFund(l.isin));
   return [
     {
-      kind: 'holdings', status: funds.length ? 'done' : nothingToRead ? 'unreadable' : 'open', title: 'Holdings file',
+      kind: 'holdings', status: funds.length ? 'done' : noFundsSeen ? 'suggestion' : 'open', title: 'Holdings file',
       where: 'Open "Your Holding Details" with its password, save a copy as .xlsx, import the copy.',
-      unlocks: nothingToRead ? "Angel's holdings file can't be read for shares yet." : 'The funds held today, so the plan can see them.',
+      unlocks: noFundsSeen
+        ? 'Hold mutual funds at Angel? Add the holdings file: its funds are read. Shares come from your trade history for now.'
+        : 'The funds held today, so the plan can see them.',
       ...(funds.length ? { doneLine: "Funds read. Shares and SGBs in this file aren't read yet: they come from your tradebooks for now.", ...(asOf ? { asOf } : {}) } : {}),
     },
     {
@@ -549,6 +551,7 @@ export function familyRow(g: MemberGuide): FamilyRow {
     if (st.refresh) return [2, 'Refresh'];
     if (open(st)) return [3, 'Next'];
     if (st.status === 'unreadable') return [1, "Can't read yet"];
+    if (st.status === 'suggestion') return [1, 'Optional'];
     if (a.broker === 'Angel One') return [1, 'Funds only'];
     const d = st.asOf ?? a.newest;
     return [0, d ? `✓ ${dateLabel(d, false)}` : '✓'];

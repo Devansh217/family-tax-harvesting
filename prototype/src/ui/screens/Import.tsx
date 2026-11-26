@@ -413,8 +413,8 @@ function Step({ st, onFiles }: { st: GuideStep; onFiles: (files: FileList | File
       </li>
     );
   }
-  // Can't be read yet, or a suggestion that never blocks: quiet lines. A tradebook suggestion takes its files here.
-  const drop = st.status === 'suggestion' && (st.kind === 'tradebook' || st.kind === 'fund_tradebook');
+  // Can't be read yet, or a suggestion that never blocks: quiet lines. A suggested file takes its files here.
+  const drop = st.status === 'suggestion';
   return (
     <li className={`step quiet small ${drop ? 'stack' : 'muted'}`}>
       <span className={drop ? 'muted' : undefined}>
