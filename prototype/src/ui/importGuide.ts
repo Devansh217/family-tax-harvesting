@@ -258,8 +258,9 @@ function angelSteps(c: Ctx): Draft[] {
   const txns = c.state.txns.filter((t) => t.memberId === c.memberId && c.keys.has(normAccount(t.account)));
   const shares = txns.some((t) => !isFund(t.isin));
   if (shares) c.notes.push("Angel shares are counted from your tradebooks only until Angel's holdings file can be read.");
-  // Only the file's funds are read: with shares and no fund units, it has nothing to add, so its step can't be read yet.
-  const nothingToRead = !funds.length && shares && !txns.some((t) => isFund(t.isin));
+  // Only the file's funds are read: with shares and no fund units held (none bought, or all redeemed), it has nothing
+  // to add, so its step can't be read yet.
+  const nothingToRead = !funds.length && shares && !c.lots.some((l) => isFund(l.isin));
   return [
     {
       kind: 'holdings', status: funds.length ? 'done' : nothingToRead ? 'unreadable' : 'open', title: 'Holdings file',

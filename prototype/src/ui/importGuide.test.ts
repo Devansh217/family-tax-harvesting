@@ -395,6 +395,16 @@ describe('member and family guide', () => {
     expect(g(family(angelFunds())).accounts[0]!.notes).toEqual([]);
   });
 
+  it("Angel funds all redeemed: the holdings file has nothing to read, so the member can be done", () => {
+    const s = family(add('r', 'angel-tb.xlsx', tradebook([
+      ['INE2', '2026-11-10', 'buy', 5, 100], ['INF9', '2026-06-01', 'buy', 5, 100], ['INF9', '2026-10-01', 'sell', 5, 110],
+    ], 'Trade history · Angel One · x'), 'Angel One'));
+    const r = g(s);
+    expect(statuses(r)).toEqual(['unreadable', 'unreadable', 'suggestion']);
+    expect(r.accounts[0]!.steps[0]).toMatchObject({ kind: 'holdings', unlocks: "Angel's holdings file can't be read for shares yet." });
+    expect(r.done).toBe(true);
+  });
+
   it("Angel shares only never go stale: no file it can read would move the date", () => {
     const oldTrades = add('r', 'angel-tb.xlsx', tradebook([['INE2', '2026-09-01', 'buy', 5, 100]], 'Trade history · Angel One · x'), 'Angel One');
     const r = g(family(oldTrades));
