@@ -132,6 +132,9 @@ const GRANDFATHER_AFTER: ISODate = '2018-02-01';
 /** Coin opened in 2017: no Zerodha fund purchase is older than this tax year. */
 const OLDEST_COIN_FY = 2017;
 
+/** A tax year is covered by tradebooks with trades in `years` when it lies between their oldest and newest, inclusive. */
+const yearIn = (years: number[], y: number) => years.length > 0 && Math.min(...years) <= y && y <= Math.max(...years);
+
 /** A step before its place in the order is known: `open` ones become next (the first) or later. */
 type Draft = Omit<GuideStep, 'status'> & { status: 'open' | 'done' | 'unreadable' | 'suggestion' };
 
@@ -189,9 +192,9 @@ function zerodhaSteps(c: Ctx): Draft[] {
   const window = [...new Set([fyStart(ref), fyStart(addMonths(ref, -12))])];
   // Fund (Coin) trades date only funds: they feed the fund tradebook step below, never the equity years.
   const tradeYears = [...new Set(trades.filter((t) => !isFund(t.isin)).map((t) => fyStart(t.date)))].sort((a, b) => b - a);
-  const oldest = tradeYears.length ? tradeYears[tradeYears.length - 1]! : null;
-  // A year is in when a trade falls in it or in an older year: tradebooks are asked newest first.
-  const missing = window.find((y) => oldest == null || y < oldest);
+  // A year is in when a tradebook covers it: a trade falls in it, or it lies between the oldest and newest years with
+  // trades (a year with no trades is possible). A lone older tradebook leaves the years after it out.
+  const missing = window.find((y) => !yearIn(tradeYears, y));
   const years = tradeYears.map(fyFromStart);
   const tradebooksIn = tradeYears.length ? { doneLine: `Tradebooks · ${fyList(years)}`, years } : {};
   if (gap.n > 0 && missing != null) {
@@ -210,8 +213,10 @@ function zerodhaSteps(c: Ctx): Draft[] {
   // 4. Fund tradebooks (Coin), back one year at a time while funds in the account are undated.
   const undatedFunds = lots.filter((l) => isFund(l.isin) && !l.certain);
   if (undatedFunds.length) {
+    // Newest first from this tax year: the first year no fund tradebook covers.
     const fundYears = trades.filter((t) => isFund(t.isin)).map((t) => fyStart(t.date));
-    const year = fundYears.length ? Math.min(...fundYears) - 1 : fyStart(today);
+    let year = fyStart(today);
+    while (yearIn(fundYears, year)) year--;
     if (year >= OLDEST_COIN_FY) {
       const fy = fyFromStart(year);
       const n = new Set(undatedFunds.map((l) => l.isin)).size;

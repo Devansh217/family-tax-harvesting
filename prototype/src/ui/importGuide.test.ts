@@ -182,6 +182,26 @@ describe('Zerodha steps', () => {
     expect(both.notes).toContain("1 share (₹1,000) isn't in your tradebooks: possibly a bonus, IPO allotment or transfer in. They get no moves.");
   });
 
+  it("a lone older tradebook doesn't fill this year's", () => {
+    // Only last year's tradebook is in (INE3 bought Dec 2025); INE2's 20 short-term units were bought this year.
+    const tb25 = add('a', 'tb25.csv', tradebook([['INE3', '2025-12-01', 'buy', 5, 100]]), 'Zerodha');
+    const h = add('a', 'h.xlsx', zHoldings('2026-11-20', [['INE3', 5, 0, 100, 100], ['INE2', 20, 0, 100, 100]]), 'Zerodha');
+    const s = family(tb25, h, pnl);
+    const g = guide(s);
+    expect(g.steps.find((x) => x.kind === 'tradebook')).toMatchObject({ status: 'next', fy: 'FY 2026-27', title: 'Tradebook, FY 2026-27', doneLine: 'Tradebooks · FY 2025-26' });
+    expect(g.notes.some((n) => n.includes('possibly a bonus'))).toBe(false);
+    expect(memberGuide(s, fam(s), 'a', ASOF).done).toBe(false);
+    // A lone FY 2023-24 tradebook asks for this year first.
+    const tb23 = add('a', 'tb23.csv', tradebook([['INE3', '2023-07-01', 'buy', 5, 100]]), 'Zerodha');
+    const h23 = add('a', 'h.xlsx', zHoldings('2026-11-20', [['INE3', 5, 5, 100, 100], ['INE2', 20, 0, 100, 100]]), 'Zerodha');
+    expect(guide(family(tb23, h23, pnl)).steps.find((x) => x.kind === 'tradebook')).toMatchObject({ status: 'next', fy: 'FY 2026-27' });
+    // Years between the oldest and newest tradebook count as in: FY 2026-27 and 2024-25 in, so FY 2025-26 is too.
+    const tb24 = add('a', 'tb24.csv', tradebook([['INE3', '2024-07-01', 'buy', 1, 100]]), 'Zerodha');
+    const tb26 = add('a', 'tb26.csv', tradebook([['INE3', '2026-07-01', 'buy', 1, 100]]), 'Zerodha');
+    const h3 = add('a', 'h.xlsx', zHoldings('2026-11-20', [['INE3', 2, 1, 100, 100], ['INE2', 20, 0, 100, 100]]), 'Zerodha');
+    expect(guide(family(tb24, tb26, h3, pnl)).steps.filter((x) => x.kind === 'tradebook')).toEqual([expect.objectContaining({ status: 'done' })]);
+  });
+
   it('two undated shares are plural', () => {
     const july = add('a', 'tb26.csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100]]), 'Zerodha');
     const sept = add('a', 'tb25.csv', tradebook([['INE2', '2025-09-01', 'buy', 5, 100]]), 'Zerodha');
@@ -219,10 +239,17 @@ describe('Zerodha steps', () => {
       status: 'next', fy: 'FY 2026-27', title: 'Fund tradebook (Coin), FY 2026-27', where: 'Console → Reports → Tradebook → segment MF → FY 2026-27',
       unlocks: 'Dates 1 fund (₹12,000) so they can get moves.',
     });
+    // A lone older fund tradebook doesn't fill the years after it: this year's is asked first.
     const may18 = add('a', 'mf.csv', tradebook([['INF1', '2018-05-10', 'buy', 10, 10]]), 'Zerodha');
-    expect(step(family(may18, coin, pnl))).toMatchObject({ fy: 'FY 2017-18' });
+    expect(step(family(may18, coin, pnl))).toMatchObject({ fy: 'FY 2026-27' });
+    const jun23 = add('a', 'mf23.csv', tradebook([['INF1', '2023-06-10', 'buy', 10, 10]]), 'Zerodha');
+    expect(step(family(jun23, coin, pnl))).toMatchObject({ fy: 'FY 2026-27' });
+    // This year's and FY 2018-19's in: the years between count as in, so FY 2017-18 is next.
+    const jul26 = add('a', 'mf26.csv', tradebook([['INF1', '2026-07-10', 'buy', 10, 10]]), 'Zerodha');
+    expect(step(family(may18, jul26, coin, pnl))).toMatchObject({ fy: 'FY 2017-18' });
+    // Back to FY 2017-18: Coin has nothing older.
     const jun17 = add('a', 'mf17.csv', tradebook([['INF1', '2017-06-10', 'buy', 10, 10]]), 'Zerodha');
-    expect(step(family(jun17, coin, pnl))).toBeUndefined();
+    expect(step(family(jun17, jul26, coin, pnl))).toBeUndefined();
   });
 
   it('stale at 30 days, not 29', () => {
