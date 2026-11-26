@@ -164,7 +164,7 @@ describe('Zerodha steps', () => {
     expect(done.steps[1]!.doneLine).toBe('Tax P&L · 1 Apr 2026 – 20 Nov 2026');
     const g = guide(family(undated, pnl));
     expect(g.steps.map((x) => x.kind)).toEqual(['holdings', 'pnl', 'tradebook']);
-    expect(g.steps[2]).toMatchObject({ status: 'next', fy: 'FY 2026-27', title: 'Tradebook, FY 2026-27' });
+    expect(g.steps[2]).toMatchObject({ status: 'suggestion', fy: 'FY 2026-27', title: 'Tradebook, FY 2026-27' });
     expect(g.steps[2]!.unlocks).toMatch(/Could date up to 1 share \(₹2,000\)/);
     const two = guide(family(add('a', 'h.xlsx', zHoldings('2026-11-20', [['INE2', 20, 0, 100, 100], ['INE3', 10, 0, 100, 100]]), 'Zerodha'), pnl));
     expect(two.steps[2]!.unlocks).toMatch(/Could date up to 2 shares \(₹3,000\)/);
@@ -174,7 +174,7 @@ describe('Zerodha steps', () => {
     const july = add('a', 'tb26.csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100]]), 'Zerodha');
     const g = guide(family(july, undated, pnl));
     const tb = g.steps.find((x) => x.kind === 'tradebook')!;
-    expect(tb).toMatchObject({ status: 'next', fy: 'FY 2025-26', title: 'Tradebook, FY 2025-26' });
+    expect(tb).toMatchObject({ status: 'suggestion', fy: 'FY 2025-26', title: 'Tradebook, FY 2025-26' });
     expect(tb.unlocks).toMatch(/Could date up to 1 share \(₹1,500\)/);
     const sept = add('a', 'tb25.csv', tradebook([['INE2', '2025-09-01', 'buy', 5, 100]]), 'Zerodha');
     const both = guide(family(july, sept, undated, pnl));
@@ -188,18 +188,64 @@ describe('Zerodha steps', () => {
     const h = add('a', 'h.xlsx', zHoldings('2026-11-20', [['INE3', 5, 0, 100, 100], ['INE2', 20, 0, 100, 100]]), 'Zerodha');
     const s = family(tb25, h, pnl);
     const g = guide(s);
-    expect(g.steps.find((x) => x.kind === 'tradebook')).toMatchObject({ status: 'next', fy: 'FY 2026-27', title: 'Tradebook, FY 2026-27', doneLine: 'Tradebooks · FY 2025-26' });
+    expect(g.steps.find((x) => x.kind === 'tradebook')).toMatchObject({ status: 'suggestion', fy: 'FY 2026-27', title: 'Tradebook, FY 2026-27', doneLine: 'Tradebooks · FY 2025-26' });
     expect(g.notes.some((n) => n.includes('possibly a bonus'))).toBe(false);
-    expect(memberGuide(s, fam(s), 'a', ASOF).done).toBe(false);
+    // A year with no trades has no tradebook to add: the ask never keeps the member from done.
+    expect(memberGuide(s, fam(s), 'a', ASOF).done).toBe(true);
     // A lone FY 2023-24 tradebook asks for this year first.
     const tb23 = add('a', 'tb23.csv', tradebook([['INE3', '2023-07-01', 'buy', 5, 100]]), 'Zerodha');
     const h23 = add('a', 'h.xlsx', zHoldings('2026-11-20', [['INE3', 5, 5, 100, 100], ['INE2', 20, 0, 100, 100]]), 'Zerodha');
-    expect(guide(family(tb23, h23, pnl)).steps.find((x) => x.kind === 'tradebook')).toMatchObject({ status: 'next', fy: 'FY 2026-27' });
+    expect(guide(family(tb23, h23, pnl)).steps.find((x) => x.kind === 'tradebook')).toMatchObject({ status: 'suggestion', fy: 'FY 2026-27' });
     // Years between the oldest and newest tradebook count as in: FY 2026-27 and 2024-25 in, so FY 2025-26 is too.
     const tb24 = add('a', 'tb24.csv', tradebook([['INE3', '2024-07-01', 'buy', 1, 100]]), 'Zerodha');
     const tb26 = add('a', 'tb26.csv', tradebook([['INE3', '2026-07-01', 'buy', 1, 100]]), 'Zerodha');
     const h3 = add('a', 'h.xlsx', zHoldings('2026-11-20', [['INE3', 2, 1, 100, 100], ['INE2', 20, 0, 100, 100]]), 'Zerodha');
     expect(guide(family(tb24, tb26, h3, pnl)).steps.filter((x) => x.kind === 'tradebook')).toEqual([expect.objectContaining({ status: 'done' })]);
+  });
+
+  it('tradebook asks wait behind the holdings file and P&L, then never block done', () => {
+    // Before this year's P&L is in, the tradebook ask keeps its place in the order.
+    const before = guide(family(undated));
+    expect(shape(before)).toEqual([['holdings', 'done'], ['pnl', 'next'], ['tradebook', 'later']]);
+    expect(before.steps[2]!.unlocks).toBe('Could date up to 1 share (₹2,000) bought in the last year.');
+    // Holdings and this year's P&L in: the only open asks are tradebook years, which may hold no trades.
+    const s = family(add('a', 'h.xlsx', zHoldings('2026-11-20', [['INE1', 100, 100, 100, 150], ['INF1', 1000, null, 10, 12], ['INE2', 20, 0, 100, 100]]), 'Zerodha'), pnl);
+    const g = guide(s);
+    expect(shape(g)).toEqual([['holdings', 'done'], ['pnl', 'done'], ['tradebook', 'suggestion'], ['fund_tradebook', 'suggestion']]);
+    expect(g.steps[2]!.unlocks).toBe("Could date up to 1 share (₹2,000) bought in the last year. Made no trades that year? Skip it: your plan doesn't wait for it.");
+    const m = memberGuide(s, fam(s), 'a', ASOF);
+    expect(m.done).toBe(true);
+    expect(familyRow(m).tradebooks).toBe('Optional');
+  });
+
+  it('share tradebooks: a year between two tradebooks is in, a year after the newest is asked', () => {
+    // Tradebooks for FY 2025-26 and FY 2023-24, none for FY 2024-25 or this year; INE2 was bought this year.
+    const s = family(
+      add('a', 'tb25.csv', tradebook([['INE3', '2025-12-01', 'buy', 5, 100]]), 'Zerodha'),
+      add('a', 'tb23.csv', tradebook([['INE3', '2023-07-01', 'buy', 5, 100]]), 'Zerodha'),
+      add('a', 'h.xlsx', zHoldings('2026-11-20', [['INE3', 10, 5, 100, 100], ['INE2', 20, 0, 100, 100]]), 'Zerodha'),
+      pnl,
+    );
+    const asks = guide(s).steps.filter((x) => x.kind === 'tradebook').map((x) => [x.fy, x.status]);
+    expect(asks).toEqual([['FY 2026-27', 'suggestion']]);
+    expect(memberGuide(s, fam(s), 'a', ASOF).done).toBe(true);
+  });
+
+  it('Coin fund tradebooks: a year between two tradebooks is in, older units ask the year before the oldest', () => {
+    // Fund tradebooks for FY 2025-26 and FY 2023-24, none for FY 2024-25 or this year; most units predate them.
+    const s = family(
+      add('a', 'mf25.csv', tradebook([['INF1', '2025-07-10', 'buy', 10, 10]]), 'Zerodha'),
+      add('a', 'mf23.csv', tradebook([['INF1', '2023-06-10', 'buy', 10, 10]]), 'Zerodha'),
+      add('a', 'h.xlsx', zHoldings('2026-11-20', [['INF1', 1000, null, 10, 12]]), 'Zerodha'),
+      pnl,
+    );
+    const asks = guide(s).steps.filter((x) => x.kind === 'fund_tradebook');
+    expect(asks.map((x) => x.fy)).not.toContain('FY 2024-25');
+    expect(asks.map((x) => x.fy)).toContain('FY 2022-23');
+    expect(asks.map((x) => x.fy)).toEqual(['FY 2026-27', 'FY 2022-23']);
+    expect(asks.every((x) => x.status === 'suggestion')).toBe(true);
+    expect(asks[1]!.unlocks).toMatch(/^Could date up to 1 fund \(₹/);
+    expect(memberGuide(s, fam(s), 'a', ASOF).done).toBe(true);
   });
 
   it('two undated shares are plural', () => {
@@ -212,7 +258,7 @@ describe('Zerodha steps', () => {
   it('fund trades do not fill the equity tradebook years', () => {
     const coin = add('a', 'mf.csv', tradebook([['INF1', '2026-07-01', 'buy', 5, 100], ['INF1', '2025-07-01', 'buy', 5, 100]]), 'Zerodha');
     const g = guide(family(coin, undated, pnl));
-    expect(g.steps.find((x) => x.kind === 'tradebook')).toMatchObject({ status: 'next', fy: 'FY 2026-27' });
+    expect(g.steps.find((x) => x.kind === 'tradebook')).toMatchObject({ status: 'suggestion', fy: 'FY 2026-27' });
     expect(g.steps.find((x) => x.kind === 'tradebook')!.doneLine).toBeUndefined();
     const sharesIn = add('a', 'tb26.csv', tradebook([['INE2', '2026-07-01', 'buy', 5, 100]]), 'Zerodha');
     expect(guide(family(coin, sharesIn, undated, pnl)).steps.find((x) => x.kind === 'tradebook')).toMatchObject({ fy: 'FY 2025-26', doneLine: 'Tradebooks · FY 2026-27' });
@@ -236,8 +282,8 @@ describe('Zerodha steps', () => {
     const coin = add('a', 'h.xlsx', zHoldings('2026-11-20', [['INF1', 1000, null, 10, 12]]), 'Zerodha');
     const step = (s: AppState) => guide(s).steps.find((x) => x.kind === 'fund_tradebook');
     expect(step(family(coin, pnl))).toMatchObject({
-      status: 'next', fy: 'FY 2026-27', title: 'Fund tradebook (Coin), FY 2026-27', where: 'Console → Reports → Tradebook → segment MF → FY 2026-27',
-      unlocks: 'Dates 1 fund (₹12,000) so they can get moves.',
+      status: 'suggestion', fy: 'FY 2026-27', title: 'Fund tradebook (Coin), FY 2026-27', where: 'Console → Reports → Tradebook → segment MF → FY 2026-27',
+      unlocks: "Dates 1 fund (₹12,000) so they can get moves. Made no trades that year? Skip it: your plan doesn't wait for it.",
     });
     // A lone older fund tradebook doesn't fill the years after it: this year's is asked first.
     const may18 = add('a', 'mf.csv', tradebook([['INF1', '2018-05-10', 'buy', 10, 10]]), 'Zerodha');

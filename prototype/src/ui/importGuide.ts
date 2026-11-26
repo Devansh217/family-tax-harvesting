@@ -213,20 +213,23 @@ function zerodhaSteps(c: Ctx): Draft[] {
     notes.push(`${plural(gap.n, 'share')} (${inr(gap.v)}) ${gap.n === 1 ? "isn't" : "aren't"} in your tradebooks: possibly a bonus, IPO allotment or transfer in. They get no moves.`);
   }
 
-  // 4. Fund tradebooks (Coin), back one year at a time while funds in the account are undated.
+  // 4. Fund tradebooks (Coin), while funds in the account are undated. Years between the oldest and newest fund
+  // tradebook are in (a year with no trades is possible). The undated units were bought after the newest or before the
+  // oldest, so up to two years are asked: this tax year when the newest is older, and the year before the oldest.
   const undatedFunds = lots.filter((l) => isFund(l.isin) && !l.certain);
   if (undatedFunds.length) {
-    // Newest first from this tax year: the first year no fund tradebook covers.
     const fundYears = trades.filter((t) => isFund(t.isin)).map((t) => fyStart(t.date));
-    let year = fyStart(today);
-    while (yearIn(fundYears, year)) year--;
-    if (year >= OLDEST_COIN_FY) {
+    const asks = fundYears.length
+      ? [fyStart(today) > Math.max(...fundYears) ? fyStart(today) : null, Math.min(...fundYears) - 1]
+      : [fyStart(today)];
+    const years = asks.filter((y): y is number => y != null && y >= OLDEST_COIN_FY);
+    const n = new Set(undatedFunds.map((l) => l.isin)).size;
+    const v = undatedFunds.reduce((a, l) => a + (l.value ?? 0), 0);
+    for (const year of years) {
       const fy = fyFromStart(year);
-      const n = new Set(undatedFunds.map((l) => l.isin)).size;
-      const v = undatedFunds.reduce((a, l) => a + (l.value ?? 0), 0);
       steps.push({
         kind: 'fund_tradebook', status: 'open', title: `Fund tradebook (Coin), ${fy}`, fy, where: `Console → Reports → Tradebook → segment MF → ${fy}`,
-        unlocks: `Dates ${plural(n, 'fund')} (${inr(v)}) so they can get moves.`,
+        unlocks: years.length === 1 ? `Dates ${plural(n, 'fund')} (${inr(v)}) so they can get moves.` : `Could date up to ${plural(n, 'fund')} (${inr(v)}) so they can get moves.`,
       });
     }
   }
@@ -355,6 +358,17 @@ function sectionGuide(state: GuideState, fam: FamilyView, memberId: string, acct
     }
   }
 
+  // Tradebook asks never block done: a year with no trades has no tradebook to add. Once the holdings file and this
+  // year's P&L are in, any year still asked is a suggestion (design anti-goal: tradebooks never block the plan).
+  const settled = (kind: StepKind) => drafts.some((d) => d.kind === kind && d.status === 'done');
+  if (settled('holdings') && settled('pnl')) {
+    for (const d of drafts) {
+      if ((d.kind === 'tradebook' || d.kind === 'fund_tradebook') && d.status === 'open') {
+        Object.assign(d, { status: 'suggestion', unlocks: `${d.unlocks} Made no trades that year? Skip it: your plan doesn't wait for it.` });
+      }
+    }
+  }
+
   let first = true;
   const steps = drafts.map((d): GuideStep => {
     if (d.status !== 'open') return { ...d, status: d.status };
@@ -371,7 +385,7 @@ export interface MemberGuide {
   first: boolean;
   accounts: AccountGuide[];
   usable: { usable: Paise; total: Paise }; pct: number | null;
-  /** Every step is done, can't be read yet or a suggestion, and no account's data is old. */
+  /** Every step is done, can't be read yet or a suggestion, no account's data is old, and no undated funds wait on a CAS. */
   done: boolean;
   /** Room kept spare on moves sized from average cost, per account: only when done and the member's total is ₹4,000 or more. */
   cushion: Array<{ account: string; broker: Broker; fy: string | null; rupees: Paise }>;
