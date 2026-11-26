@@ -463,7 +463,7 @@ describe('member and family guide', () => {
     expect(z.otherGaps.map((x) => x.key)).not.toContain('shares_no_dates');
   });
 
-  it('Groww holdings with no trades: the shares gap shows and the member is not done', () => {
+  it('Groww holdings with no trades: the shares gap shows, and other brokers\' trade history never blocks done', () => {
     const groww = add('r', 'groww.csv', {
       format: 'Groww holdings', txns: [], skipped: 0, warnings: [],
       prices: [{ isin: 'INE5', name: 'INE5', price: 100_00, priceDate: '2026-11-20', qty: 10 * QTY_SCALE }],
@@ -472,7 +472,39 @@ describe('member and family guide', () => {
     expect(r.accounts.map((a) => a.broker)).toEqual(['Other']);
     expect(r.otherGaps.find((x) => x.key === 'shares_no_dates')?.text)
       .toBe("Ravi: ₹1,000 in shares has no buy dates, so it gets no moves. Import the broker's holdings file, or tradebooks going back to the first purchase.");
-    expect(r.done).toBe(false);
+    expect(r.done).toBe(true);
+  });
+
+  it('Groww holdings with every trade in but IPO or bonus units: the gap shows and the member is done', () => {
+    // The trade history explains 10 of the 100 units: the rest came from an IPO allotment or a bonus.
+    const s = family(
+      add('r', 'groww-tb.csv', tradebook([['INE7', '2025-06-01', 'buy', 10, 100]], 'Trade history · Groww'), 'Groww'),
+      add('r', 'groww.csv', {
+        format: 'Groww holdings', txns: [], skipped: 0, warnings: [],
+        prices: [{ isin: 'INE7', name: 'INE7', price: 100_00, priceDate: '2026-11-20', qty: 100 * QTY_SCALE }],
+      }, 'Groww'),
+    );
+    const r = g(s);
+    expect(r.otherGaps.map((x) => x.key)).toContain('shares_no_dates');
+    expect(r.done).toBe(true);
+  });
+
+  it("the shares gap beside a Zerodha account counts only the other broker's undated shares", () => {
+    // Zerodha: a bonus credit (cost 0, no date), which no file can date. Groww: ₹1,000 of shares with no buy dates.
+    const s = family(
+      add('r', 'tb.csv', tradebook([['INE7', '2026-06-01', 'buy', 10, 1000]]), 'Zerodha'),
+      add('r', 'h.xlsx', zHoldings('2026-11-20', [['INE7', 20, 0, 500, 500]]), 'Zerodha'),
+      add('r', 'p.xlsx', zPnl('2026-04-01', '2026-11-20'), 'Zerodha'),
+      add('r', 'groww.csv', {
+        format: 'Groww holdings', txns: [], skipped: 0, warnings: [],
+        prices: [{ isin: 'INE5', name: 'INE5', price: 100_00, priceDate: '2026-11-20', qty: 10 * QTY_SCALE }],
+      }, 'Groww'),
+    );
+    const r = g(s);
+    expect(r.accounts.map((a) => a.broker)).toEqual(['Zerodha', 'Other']);
+    expect(r.otherGaps.find((x) => x.key === 'shares_no_dates')?.text)
+      .toBe("Ravi: ₹1,000 in shares has no buy dates, so it gets no moves. Import the broker's holdings file, or tradebooks going back to the first purchase.");
+    expect(r.done).toBe(true);
   });
 
   it('demat shares from a combined CAS are an Other section, and their gap shows', () => {
@@ -490,7 +522,7 @@ describe('member and family guide', () => {
     const r = g(s);
     expect(r.accounts.map((a) => a.broker)).toEqual(['Other', 'Mutual funds']);
     expect(r.otherGaps.map((x) => x.key)).toContain('shares_no_dates');
-    expect(r.done).toBe(false);
+    expect(r.done).toBe(true);
   });
 
   describe('undated funds outside Zerodha with no CAS', () => {

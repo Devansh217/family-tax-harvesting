@@ -456,10 +456,19 @@ export function memberGuide(state: GuideState, fam: FamilyView, memberId: string
     if (funds > 0) gaps.push(fundsNoDatesGap(memberId, name, funds));
   }
   const undated = undatedUnits(fam, state.positions, memberId);
-  const otherGaps = gaps.filter((g) => !coveredBySteps(g, undated, refs));
-  // Undated shares or funds no step can date keep the member from done: the gap's own file is their step.
+  const otherGaps = gaps.filter((g) => !coveredBySteps(g, undated, refs)).map((g) => {
+    // Zerodha's own undated shares (a bonus credit, a pre-2018 buy) are its tradebook step's and notes': beside them,
+    // the gap names only the other brokers' undated shares, in the plain wording.
+    if (g.key !== 'shares_no_dates') return g;
+    const isZerodha = (k: string) => refs.find((r) => r.key === k)?.broker === 'Zerodha';
+    if (![...undated].some(([k, v]) => v.shares > 0 && isZerodha(k))) return g;
+    const elsewhere = [...undated].filter(([k]) => !isZerodha(k)).reduce((a, [, v]) => a + v.shares, 0);
+    return sharesNoDatesGap(memberId, name, elsewhere);
+  });
+  // Undated funds no step can date keep the member from done: the CAS is their file. Undated shares at another broker
+  // don't: their trade history may be complete (an IPO allotment or bonus has no trade), so it never blocks (design §3).
   const done = !first && accounts.every((a) => !a.stale && a.steps.every((st) => st.status !== 'next' && st.status !== 'later'))
-    && !otherGaps.some((g) => g.key === 'funds_no_dates' || g.key === 'shares_no_dates');
+    && !otherGaps.some((g) => g.key === 'funds_no_dates');
 
   const usable = usableShare(fam, memberId);
   return {
