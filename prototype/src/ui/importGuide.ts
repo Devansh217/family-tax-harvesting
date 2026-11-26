@@ -249,13 +249,16 @@ const ANGEL_FUNDS = 'Angel One fund holdings';
 function angelSteps(c: Ctx): Draft[] {
   const funds = positionsOf(c).filter((p) => p.source === ANGEL_FUNDS);
   const asOf = newestAsOf(funds);
-  const shares = c.state.txns.some((t) => t.memberId === c.memberId && c.keys.has(normAccount(t.account)) && !isFund(t.isin));
+  const txns = c.state.txns.filter((t) => t.memberId === c.memberId && c.keys.has(normAccount(t.account)));
+  const shares = txns.some((t) => !isFund(t.isin));
   if (shares) c.notes.push("Angel shares are counted from your tradebooks only until Angel's holdings file can be read.");
+  // Only the file's funds are read: with shares and no fund units, it has nothing to add, so its step can't be read yet.
+  const nothingToRead = !funds.length && shares && !txns.some((t) => isFund(t.isin));
   return [
     {
-      kind: 'holdings', status: funds.length ? 'done' : 'open', title: 'Holdings file',
+      kind: 'holdings', status: funds.length ? 'done' : nothingToRead ? 'unreadable' : 'open', title: 'Holdings file',
       where: 'Open "Your Holding Details" with its password, save a copy as .xlsx, import the copy.',
-      unlocks: 'The funds held today, so the plan can see them.',
+      unlocks: nothingToRead ? "Angel's holdings file can't be read for shares yet." : 'The funds held today, so the plan can see them.',
       ...(funds.length ? { doneLine: "Funds read. Shares and SGBs in this file aren't read yet: they come from your tradebooks for now.", ...(asOf ? { asOf } : {}) } : {}),
     },
     {
@@ -324,9 +327,11 @@ function sectionGuide(state: GuideState, fam: FamilyView, memberId: string, acct
   const newest = accountKeys.map((k) => evidenceDate(state, memberId, k)).reduce<ISODate | null>((a, d) => (d && (!a || d > a) ? d : a), null);
   // A fund CAS dates its evidence by the newest transaction, which a buy-and-hold investor never moves: refreshing it
   // can't clear the line, so the Mutual funds section never goes stale here (the Plan's marks still use the date).
-  const stale = acct.broker !== 'Mutual funds' && newest != null && isOld(newest, today);
+  // Old data is only flagged when a file the app can read could move its date: a holdings step that can't be read yet
+  // (Angel One shares only) would leave the line up forever.
+  const h = drafts.find((d) => d.kind === 'holdings');
+  const stale = acct.broker !== 'Mutual funds' && h?.status !== 'unreadable' && newest != null && isOld(newest, today);
   if (stale) {
-    const h = drafts.find((d) => d.kind === 'holdings');
     if (h) {
       const wasDone = h.status === 'done';
       Object.assign(h, {
@@ -338,7 +343,6 @@ function sectionGuide(state: GuideState, fam: FamilyView, memberId: string, acct
   } else if (file) {
     // The deciding holdings file itself is old, or traded since, even when a newer tradebook or P&L is in (design §7).
     const traded = fam.holdingsNotes.staleFiles.some((f) => f.memberId === memberId && normAccount(f.account) === acct.key && f.asOf === file.asOf);
-    const h = drafts.find((d) => d.kind === 'holdings');
     if (h?.status === 'done' && (traded || isOld(file.asOf, today))) {
       const d = dateLabel(file.asOf);
       Object.assign(h, {
@@ -476,6 +480,7 @@ export function familyRow(g: MemberGuide): FamilyRow {
   const holdings = g.first ? 'Start' : cell(g, ['holdings', 'cas'], (a, st) => {
     if (st.refresh) return [2, 'Refresh'];
     if (open(st)) return [3, 'Next'];
+    if (st.status === 'unreadable') return [1, "Can't read yet"];
     if (a.broker === 'Angel One') return [1, 'Funds only'];
     const d = st.asOf ?? a.newest;
     return [0, d ? `✓ ${dateLabel(d, false)}` : '✓'];

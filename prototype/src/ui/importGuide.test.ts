@@ -338,12 +338,28 @@ describe('member and family guide', () => {
     });
     expect(r.accounts[0]!.notes).toContain("Angel shares are counted from your tradebooks only until Angel's holdings file can be read.");
     expect(familyRow(r)).toMatchObject({ holdings: 'Funds only', pnl: "Can't read yet", tradebooks: 'Optional' });
-    // Without the holdings file, Angel's holdings step is next and the member isn't done.
+    // Shares only, no funds: Angel's holdings file has nothing the app can read, so its step can't be read yet and the
+    // member is done.
     const noFile = g(family(angelTrades));
-    expect(statuses(noFile)).toEqual(['next', 'unreadable', 'suggestion']);
-    expect(noFile.done).toBe(false);
+    expect(statuses(noFile)).toEqual(['unreadable', 'unreadable', 'suggestion']);
+    expect(noFile.accounts[0]!.steps[0]).toMatchObject({ kind: 'holdings', unlocks: "Angel's holdings file can't be read for shares yet." });
+    expect(noFile.done).toBe(true);
+    expect(familyRow(noFile).holdings).toBe("Can't read yet");
     expect(noFile.accounts[0]!.notes).toContain("Angel shares are counted from your tradebooks only until Angel's holdings file can be read.");
     expect(g(family(angelFunds())).accounts[0]!.notes).toEqual([]);
+  });
+
+  it("Angel shares only never go stale: no file it can read would move the date", () => {
+    const oldTrades = add('r', 'angel-tb.xlsx', tradebook([['INE2', '2026-09-01', 'buy', 5, 100]], 'Trade history · Angel One · x'), 'Angel One');
+    const r = g(family(oldTrades));
+    expect(r.accounts[0]).toMatchObject({ newest: '2026-09-01', stale: false });
+    expect(r.accounts[0]!.notes.some((n) => n.includes('Newest data from'))).toBe(false);
+    expect(r.done).toBe(true);
+    // With funds, the holdings file can move the date: old fund holdings still reopen the step.
+    const withFunds = g(family(angelFunds('2026-09-01'), oldTrades));
+    expect(withFunds.accounts[0]).toMatchObject({ stale: true });
+    expect(withFunds.accounts[0]!.steps[0]).toMatchObject({ status: 'next', refresh: true });
+    expect(withFunds.done).toBe(false);
   });
 
   it('two brokers, two sections', () => {
@@ -473,8 +489,10 @@ describe('member and family guide', () => {
   });
 
   it("Angel's holdings step doesn't promise moves", () => {
-    const h = g(family(angelTrades)).accounts[0]!.steps[0]!;
-    expect(h.unlocks).toBe('The funds held today, so the plan can see them.');
+    // An Angel account with fund trades and no holdings file: the file can add the funds held today.
+    const fundTrade = add('r', 'angel-tb.xlsx', tradebook([['INF9', '2026-11-10', 'buy', 5, 100]], 'Trade history · Angel One · x'), 'Angel One');
+    const h = g(family(fundTrade, angelTrades)).accounts[0]!.steps[0]!;
+    expect(h).toMatchObject({ status: 'next', unlocks: 'The funds held today, so the plan can see them.' });
   });
 
   describe('cushion', () => {
