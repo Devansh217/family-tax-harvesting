@@ -57,6 +57,26 @@ async function startOwnFamilyImport(page: Page) {
 /** The family table's member rows. */
 const memberRows = (page: Page) => page.getByRole('button', { name: /: open checklist$/ });
 
+/**
+ * A tiny PDF with the standard security handler and a user-password check that no password passes, so the reader asks
+ * for one. It holds no content: it only needs to be locked.
+ */
+function lockedPdf(): Buffer {
+  const hex = (b: number) => b.toString(16).padStart(2, '0').repeat(32);
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [] /Count 0 >>',
+    `<< /Filter /Standard /V 1 /R 2 /O <${hex(0x11)}> /U <${hex(0x22)}> /P -4 >>`,
+  ];
+  let out = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objs.forEach((o, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R /Encrypt 3 0 R /ID [<${'ab'.repeat(16)}> <${'ab'.repeat(16)}>] >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
+
 async function expectNoSideScroll(page: Page) {
   const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
   expect(scroll, 'page scrolls sideways').toBeLessThanOrEqual(client);
@@ -261,6 +281,16 @@ for (const size of SIZES) {
         await expect(page.getByRole('region', { name: 'Add another file' }).locator('input[type="file"]')).toHaveCount(1);
         await expect(page.locator('.step.quiet').filter({ hasText: 'Trade history' }).locator('input[type="file"]')).toHaveCount(1);
         await expectNoSideScroll(page);
+      });
+
+      test('a locked PDF asks for the password the statement was ordered with', async ({ page }) => {
+        await startOwnFamilyImport(page);
+        await memberRows(page).first().click();
+        await page.locator('input[type="file"]').first().setInputFiles({ name: 'locked.pdf', mimeType: 'application/pdf', buffer: lockedPdf() });
+        const card = page.getByRole('article', { name: 'locked.pdf' });
+        await expect(card.getByLabel(/This PDF is locked/)).toBeVisible();
+        await expect(card.getByText('From MF Central, CAMS or KFintech: the password you chose. NSDL / CDSL CAS: your PAN in capitals.')).toBeVisible();
+        await expect(card.getByText(/usually your PAN/)).toHaveCount(0);
       });
 
       test('#import shows a row per member, and Stop here opens the plan', async ({ page }) => {

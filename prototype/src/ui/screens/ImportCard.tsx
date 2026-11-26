@@ -56,8 +56,9 @@ export function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDism
       {item.status === 'password' && (
         <form className="row wrap" onSubmit={(e) => { e.preventDefault(); onPassword(pw); }}>
           <label className="field grow" style={{ minWidth: 200 }}>
-            {item.wrong ? 'That password did not work. Try again' : 'This PDF is locked. Password (usually your PAN in capitals)'}
+            {item.wrong ? 'That password did not work. Try again' : 'This PDF is locked. Password'}
             <input type="password" autoComplete="off" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus />
+            <span className="tiny muted">From MF Central, CAMS or KFintech: the password you chose. NSDL / CDSL CAS: your PAN in capitals.</span>
           </label>
           <button className="btn primary" type="submit" style={{ alignSelf: 'flex-end' }}>Unlock</button>
         </form>
