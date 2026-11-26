@@ -304,7 +304,8 @@ const STEPS: Record<Broker, (c: Ctx) => Draft[]> = {
 /**
  * The checklist for one account: its broker's steps in order, each done, unreadable or a suggestion by its own test,
  * the first remaining one next and the rest later. When the account's newest data is old (`isOld`), its holdings step
- * reopens, titled as a refresh when it was done (its done line kept), and a "Newest data from" note is added. The
+ * reopens, titled as a refresh when it was done (its done line kept), and a "Newest data from" note is added. A
+ * deciding holdings file 30 or more days old, or traded since, reopens its step as a refresh the same way. The
  * Mutual funds section never goes stale: a fresh CAS adds no newer transaction for a fund only held.
  */
 export function accountGuide(state: GuideState, fam: FamilyView, memberId: string, acct: AccountRef, today: ISODate): AccountGuide {
@@ -334,6 +335,17 @@ function sectionGuide(state: GuideState, fam: FamilyView, memberId: string, acct
       });
     }
     notes.push(`Newest data from ${dateLabel(newest)}.`);
+  } else if (file) {
+    // The deciding holdings file itself is old, or traded since, even when a newer tradebook or P&L is in (design §7).
+    const traded = fam.holdingsNotes.staleFiles.some((f) => f.memberId === memberId && normAccount(f.account) === acct.key && f.asOf === file.asOf);
+    const h = drafts.find((d) => d.kind === 'holdings');
+    if (h?.status === 'done' && (traded || isOld(file.asOf, today))) {
+      const d = dateLabel(file.asOf);
+      Object.assign(h, {
+        status: 'open', refresh: true, title: 'Holdings file: refresh',
+        unlocks: traded ? `Download today's: you've traded since the one you added (${d}).` : `Download today's: the one you added is from ${d}.`,
+      });
+    }
   }
 
   let first = true;

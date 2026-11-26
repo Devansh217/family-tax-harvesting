@@ -270,6 +270,32 @@ describe('Zerodha steps', () => {
     expect(fresh.notes).toEqual([]);
   });
 
+  it('an old holdings file reopens as a refresh even when newer data is in', () => {
+    // Eight months old, with a Tax P&L to 20 Nov: the account's newest data is fresh, the holdings file isn't.
+    const s = family(add('a', 'h.xlsx', zHoldings('2026-03-20', [['INE1', 100, 100, 100, 150]]), 'Zerodha'), pnl);
+    const g = guide(s);
+    expect(g).toMatchObject({ newest: '2026-11-20', stale: false });
+    expect(g.notes).toEqual([]);
+    expect(g.steps[0]).toMatchObject({
+      kind: 'holdings', status: 'next', refresh: true, title: 'Holdings file: refresh',
+      unlocks: "Download today's: the one you added is from 20 Mar 2026.", doneLine: 'Zerodha holdings · as on 20 Mar 2026 · 1 share, ₹15,000',
+    });
+    const m = memberGuide(s, fam(s), 'a', ASOF);
+    expect(m.done).toBe(false);
+    expect(familyRow(m).holdings).toBe('Refresh');
+    // A fresh file traded since (in the engine's stale files) reopens too.
+    const traded = family(
+      add('a', 'h.xlsx', zHoldings('2026-11-15', [['INE1', 100, 100, 100, 150]]), 'Zerodha'),
+      add('a', 'tb.csv', tradebook([['INE2', '2026-11-18', 'buy', 5, 100]]), 'Zerodha'), pnl,
+    );
+    expect(fam(traded).holdingsNotes.staleFiles).toHaveLength(1);
+    expect(guide(traded).steps[0]).toMatchObject({
+      status: 'next', refresh: true, title: 'Holdings file: refresh', unlocks: "Download today's: you've traded since the one you added (15 Nov 2026).",
+    });
+    // 29 days old and nothing traded since: done.
+    expect(guide(family(add('a', 'h.xlsx', zHoldings('2026-10-26', [['INE1', 100, 100, 100, 150]]), 'Zerodha'), pnl)).steps[0]!.status).toBe('done');
+  });
+
   it('stale with no holdings file keeps the step title', () => {
     const g = guide(family(add('a', 'tb.csv', tradebook([['INE1', '2026-09-01', 'buy', 10, 100]]), 'Zerodha')));
     expect(g.stale).toBe(true);
