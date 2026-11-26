@@ -63,6 +63,12 @@ export function unexplainedValue(
   return short > 0 ? Math.round((short * price) / QTY_SCALE) : 0;
 }
 
+/** The gap for mutual funds with no buy dates, worth `funds`: the detailed CAS has every purchase. */
+export const fundsNoDatesGap = (memberId: string, name: string, funds: Paise): PlanGap => ({
+  memberId, key: 'funds_no_dates', href: importHref(memberId), action: 'Import',
+  text: `${name}: ${rupees(funds)} in mutual funds has no buy dates, so it gets no moves. Import their detailed CAS (free from MF Central, CAMS or KFintech): it has every purchase.`,
+});
+
 /**
  * What keeps the plan from being complete, per member, each with the file or step that fixes it. Holdings without
  * buy dates get no moves; funds with an unknown tax type get none either.
@@ -116,10 +122,7 @@ export function planGaps(
     }
     const funds = undated(true);
     if (funds > 0) {
-      out.push({
-        memberId: id, key: 'funds_no_dates', href: importHref(id), action: 'Import',
-        text: `${name}: ${rupees(funds)} in mutual funds has no buy dates, so it gets no moves. Import their CAS (free from MF Central, CAMS or KFintech): it has every purchase.`,
-      });
+      out.push(fundsNoDatesGap(id, name, funds));
     }
     // A holdings file saved before files were dated never trims: importing it again lets sold or moved shares drop out.
     // Not when a dated file for that account decides instead, or another gap already asks for the file again.

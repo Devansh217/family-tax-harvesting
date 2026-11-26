@@ -266,8 +266,10 @@ describe('member and family guide', () => {
   });
 
   it('Angel never blocks done', () => {
-    const r = g(family(angelFunds(), angelTrades));
-    expect(r.accounts.map((a) => a.broker)).toEqual(['Angel One']);
+    // The funds' buy dates come from a CAS: without one the CAS gap keeps the member from done (tested below).
+    const angelCas = add('r', 'cas.pdf', tradebook([['INF9', '2026-06-01', 'buy', 50, 100]], 'Mutual fund CAS (CAMS / KFintech)'), 'Folio 1/1');
+    const r = g(family(angelFunds(), angelTrades, angelCas));
+    expect(r.accounts.map((a) => a.broker)).toEqual(['Angel One', 'Mutual funds']);
     expect(statuses(r)).toEqual(['done', 'unreadable', 'suggestion']);
     expect(r.done).toBe(true);
     expect(r.first).toBe(false);
@@ -390,6 +392,31 @@ describe('member and family guide', () => {
     const z = g(family(add('r', 'h.xlsx', zHoldings('2026-11-20', [['INE1', 100, 0, 100, 150]]), 'Zerodha')));
     expect(z.accounts.map((a) => a.broker)).toEqual(['Zerodha']);
     expect(z.otherGaps.map((x) => x.key)).not.toContain('shares_no_dates');
+  });
+
+  describe('undated funds outside Zerodha with no CAS', () => {
+    const fundsFile = (format: string, account: string) => add('r', 'h.xlsx', {
+      format, txns: [], skipped: 0, warnings: [],
+      prices: [{ isin: 'INF9', name: 'INF9', price: 100_00, priceDate: '2026-11-20', qty: 50 * QTY_SCALE }],
+    }, account);
+    const shareTrade = (account: string) => add('r', 'tb.xlsx', tradebook([['INE2', '2026-11-10', 'buy', 5, 100]], `Trade history · ${account}`), account);
+    const casGap = (r: ReturnType<typeof g>) => r.otherGaps.find((x) => x.key === 'funds_no_dates');
+    for (const [format, account] of [['Angel One fund holdings', 'Angel One'], ['Groww holdings', 'Groww']] as const) {
+      it(`${account}: the CAS gap shows and the member isn't done`, () => {
+        for (const s of [family(fundsFile(format, account)), family(fundsFile(format, account), shareTrade(account))]) {
+          const r = g(s);
+          expect(r.accounts.map((a) => a.broker)).not.toContain('Mutual funds');
+          expect(casGap(r)?.text).toBe('Ravi: ₹5,000 in mutual funds has no buy dates, so it gets no moves. Import their detailed CAS (free from MF Central, CAMS or KFintech): it has every purchase.');
+          expect(r.done).toBe(false);
+        }
+      });
+    }
+    it('a CAS for the funds clears it', () => {
+      const cas = add('r', 'cas.pdf', tradebook([['INF9', '2026-06-01', 'buy', 50, 100]], 'Mutual fund CAS (CAMS / KFintech)'), 'Folio 1/1');
+      const r = g(family(fundsFile('Angel One fund holdings', 'Angel One'), shareTrade('Angel One'), cas));
+      expect(casGap(r)).toBeUndefined();
+      expect(r.done).toBe(true);
+    });
   });
 
   it("Angel's holdings step doesn't promise moves", () => {

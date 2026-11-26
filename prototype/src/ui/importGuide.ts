@@ -6,7 +6,7 @@ import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
 import type { ParseResult } from '../parsers';
 import { importAddedNothing, importTxnIds, type AppState, type ImportOptions } from '../store';
 import { dateLabel, inr, inrShort } from './format';
-import { planGaps, unexplainedValue, type PlanGap } from './plan';
+import { fundsNoDatesGap, planGaps, unexplainedValue, type PlanGap } from './plan';
 
 export type GuideState = Pick<AppState, 'members' | 'securities' | 'txns' | 'positions' | 'imports' | 'brokerSummaries'>;
 export type Broker = 'Zerodha' | 'Angel One' | 'Other' | 'Mutual funds';
@@ -367,7 +367,19 @@ const STEP_GAPS: Array<PlanGap['key']> = ['no_holdings', 'shares_no_dates', 'fun
 function coveredBySteps(g: PlanGap, refs: AccountRef[]): boolean {
   if (!STEP_GAPS.includes(g.key)) return false;
   if (g.key === 'shares_no_dates') return !refs.some((a) => a.broker === 'Angel One' || a.broker === 'Other');
+  // Funds are dated by Zerodha's fund tradebook step or the Mutual funds (CAS) section; any other account has neither.
+  if (g.key === 'funds_no_dates') return refs.some((a) => a.broker === 'Zerodha' || a.broker === 'Mutual funds');
   return true;
+}
+
+/** Value of fund units this member's holdings rows show that no lot explains (as `planGaps` values them). */
+function undatedFundValue(fam: FamilyView, positions: GuideState['positions'], memberId: string): Paise {
+  const missing = new Map<string, number>();
+  for (const p of positions) {
+    if (p.memberId !== memberId || p.qty == null || !isFund(p.isin)) continue;
+    missing.set(p.isin, Math.max(missing.get(p.isin) ?? 0, p.qty));
+  }
+  return [...missing].reduce((a, [isin, qty]) => a + unexplainedValue(fam, memberId, isin, qty), 0);
 }
 const MUTUAL_FUNDS: AccountRef = { label: 'Mutual funds', key: 'mutual funds', broker: 'Mutual funds' };
 const to100 = (p: Paise) => Math.round(p / 10_000) * 10_000;
@@ -380,13 +392,23 @@ export function memberGuide(state: GuideState, fam: FamilyView, memberId: string
   const accounts = refs.filter((a) => a.broker !== 'Mutual funds').map((a) => accountGuide(state, fam, memberId, a, today));
   if (folios.length) accounts.push(sectionGuide(state, fam, memberId, MUTUAL_FUNDS, folios.map((a) => a.key), today));
   const first = accounts.length === 0;
-  const done = !first && accounts.every((a) => !a.stale && a.steps.every((st) => st.status !== 'next' && st.status !== 'later'));
+  const gaps = planGaps(fam, state.positions, state.brokerSummaries, state.imports).filter((g) => g.memberId === memberId);
+  // A member with only fund holdings (Angel One, Groww) has no lots, so `planGaps` reads them as "nothing imported";
+  // their funds still have no buy dates.
+  if (!first && gaps.some((g) => g.key === 'no_holdings')) {
+    const funds = undatedFundValue(fam, state.positions, memberId);
+    if (funds > 0) gaps.push(fundsNoDatesGap(memberId, name, funds));
+  }
+  const otherGaps = gaps.filter((g) => !coveredBySteps(g, refs));
+  // Undated funds no step can date keep the member from done: the CAS gap is their step.
+  const done = !first && accounts.every((a) => !a.stale && a.steps.every((st) => st.status !== 'next' && st.status !== 'later'))
+    && !otherGaps.some((g) => g.key === 'funds_no_dates');
 
   const usable = usableShare(fam, memberId);
   return {
     memberId, name, first, accounts, usable, pct: pct(usable), done,
     cushion: done ? cushionOf(fam, memberId, refs) : [],
-    otherGaps: planGaps(fam, state.positions, state.brokerSummaries, state.imports).filter((g) => g.memberId === memberId && !coveredBySteps(g, refs)),
+    otherGaps,
   };
 }
 
