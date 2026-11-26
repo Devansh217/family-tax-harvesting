@@ -69,6 +69,12 @@ export const fundsNoDatesGap = (memberId: string, name: string, funds: Paise): P
   text: `${name}: ${rupees(funds)} in mutual funds has no buy dates, so it gets no moves. Import their detailed CAS (free from MF Central, CAMS or KFintech): it has every purchase.`,
 });
 
+/** The gap for shares with no buy dates, worth `shares`, when no holdings file gives a long-term count. */
+export const sharesNoDatesGap = (memberId: string, name: string, shares: Paise): PlanGap => ({
+  memberId, key: 'shares_no_dates', href: importHref(memberId), action: 'Import',
+  text: `${name}: ${rupees(shares)} in shares has no buy dates, so it gets no moves. Import the broker's holdings file, or tradebooks going back to the first purchase.`,
+});
+
 /**
  * What keeps the plan from being complete, per member, each with the file or step that fixes it. Holdings without
  * buy dates get no moves; funds with an unknown tax type get none either.
@@ -117,7 +123,7 @@ export function planGaps(
           ? `${name}: ${rupees(shares)} in shares has no buy dates. Import their holdings file again: it now fills in shares bought before the tradebook.`
           : filled
             ? `${name}: ${rupees(shares)} in shares was bought in the year before the tradebook starts, so the app can't tell when it turns long-term. Import last year's tradebook.`
-            : `${name}: ${rupees(shares)} in shares has no buy dates, so it gets no moves. Import the broker's holdings file, or tradebooks going back to the first purchase.`,
+            : sharesNoDatesGap(id, name, shares).text,
       });
     }
     const funds = undated(true);

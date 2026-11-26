@@ -463,6 +463,36 @@ describe('member and family guide', () => {
     expect(z.otherGaps.map((x) => x.key)).not.toContain('shares_no_dates');
   });
 
+  it('Groww holdings with no trades: the shares gap shows and the member is not done', () => {
+    const groww = add('r', 'groww.csv', {
+      format: 'Groww holdings', txns: [], skipped: 0, warnings: [],
+      prices: [{ isin: 'INE5', name: 'INE5', price: 100_00, priceDate: '2026-11-20', qty: 10 * QTY_SCALE }],
+    }, 'Groww');
+    const r = g(family(groww));
+    expect(r.accounts.map((a) => a.broker)).toEqual(['Other']);
+    expect(r.otherGaps.find((x) => x.key === 'shares_no_dates')?.text)
+      .toBe("Ravi: ₹1,000 in shares has no buy dates, so it gets no moves. Import the broker's holdings file, or tradebooks going back to the first purchase.");
+    expect(r.done).toBe(false);
+  });
+
+  it('demat shares from a combined CAS are an Other section, and their gap shows', () => {
+    // A combined CAS: one fund folio with its purchase, and demat shares (no buy dates anywhere).
+    const combined = add('r', 'cas.pdf', {
+      format: 'Combined CAS', skipped: 0, warnings: [],
+      txns: [{ isin: 'INF1', name: 'INF1', date: '2026-06-01', side: 'buy', qty: 5 * QTY_SCALE, amount: 500_00, account: 'Folio 1/1' }],
+      prices: [
+        { isin: 'INF1', name: 'INF1', price: 100_00, priceDate: '2026-11-20', qty: 5 * QTY_SCALE },
+        { isin: 'INE5', name: 'INE5', price: 100_00, priceDate: '2026-11-20', qty: 10 * QTY_SCALE, demat: true },
+      ],
+    }, 'Demat (CAS)');
+    const s = family(combined);
+    expect(memberAccounts(s, 'r').map((a) => [a.label, a.broker])).toEqual([['Demat (CAS)', 'Other'], ['Folio 1/1', 'Mutual funds']]);
+    const r = g(s);
+    expect(r.accounts.map((a) => a.broker)).toEqual(['Other', 'Mutual funds']);
+    expect(r.otherGaps.map((x) => x.key)).toContain('shares_no_dates');
+    expect(r.done).toBe(false);
+  });
+
   describe('undated funds outside Zerodha with no CAS', () => {
     const fundsFile = (format: string, account: string) => add('r', 'h.xlsx', {
       format, txns: [], skipped: 0, warnings: [],
@@ -480,6 +510,19 @@ describe('member and family guide', () => {
         }
       });
     }
+    it('a Zerodha account beside them does not hide the gap', () => {
+      const z = add('r', 'z.xlsx', zHoldings('2026-11-20', [['INE1', 100, 100, 100, 150]]), 'Zerodha');
+      const zPnlR = add('r', 'p.xlsx', zPnl('2026-04-01', '2026-11-20'), 'Zerodha');
+      for (const [format, account] of [['Angel One fund holdings', 'Angel One'], ['Groww holdings', 'Groww']] as const) {
+        const r = g(family(z, zPnlR, fundsFile(format, account)));
+        expect(r.accounts.map((a) => a.broker)).toContain('Zerodha');
+        expect(casGap(r)).toBeDefined();
+        expect(r.done).toBe(false);
+      }
+      // Undated Coin funds in the Zerodha account alone are the fund tradebook step's: no repeat.
+      const coin = g(family(add('r', 'z.xlsx', zHoldings('2026-11-20', [['INE1', 100, 100, 100, 150], ['INF1', 1000, null, 10, 12]]), 'Zerodha'), zPnlR));
+      expect(casGap(coin)).toBeUndefined();
+    });
     it('a CAS for the funds clears it', () => {
       const cas = add('r', 'cas.pdf', tradebook([['INF9', '2026-06-01', 'buy', 50, 100]], 'Mutual fund CAS (CAMS / KFintech)'), 'Folio 1/1');
       const r = g(family(fundsFile('Angel One fund holdings', 'Angel One'), shareTrade('Angel One'), cas));

@@ -4,9 +4,9 @@ import { accountKey, isOld, newestEvidence } from '../engine/freshness';
 import { APPROX_MARGIN, decidingFiles, isTradebook, normAccount, TRIMMING_HOLDINGS_SOURCES, type DecidingFile } from '../engine/openingLots';
 import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
 import type { ParseResult } from '../parsers';
-import { importAddedNothing, importTxnIds, type AppState, type ImportOptions } from '../store';
+import { DEMAT_SNAPSHOT_SOURCE, importAddedNothing, importTxnIds, type AppState, type ImportOptions } from '../store';
 import { dateLabel, inr, inrShort } from './format';
-import { fundsNoDatesGap, planGaps, unexplainedValue, type PlanGap } from './plan';
+import { fundsNoDatesGap, planGaps, sharesNoDatesGap, unexplainedValue, type PlanGap } from './plan';
 
 export type GuideState = Pick<AppState, 'members' | 'securities' | 'txns' | 'positions' | 'imports' | 'brokerSummaries'>;
 export type Broker = 'Zerodha' | 'Angel One' | 'Other' | 'Mutual funds';
@@ -30,24 +30,27 @@ export function brokerOf(label: string, formats: string[]): Broker {
  */
 export function memberAccounts(state: GuideState, memberId: string): AccountRef[] {
   const formatOf = new Map(state.imports.map((i) => [i.id, i.format]));
-  const found = new Map<string, { spellings: Map<string, number>; formats: Set<string> }>();
-  const see = (account: string | undefined, importId: string | undefined) => {
+  const found = new Map<string, { spellings: Map<string, number>; formats: Set<string>; demat: boolean }>();
+  const see = (account: string | undefined, importId: string | undefined, demat = false) => {
     const key = normAccount(account);
-    const e = found.get(key) ?? { spellings: new Map<string, number>(), formats: new Set<string>() };
+    const e = found.get(key) ?? { spellings: new Map<string, number>(), formats: new Set<string>(), demat: false };
     const label = (account ?? '').trim();
     e.spellings.set(label, (e.spellings.get(label) ?? 0) + 1);
     const f = importId ? formatOf.get(importId) : undefined;
     if (f) e.formats.add(f);
+    if (demat) e.demat = true;
     found.set(key, e);
   };
   for (const t of state.txns) if (t.memberId === memberId) see(t.account, t.importId);
-  for (const p of state.positions) if (p.memberId === memberId) see(p.account, p.importId);
+  for (const p of state.positions) if (p.memberId === memberId) see(p.account, p.importId, p.source === DEMAT_SNAPSHOT_SOURCE);
   for (const b of state.brokerSummaries) if (b.memberId === memberId) see(b.account, b.importId);
   const labelOf = (spellings: Map<string, number>) =>
     [...spellings].sort(([a, n], [b, m]) => m - n || (a < b ? -1 : a > b ? 1 : 0))[0]![0];
   return [...found].map(([key, e]) => {
     const label = labelOf(e.spellings);
-    return { label, key, broker: brokerOf(label, [...e.formats]) };
+    const broker = brokerOf(label, [...e.formats]);
+    // Demat shares from a combined CAS are held at a broker, not in a fund folio.
+    return { label, key, broker: e.demat && broker === 'Mutual funds' ? 'Other' : broker };
   })
     .sort((x, y) => BROKER_ORDER.indexOf(x.broker) - BROKER_ORDER.indexOf(y.broker) || x.label.localeCompare(y.label));
 }
@@ -381,23 +384,53 @@ export interface FamilyGuide { members: MemberGuide[]; pct: number | null }
 const CUSHION_MIN: Paise = 4_000_00;
 /** Gaps the steps already ask for. */
 const STEP_GAPS: Array<PlanGap['key']> = ['no_holdings', 'shares_no_dates', 'funds_no_dates'];
+type Undated = Map<string, { shares: Paise; funds: Paise }>;
+
 /**
- * A gap the steps already ask for. Undated shares are only a step's in Zerodha accounts (the tradebook step): an Angel
- * One or other account has no step that dates them, so the gap stays when the member has one.
+ * Per account (`normAccount`) of a member, the value of units with no buy date, by kind: lots whose date or cost isn't
+ * certain, and units the account's holdings rows show that the member's lots don't explain (as `planGaps` values them).
  */
-function coveredBySteps(g: PlanGap, refs: AccountRef[]): boolean {
+function undatedUnits(fam: FamilyView, positions: GuideState['positions'], memberId: string): Undated {
+  const out: Undated = new Map();
+  const addTo = (account: string | undefined, isin: string, v: Paise) => {
+    if (v <= 0) return;
+    const k = normAccount(account);
+    const e = out.get(k) ?? { shares: 0, funds: 0 };
+    if (isFund(isin)) e.funds += v; else e.shares += v;
+    out.set(k, e);
+  };
+  for (const h of fam.members.find((m) => m.member.id === memberId)?.holdings ?? []) {
+    for (const l of h.lots) if (!l.certain) addTo(l.account, h.isin, l.value ?? 0);
+  }
+  const rows = new Map<string, { account: string | undefined; isin: string; qty: number }>();
+  for (const p of positions) {
+    if (p.memberId !== memberId || p.qty == null) continue;
+    const k = `${normAccount(p.account)}|${p.isin}`;
+    if (p.qty > (rows.get(k)?.qty ?? -1)) rows.set(k, { account: p.account, isin: p.isin, qty: p.qty });
+  }
+  for (const r of rows.values()) addTo(r.account, r.isin, unexplainedValue(fam, memberId, r.isin, r.qty));
+  return out;
+}
+
+/**
+ * A gap the steps already ask for. Undated shares are a step's only in Zerodha accounts (the tradebook step), so the
+ * gap stays unless every account holding them is Zerodha. Undated funds are dated by the Mutual funds (CAS) section,
+ * or by Zerodha's fund tradebook step when every account holding them is Zerodha.
+ */
+function coveredBySteps(g: PlanGap, undated: Undated, refs: AccountRef[]): boolean {
   if (!STEP_GAPS.includes(g.key)) return false;
-  if (g.key === 'shares_no_dates') return !refs.some((a) => a.broker === 'Angel One' || a.broker === 'Other');
-  // Funds are dated by Zerodha's fund tradebook step or the Mutual funds (CAS) section; any other account has neither.
-  if (g.key === 'funds_no_dates') return refs.some((a) => a.broker === 'Zerodha' || a.broker === 'Mutual funds');
+  const onlyZerodha = (kind: 'shares' | 'funds') =>
+    [...undated].filter(([, v]) => v[kind] > 0).every(([k]) => refs.find((r) => r.key === k)?.broker === 'Zerodha');
+  if (g.key === 'shares_no_dates') return onlyZerodha('shares');
+  if (g.key === 'funds_no_dates') return refs.some((a) => a.broker === 'Mutual funds') || onlyZerodha('funds');
   return true;
 }
 
-/** Value of fund units this member's holdings rows show that no lot explains (as `planGaps` values them). */
-function undatedFundValue(fam: FamilyView, positions: GuideState['positions'], memberId: string): Paise {
+/** Value of the units of one kind this member's holdings rows show that no lot explains (as `planGaps` values them). */
+function unexplainedOfKind(fam: FamilyView, positions: GuideState['positions'], memberId: string, fund: boolean): Paise {
   const missing = new Map<string, number>();
   for (const p of positions) {
-    if (p.memberId !== memberId || p.qty == null || !isFund(p.isin)) continue;
+    if (p.memberId !== memberId || p.qty == null || isFund(p.isin) !== fund) continue;
     missing.set(p.isin, Math.max(missing.get(p.isin) ?? 0, p.qty));
   }
   return [...missing].reduce((a, [isin, qty]) => a + unexplainedValue(fam, memberId, isin, qty), 0);
@@ -414,16 +447,19 @@ export function memberGuide(state: GuideState, fam: FamilyView, memberId: string
   if (folios.length) accounts.push(sectionGuide(state, fam, memberId, MUTUAL_FUNDS, folios.map((a) => a.key), today));
   const first = accounts.length === 0;
   const gaps = planGaps(fam, state.positions, state.brokerSummaries, state.imports).filter((g) => g.memberId === memberId);
-  // A member with only fund holdings (Angel One, Groww) has no lots, so `planGaps` reads them as "nothing imported";
-  // their funds still have no buy dates.
+  // A member with only holdings rows (Angel One funds, a Groww export) has no lots, so `planGaps` reads them as
+  // "nothing imported"; their shares and funds still have no buy dates.
   if (!first && gaps.some((g) => g.key === 'no_holdings')) {
-    const funds = undatedFundValue(fam, state.positions, memberId);
+    const shares = unexplainedOfKind(fam, state.positions, memberId, false);
+    if (shares > 0) gaps.push(sharesNoDatesGap(memberId, name, shares));
+    const funds = unexplainedOfKind(fam, state.positions, memberId, true);
     if (funds > 0) gaps.push(fundsNoDatesGap(memberId, name, funds));
   }
-  const otherGaps = gaps.filter((g) => !coveredBySteps(g, refs));
-  // Undated funds no step can date keep the member from done: the CAS gap is their step.
+  const undated = undatedUnits(fam, state.positions, memberId);
+  const otherGaps = gaps.filter((g) => !coveredBySteps(g, undated, refs));
+  // Undated shares or funds no step can date keep the member from done: the gap's own file is their step.
   const done = !first && accounts.every((a) => !a.stale && a.steps.every((st) => st.status !== 'next' && st.status !== 'later'))
-    && !otherGaps.some((g) => g.key === 'funds_no_dates');
+    && !otherGaps.some((g) => g.key === 'funds_no_dates' || g.key === 'shares_no_dates');
 
   const usable = usableShare(fam, memberId);
   return {
