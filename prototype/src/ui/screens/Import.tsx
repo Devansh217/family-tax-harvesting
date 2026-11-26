@@ -227,7 +227,8 @@ function MemberChecklist({ memberId }: { memberId: string }) {
       </div>
       <h2 className="member-h">{member.name}</h2>
 
-      {success && <SuccessCard s={success} />}
+      {/* Mounted empty, so screen readers announce the card when it lands in it. */}
+      <div className="live" role="status" aria-label="File added">{success && <SuccessCard s={success} />}</div>
 
       {items.length > 0 && (
         <section className="stack" aria-label="Files">
@@ -304,7 +305,7 @@ function SuccessCard({ s }: { s: Success }) {
     return () => cancelAnimationFrame(f);
   }, [s]);
   return (
-    <section className="success stack" role="status" aria-label="File added">
+    <section className="success stack">
       {s.unchanged ? (
         <>
           <p className="fig">{UNCHANGED}</p>

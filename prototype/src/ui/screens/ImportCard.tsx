@@ -121,11 +121,10 @@ export function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDism
               <span>Also import its exits as trades. If you import tradebooks for this account later, they replace these exits.</span>
             </label>
           )}
-          {added && item.notes && item.notes.length > 0 && (
-            <div className="stack" style={{ gap: 6 }} aria-live="polite">
-              {item.notes.map((n, i) => <p key={i} className="note amber">{n}</p>)}
-            </div>
-          )}
+          {/* Mounted empty, so screen readers announce the notes when they land in it. */}
+          <div className="live stack" style={{ gap: 6 }} role="status" aria-label="Notes on this file">
+            {added && item.notes?.map((n, i) => <p key={i} className="note amber">{n}</p>)}
+          </div>
           <div className="row wrap" style={{ alignItems: 'flex-end' }}>
             <label className="field" style={{ width: 220 }}>
               {hasFolios ? 'Account (folios are read from the CAS)' : 'Demat account or platform'}

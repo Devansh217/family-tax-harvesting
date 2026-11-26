@@ -155,6 +155,8 @@ pre.lines { max-height: 280px; overflow: auto; font-size: 12px; line-height: 1.5
 .toast { position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 20; background: var(--ink); color: var(--ground); padding: 10px 16px; border-radius: 12px; font-size: 14px; box-shadow: var(--shadow); }
 
 /* Import: family table (stacked cards on phones), member checklist, success card */
+/* A live region kept mounted while empty: out of the layout (no gap) but still in the accessibility tree. */
+.live:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .famtable td { white-space: normal; }
 .famtable tbody tr { cursor: pointer; }

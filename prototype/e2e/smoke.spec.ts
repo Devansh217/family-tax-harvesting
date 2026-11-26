@@ -248,19 +248,26 @@ for (const size of SIZES) {
         const name = (await row.getAttribute('aria-label'))!.replace(/: open checklist$/, '');
         await row.click();
         await expect(page.getByRole('heading', { level: 2, name, exact: true })).toBeVisible();
+        // Live regions are mounted empty, so what lands in them later is announced.
+        const addedRegion = page.getByRole('status', { name: 'File added' });
+        await expect(addedRegion).toHaveCount(1);
+        await expect(addedRegion).toHaveText('');
         const csv = 'symbol,isin,trade_date,segment,trade_type,quantity,price\nINFY,INE009A01021,2024-03-12,EQ,buy,10,1500\nINFY,INE009A01021,2024-03-14,EQ,buy,5,1510\n';
         const addFile = async (file: string) => {
           // Every drop zone takes any file.
           await page.locator('input[type="file"]').first().setInputFiles({ name: file, mimeType: 'text/csv', buffer: Buffer.from(csv) });
           const card = page.getByRole('article', { name: file });
+          await expect(card.getByRole('status', { name: 'Notes on this file' })).toHaveText('');
           await card.getByRole('button', { name: /^Add to / }).click();
           return card;
         };
         const first = await addFile('tradebook-a.csv');
         await expect(first.getByText('Added', { exact: true })).toBeVisible();
         await expect(page.getByRole('status').filter({ hasText: /Read: .*trades/ })).toBeVisible();
+        await expect(addedRegion).toContainText(/Read: .*trades/);
         const second = await addFile('tradebook-b.csv');
         await expect(second.getByText(/^Same as tradebook-a.csv you added on /)).toBeVisible();
+        await expect(second.getByRole('status', { name: 'Notes on this file' })).toContainText(/^Same as tradebook-a.csv/);
         // A file that changed nothing gets no success card.
         await expect(page.getByRole('status').filter({ hasText: /Read: / })).toHaveCount(0);
         await expectNoSideScroll(page);
