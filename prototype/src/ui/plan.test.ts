@@ -3,7 +3,8 @@ import { computeFamily } from '../engine/family';
 import { FY_2026_27 } from '../engine/rules';
 import type { Member, Security, Txn } from '../engine/types';
 import type { Move } from '../engine/family';
-import { cushionNudge, datePickerBounds, dateVerb, importHref, importMemberOf, planGaps } from './plan';
+import { statusRecord } from '../engine/records';
+import { cushionNudge, datePickerBounds, dateVerb, importHref, importMemberOf, planGaps, planView } from './plan';
 
 describe('date picker (m2, m4)', () => {
   it('max is the last safe day, or the end of the tax year when the holiday list is not out; min is today', () => {
@@ -144,5 +145,33 @@ describe('nudge to recover the cushion', () => {
     // 9,400 x 10% = 940 rounds to 900: under the 1,000 threshold. 9,600 rounds to 1,000: shown.
     expect(cushionNudge(move(9_400 * 1), fam)).toBeNull();
     expect(cushionNudge(move(9_600 * 1), fam)).not.toBeNull();
+  });
+});
+
+describe('old-data marks (plan)', () => {
+  const harvest = (id: string, gain: number, extra: Partial<Move> = {}) =>
+    ({ id: `FY 2026-27|${id}`, kind: 'harvest_gain', gain, saving: gain / 10, taxFreeGain: gain, noRoom: false, ...extra }) as unknown as Move;
+
+  it('planView leaves marked open moves out of the headline', () => {
+    const a = harvest('a', 10_000_00);
+    const b = harvest('b', 5_000_00, { oldData: '2026-03-31' });
+    const c = harvest('c', 3_000_00, { roomMayBeSmaller: '2026-03-31' });
+    const fam = { moves: [a, b, c], rules: FY_2026_27 };
+    const v = planView(fam, []);
+    expect(v.gainTotal).toBe(10_000_00);
+    expect(v.laterSaving).toBe(1_000_00);
+    const done = planView(fam, [statusRecord(b, 'done', '2026-11-25T00:00:00Z')]);
+    expect(done.gainDone).toBe(5_000_00);
+    expect(done.gainTotal).toBe(15_000_00);
+    expect(done.laterSaving).toBe(1_000_00);
+  });
+
+  it('planGaps adds one old_data line per old account', () => {
+    const f = computeFamily({ members: [{ id: 'a', name: 'Asha', relation: 'self', age: 40, regime: 'new', income: [] }], securities: [{ isin: 'INE1', name: 'S', taxType: 'equity', listed: true, price: 100_00 }], txns: [{ id: 't', memberId: 'a', isin: 'INE1', date: '2025-01-01', side: 'buy', qty: 10_000, amount: 50_00, source: 'x', estimated: false }] }, '2026-11-22', FY_2026_27);
+    const gaps = planGaps({ ...f, oldAccounts: [{ memberId: 'a', account: 'Zerodha', newest: '2026-03-31' }] }, []);
+    expect(gaps.find((g) => g.key === 'old_data')).toMatchObject({
+      memberId: 'a', href: '#import-a', action: 'Import',
+      text: "Asha's Zerodha: newest data from 31 Mar 2026, so its moves may be out of date. Import today's holdings file.",
+    });
   });
 });
