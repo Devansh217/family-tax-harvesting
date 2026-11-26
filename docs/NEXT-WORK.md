@@ -23,8 +23,8 @@ Moved there on 25 Nov 2026. Each item from this file became one issue. The issue
 
 ## Founder's priority (25 Nov 2026)
 
-1. [#24](https://github.com/Devansh217/family-tax-harvesting/issues/24) B1 guided import (building)
-2. [#25](https://github.com/Devansh217/family-tax-harvesting/issues/25) C1 old-data marks (blocked by B1)
+1. [#24](https://github.com/Devansh217/family-tax-harvesting/issues/24) B1 guided import (done, PR #21 merged 27 Nov)
+2. [#25](https://github.com/Devansh217/family-tax-harvesting/issues/25) C1 old-data marks (building, PR #20)
 3. [#26](https://github.com/Devansh217/family-tax-harvesting/issues/26) A1 holding in another name (blocked by C1)
 4. [#27](https://github.com/Devansh217/family-tax-harvesting/issues/27) E2 remove the Compare page
 5. [#28](https://github.com/Devansh217/family-tax-harvesting/issues/28) B2 generic Tax P&L reader
@@ -38,7 +38,7 @@ Moved there on 25 Nov 2026. Each item from this file became one issue. The issue
 13. [#36](https://github.com/Devansh217/family-tax-harvesting/issues/36) E4 transfer animations (blocked by A1, E1)
 14. [#37](https://github.com/Devansh217/family-tax-harvesting/issues/37) F5 scrub public figures
 
-Not yet placed by the founder: [#38](https://github.com/Devansh217/family-tax-harvesting/issues/38) G1 split `engine/family.ts` (blocked by A1), [#39](https://github.com/Devansh217/family-tax-harvesting/issues/39) B6, [#40](https://github.com/Devansh217/family-tax-harvesting/issues/40) D1, [#41](https://github.com/Devansh217/family-tax-harvesting/issues/41) F1, [#42](https://github.com/Devansh217/family-tax-harvesting/issues/42) F2, [#43](https://github.com/Devansh217/family-tax-harvesting/issues/43) F3 (blocked by A1, B1, C1, E2), [#44](https://github.com/Devansh217/family-tax-harvesting/issues/44) F4 (blocked: after the beta).
+Not yet placed by the founder: [#38](https://github.com/Devansh217/family-tax-harvesting/issues/38) G1 split `engine/family.ts` (blocked by A1), [#39](https://github.com/Devansh217/family-tax-harvesting/issues/39) B6, [#40](https://github.com/Devansh217/family-tax-harvesting/issues/40) D1, [#41](https://github.com/Devansh217/family-tax-harvesting/issues/41) F1, [#42](https://github.com/Devansh217/family-tax-harvesting/issues/42) F2, [#43](https://github.com/Devansh217/family-tax-harvesting/issues/43) F3 (blocked by A1, C1, E2), [#44](https://github.com/Devansh217/family-tax-harvesting/issues/44) F4 (blocked: after the beta).
 
 ## Old item IDs → issues
 
@@ -58,8 +58,8 @@ Full detail, anonymised: `docs/fresh-run-notes.md`.
 
 | # | Finding | Handled in |
 |---|---|---|
-| 1 | No clear success feedback after an import | #24 B1 |
-| 2 | Old holdings file and a duplicate tradebook year gave moves on shares sold months ago, with no warning | Engine (PR #18), #24 B1 (files), #25 C1 (Plan marks) |
+| 1 | No clear success feedback after an import | #24 B1 (done, PR #21) |
+| 2 | Old holdings file and a duplicate tradebook year gave moves on shares sold months ago, with no warning | Engine (PR #18), #24 B1 (files, done in PR #21), #25 C1 (Plan marks) |
 | 3 | Shares that left an account stayed "held" | Done (PR #18) |
 | 4 | Dozens of "Sold N more units than the history shows" lines | Done (PR #18) |
 | 5 | Holdings card says "N transactions" for guessed fund lots | #33 C3 |
@@ -84,7 +84,7 @@ Full detail, anonymised: `docs/fresh-run-notes.md`.
 |---|---|---|
 | 1 | An Angel Tax P&L PDF not recognised | #28 B2 |
 | 2 | No direct vs regular advice for Angel accounts | #30 B4 |
-| 3 | No import guide or upload feedback | #24 B1 |
+| 3 | No import guide or upload feedback | #24 B1 (done, PR #21) |
 | 4 | "What it brings home" doesn't help | #27 E2 (its useful part moves into #26 A1) |
 | 5 | Never suggested whose name the next investment should go in | #26 A1 |
 | 6 | Never suggested moving holdings to a lower-taxed member | #26 A1 |
