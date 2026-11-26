@@ -37,7 +37,7 @@ Last updated 24 Nov 2026, after the founder's feedback round on the live site.
 | **A** | **Family placement** | | | |
 | A1 | Holding in another name: SIPs and units to a lower-taxed relative | Ready to build | `family-placement` | C1 |
 | **B** | **Import and readers** | | | |
-| B1 | Guided import | Building | `guided-import` | — (goes first) |
+| B1 | Guided import | Built, in review (PR #21) | `guided-import` | — (goes first) |
 | B2 | Generic Tax P&L reader (Excel and CSV first, PDF best-effort) | Cause known, approach agreed | — | — |
 | B3 | Angel holdings (shares, gold bonds) via the generic reader | Approach agreed | — | B2 |
 | B4 | Direct vs regular from the ISIN | Cause known | — | — |
@@ -87,7 +87,7 @@ Not yet placed by the founder: B6, D1, F1, F2, F3, F4.
 |---|---|---|---|
 | `docs/next-work` | #19 | This file, the three ready designs and plans, the beta test plan | Merged 25 Nov 2026 (78d1c82) |
 | `plan-old-data` | #20 (draft) | C1 design and plan | Build after B1 merges, rebased on it. The draft becomes the build PR |
-| `guided-import` | #21 (draft) | B1 design and plan | Building now (first in the founder's order). The draft becomes the build PR |
+| `guided-import` | #21 | B1 design, plan and build | Built; in review. Adds `engine/freshness.ts` from C1's Task 1, so C1 rebases on it |
 | `family-placement` | #22 (draft) | A1 design and plan | After C1 |
 
 - The design and plan files are identical on each feature branch and on `docs/next-work`, so they merge cleanly. Change them on both, or take them from `main` once #19 merges.
@@ -124,7 +124,7 @@ The app tells the family where money should sit to pay less tax over the years, 
 
 ## Epic B: Import and readers
 
-### B1. Guided import: Ready to build
+### B1. Guided import: Built, in review (PR #21)
 - **Design:** `docs/superpowers/specs/2026-11-24-guided-import-design.md`.
 - **Plan:** `docs/superpowers/plans/2026-11-24-guided-import.md` (6 tasks). **Branch:** `guided-import`.
 - **What it does:**
@@ -134,7 +134,8 @@ The app tells the family where money should sit to pay less tax over the years, 
   - A clear success card after each import (fresh-run finding 1).
   - Results never depend on upload order.
 - **Needs from others:** B2 and B3 join by flipping a capability flag.
-- **Shared with C1:** the "Newest data from <date>" line calls C1's engine function.
+- **Shared with C1:** the "Newest data from <date>" line calls C1's engine function (`engine/freshness.ts`, built here exactly as C1's Task 1).
+- **Founder calls to confirm in PR #21:** a fund CAS never counts as old data in the guide; "Same as <file>" matches by exact trade ids.
 
 ### B2. Generic Tax P&L reader: Cause known (approach agreed 25 Nov)
 - **Today:** the app turns away every PDF that isn't a CAS ("Unrecognised PDF", `parsers/index.ts`), and there is no Angel Tax P&L reader in any format (founder feedback point 1).
@@ -196,7 +197,7 @@ The app tells the family where money should sit to pay less tax over the years, 
 - Never assume: it could be a sale and a purchase (fresh-run finding 7).
 
 ### B6. Fund statement and Coin gaps: Needs brainstorm
-- **Coin copy:** the Import guide and the Plan send Zerodha Coin users to the fund CAS. Coin funds need MF tradebooks for every year. Fold this into B1 if it isn't there already.
+- **Coin copy:** handled by B1 (PR #21). The guide's Zerodha section asks for Coin fund tradebooks, and funds held outside Zerodha point to the detailed CAS.
 - **CAS password hint:** it says "usually your PAN", but MF Central and CAMS use a password the user chooses.
 - **Untested reader:** the CAMS / KFintech fund CAS reader has never seen a real statement.
 
@@ -315,8 +316,8 @@ From the founder's import run on the live site, 22 Nov 2026. Full detail, anonym
 
 | # | Finding | Handled in |
 |---|---|---|
-| 1 | No clear success feedback after an import | B1 |
-| 2 | Old holdings file and a duplicate tradebook year gave moves on shares sold months ago, with no warning | Engine (PR #18), B1 (files), C1 (Plan marks) |
+| 1 | No clear success feedback after an import | B1 (PR #21) |
+| 2 | Old holdings file and a duplicate tradebook year gave moves on shares sold months ago, with no warning | Engine (PR #18), B1 (files, PR #21), C1 (Plan marks) |
 | 3 | Shares that left an account stayed "held" | Done (PR #18) |
 | 4 | Dozens of "Sold N more units than the history shows" lines | Done (PR #18) |
 | 5 | Holdings card says "11 transactions" for guessed fund lots | C3 |
@@ -341,7 +342,7 @@ From the founder's import run on the live site, 22 Nov 2026. Full detail, anonym
 |---|---|---|
 | 1 | An Angel Tax P&L PDF not recognised | B2 |
 | 2 | No direct vs regular advice for Angel accounts | B4 |
-| 3 | No import guide or upload feedback | B1 |
+| 3 | No import guide or upload feedback | B1 (PR #21) |
 | 4 | "What it brings home" doesn't help | E2 (its useful part moves into A1) |
 | 5 | Never suggested whose name the next investment should go in | A1 |
 | 6 | Never suggested moving holdings to a lower-taxed member | A1 |

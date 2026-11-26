@@ -207,28 +207,44 @@ export interface ImportOptions {
 }
 
 /**
+ * Each of a file's transactions with its resolved ISIN and the id it is saved under: its content plus its occurrence
+ * count within the file, so identical fills stay separate but repeats merge. `securities` must already hold the file's
+ * securities. A check-only import saves no transactions.
+ */
+function keyedTxns(securities: Security[], memberId: string, r: ParseResult, opts: ImportOptions) {
+  const seen = new Map<string, number>();
+  return (opts.checkOnly ? [] : r.txns).map((t) => {
+    const isin = resolveIsin(t.isin, t.name, securities);
+    const base = `${memberId}|${t.ref ?? isin}|${t.date}|${t.side}|${t.qty}|${t.amount}`;
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    return { t, isin, id: `${base}|${n}` };
+  });
+}
+
+/** The ids `applyImport` would give a file's transactions in this state, without changing it. */
+export function importTxnIds(state: Pick<AppState, 'securities' | 'txns'>, memberId: string, r: ParseResult, opts: ImportOptions = {}): string[] {
+  const securities = structuredClone(state.securities);
+  for (const t of r.txns) upsertSecurity(securities, t);
+  return keyedTxns(securities, memberId, r, opts).map((k) => k.id);
+}
+
+/**
  * Adds a parsed file to a member. Re-importing the same file is harmless: each transaction's id is derived from its
  * content plus its occurrence count within the file, so identical fills stay separate but repeats merge.
  */
 export function applyImport(state: AppState, memberId: string, fileName: string, r: ParseResult, opts: ImportOptions = {}): AppState {
   const s: AppState = structuredClone(state);
   const importId = uid('imp');
-  const seen = new Map<string, number>();
   // A holdings file may trim lots only when every row was read and matched to an ISIN.
   const fileComplete = r.skipped === 0 && !r.prices.some((x) => x.isin.startsWith('SYM:'));
   const existing = new Map(s.txns.map((t) => [t.id, t]));
   let added = 0;
 
-  const txns = opts.checkOnly ? [] : r.txns;
   for (const t of r.txns) upsertSecurity(s.securities, t);
-  for (const t of txns) {
-    const isin = resolveIsin(t.isin, t.name, s.securities);
+  for (const { t, isin, id } of keyedTxns(s.securities, memberId, r, opts)) {
     // A name matched now also matches this member's trades saved earlier by that name, from any file.
     if (t.ref && !isin.startsWith('SYM:')) for (const x of s.txns) if (x.memberId === memberId && x.isin === t.ref) x.isin = isin;
-    const base = `${memberId}|${t.ref ?? isin}|${t.date}|${t.side}|${t.qty}|${t.amount}`;
-    const n = (seen.get(base) ?? 0) + 1;
-    seen.set(base, n);
-    const id = `${base}|${n}`;
     const prior = existing.get(id);
     if (prior) {
       // The same row again: a name matched now upgrades the trade saved by name; a match is never undone.
