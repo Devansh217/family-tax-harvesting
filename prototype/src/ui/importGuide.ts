@@ -334,12 +334,18 @@ function sectionGuide(state: GuideState, fam: FamilyView, memberId: string, acct
   const newest = accountKeys.map((k) => evidenceDate(state, memberId, k)).reduce<ISODate | null>((a, d) => (d && (!a || d > a) ? d : a), null);
   // A fund CAS dates its evidence by the newest transaction, which a buy-and-hold investor never moves: refreshing it
   // can't clear the line, so the Mutual funds section never goes stale here (the Plan's marks still use the date).
-  // Old data is only flagged when a file the app can read could move its date: a holdings step that can't be read yet
-  // (Angel One shares only) would leave the line up forever.
+  // Where the holdings file can't move the date (Angel One shares only), today's trade history is asked instead: a
+  // suggestion, as a buy-and-hold member's newer download has no new trades and can't clear the line.
   const h = drafts.find((d) => d.kind === 'holdings');
-  const stale = acct.broker !== 'Mutual funds' && h?.status !== 'unreadable' && newest != null && isOld(newest, today);
+  const stale = acct.broker !== 'Mutual funds' && newest != null && isOld(newest, today);
   if (stale) {
-    if (h) {
+    const history = drafts.find((d) => d.kind === 'tradebook' && d.status === 'suggestion');
+    if (h && h.status !== 'done' && h.status !== 'open' && history) {
+      Object.assign(history, {
+        refresh: true, title: 'Trade history: refresh',
+        unlocks: `Download today's: your newest data is from ${dateLabel(newest)}. Sales since then aren't counted until it's in.`,
+      });
+    } else if (h) {
       const wasDone = h.status === 'done';
       Object.assign(h, {
         status: 'open', unlocks: `Download today's: your newest data is from ${dateLabel(newest)}.`,
@@ -386,7 +392,7 @@ export interface MemberGuide {
   first: boolean;
   accounts: AccountGuide[];
   usable: { usable: Paise; total: Paise }; pct: number | null;
-  /** Every step is done, can't be read yet or a suggestion, no account's data is old, and no undated funds wait on a CAS. */
+  /** Every step is done, can't be read yet or a suggestion, no account's old data waits on a file it must have, and no undated funds wait on a CAS. */
   done: boolean;
   /** Room kept spare on moves sized from average cost, per account: only when done and the member's total is ₹4,000 or more. */
   cushion: Array<{ account: string; broker: Broker; fy: string | null; rupees: Paise }>;
@@ -482,7 +488,9 @@ export function memberGuide(state: GuideState, fam: FamilyView, memberId: string
   });
   // Undated funds no step can date keep the member from done: the CAS is their file. Undated shares at another broker
   // don't: their trade history may be complete (an IPO allotment or bonus has no trade), so it never blocks (design §3).
-  const done = !first && accounts.every((a) => !a.stale && a.steps.every((st) => st.status !== 'next' && st.status !== 'later'))
+  // Old data blocks done unless its only refresh is a suggestion (a trade-history download that may hold no trades).
+  const staleBlocks = (a: AccountGuide) => a.stale && !a.steps.some((st) => st.refresh && st.status === 'suggestion');
+  const done = !first && accounts.every((a) => !staleBlocks(a) && a.steps.every((st) => st.status !== 'next' && st.status !== 'later'))
     && !otherGaps.some((g) => g.key === 'funds_no_dates');
 
   const usable = usableShare(fam, memberId);
@@ -547,7 +555,7 @@ export function familyRow(g: MemberGuide): FamilyRow {
   });
   const pnl = cell(g, ['pnl'], (_a, st) => (open(st) ? [3, 'Next'] : st.status === 'unreadable' ? [1, "Can't read yet"] : [0, '✓']));
   const tradebooks = cell(g, ['tradebook', 'fund_tradebook'], (_a, st) =>
-    open(st) ? [3, 'Next'] : st.status === 'suggestion' ? [1, 'Optional'] : [0, `✓ ${plural(st.years?.length ?? 0, 'year')}`]);
+    open(st) ? [3, 'Next'] : st.refresh ? [2, 'Refresh'] : st.status === 'suggestion' ? [1, 'Optional'] : [0, `✓ ${plural(st.years?.length ?? 0, 'year')}`]);
   return { holdings, pnl, tradebooks, usable: g.pct == null ? '—' : `${g.pct}%` };
 }
 

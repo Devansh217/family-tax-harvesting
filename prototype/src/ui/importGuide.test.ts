@@ -405,13 +405,24 @@ describe('member and family guide', () => {
     expect(r.done).toBe(true);
   });
 
-  it("Angel shares only never go stale: no file it can read would move the date", () => {
+  it('old Angel trade history shows its date and asks for a refresh, without keeping the member stuck', () => {
     const oldTrades = add('r', 'angel-tb.xlsx', tradebook([['INE2', '2026-09-01', 'buy', 5, 100]], 'Trade history · Angel One · x'), 'Angel One');
     const r = g(family(oldTrades));
-    expect(r.accounts[0]).toMatchObject({ newest: '2026-09-01', stale: false });
-    expect(r.accounts[0]!.notes.some((n) => n.includes('Newest data from'))).toBe(false);
+    expect(r.accounts[0]).toMatchObject({ newest: '2026-09-01', stale: true });
+    expect(r.accounts[0]!.notes).toContain('Newest data from 1 Sep 2026.');
+    const t = r.accounts[0]!.steps.find((st) => st.kind === 'tradebook')!;
+    expect(t).toMatchObject({
+      status: 'suggestion', refresh: true, title: 'Trade history: refresh',
+      unlocks: "Download today's: your newest data is from 1 Sep 2026. Sales since then aren't counted until it's in.",
+    });
+    expect(familyRow(r).tradebooks).toBe('Refresh');
+    // A buy-and-hold member's newer download has no new trades, so the ask can't move the date: it never blocks done.
     expect(r.done).toBe(true);
-    // With funds, the holdings file can move the date: old fund holdings still reopen the step.
+    // Trades from 26 Oct: 29 days, not old.
+    const fresh = g(family(add('r', 'angel-tb.xlsx', tradebook([['INE2', '2026-10-26', 'buy', 5, 100]], 'Trade history · Angel One · x'), 'Angel One')));
+    expect(fresh.accounts[0]!.stale).toBe(false);
+    expect(fresh.accounts[0]!.steps.find((st) => st.kind === 'tradebook')!.refresh).toBeUndefined();
+    // With funds, the holdings file can move the date: old fund holdings still reopen the step and block done.
     const withFunds = g(family(angelFunds('2026-09-01'), oldTrades));
     expect(withFunds.accounts[0]).toMatchObject({ stale: true });
     expect(withFunds.accounts[0]!.steps[0]).toMatchObject({ status: 'next', refresh: true });
