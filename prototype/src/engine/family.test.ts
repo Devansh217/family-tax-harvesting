@@ -625,3 +625,93 @@ describe('M1 review fixes', () => {
     expect(fam.moves.find((x) => x.kind === 'wait')!.reasons[0]).toMatch(/Turns long-term on 7 Dec 2026/);
   });
 });
+
+describe('old data marks', () => {
+  const sec = (isin: string, price: number): Security => ({ isin, name: isin, taxType: 'equity', listed: true, price: rs(price) });
+  const tb = (memberId: string, isin: string, date: string, units: number, priceRs: number, account: string): Txn =>
+    ({ ...buy(memberId, isin, date, units, priceRs), source: 'Trade history (Zerodha)', account });
+  const OLD = '2026-03-31';
+
+  it('marks a harvest and a loss in an account whose newest trade is old', () => {
+    const fam = computeFamily({
+      members: [person('a', 'self')],
+      securities: [sec('X', 2000), sec('L', 1000), sec('W', 100)],
+      txns: [
+        tb('a', 'X', '2023-01-01', 500, 1000, 'Zerodha'), tb('a', 'L', OLD, 100, 3000, 'Zerodha'),
+        buy('a', 'W', '2026-05-01', 1000, 50),
+        { id: 'sw', memberId: 'a', isin: 'W', date: '2026-08-01', side: 'sell', qty: q(1000), amount: rs(1_00_000), source: 'test' }, // ST gain booked
+      ],
+    }, ASOF, R);
+    const h = fam.moves.find((x) => x.kind === 'harvest_gain')!;
+    expect(h.oldData).toBe(OLD);
+    expect(h.roomMayBeSmaller).toBe(OLD);
+    const l = fam.moves.find((x) => x.kind === 'harvest_loss')!;
+    expect(l.oldData).toBe(OLD);
+    expect(l.roomMayBeSmaller).toBeUndefined();
+    expect(fam.oldAccounts).toEqual([{ memberId: 'a', account: 'Zerodha', newest: OLD }]);
+  });
+
+  it('does not mark when newest data is 29 days old', () => {
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities: [sec('X', 2000)],
+      txns: [tb('a', 'X', '2023-01-01', 500, 1000, 'Zerodha'), tb('a', 'X', '2026-10-16', 1, 1000, 'Zerodha')],
+    }, ASOF, R);
+    expect(fam.moves.length).toBeGreaterThan(0);
+    expect(fam.moves.every((m) => m.oldData === undefined && m.roomMayBeSmaller === undefined)).toBe(true);
+    expect(fam.oldAccounts).toEqual([]);
+  });
+
+  it('flags room on a fresh account\'s harvest when the same member has an old account', () => {
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities: [sec('X', 2000), sec('Y', 1000)],
+      txns: [tb('a', 'X', '2023-01-01', 500, 1000, 'Zerodha'), tb('a', 'X', '2026-11-10', 1, 1000, 'Zerodha'), tb('a', 'Y', OLD, 10, 1000, 'Angel One')],
+    }, ASOF, R);
+    const h = fam.moves.find((x) => x.kind === 'harvest_gain' && x.isin === 'X')!;
+    expect(h.oldData).toBeUndefined();
+    expect(h.roomMayBeSmaller).toBe(OLD);
+  });
+
+  it('gift: recipient\'s old account flags room, giver\'s fresh account sets no oldData', () => {
+    const fam = computeFamily({
+      members: [person('a', 'self'), person('p', 'parent', { age: 64 })],
+      securities: [sec('X', 2000), sec('Z', 1000)],
+      txns: [tb('a', 'X', '2020-01-01', 1000, 1000, 'Zerodha'), tb('a', 'X', '2026-11-10', 1, 1000, 'Zerodha'), tb('p', 'Z', OLD, 10, 1000, 'Angel One')],
+    }, ASOF, R);
+    const g = fam.moves.find((x) => x.kind === 'gift')!;
+    expect(g.roomMayBeSmaller).toBe(OLD);
+    expect(g.oldData).toBeUndefined();
+  });
+
+  it('ids and sizes do not change', () => {
+    const run = (extra: string) => computeFamily({
+      members: [person('a', 'self')], securities: [sec('X', 2000), sec('Y', 1000)],
+      txns: [tb('a', 'X', '2023-01-01', 500, 1000, 'Zerodha'), tb('a', 'Y', extra, 1, 1000, 'Zerodha')],
+    }, ASOF, R);
+    const old = run(OLD).moves.find((x) => x.kind === 'harvest_gain')!;
+    const fresh = run('2026-11-10').moves.find((x) => x.kind === 'harvest_gain')!;
+    expect(old.oldData).toBe(OLD);
+    expect(fresh.oldData).toBeUndefined();
+    expect([old.id, old.qty, old.kind === 'harvest_gain' && old.gain]).toEqual([fresh.id, fresh.qty, fresh.kind === 'harvest_gain' && fresh.gain]);
+  });
+
+  it('accounts with no dated evidence get no marks', () => {
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities: [sec('X', 2000)],
+      txns: [{ ...buy('a', 'X', '2023-01-01', 500, 1000), account: 'Zerodha' }],
+    }, ASOF, R);
+    expect(fam.moves.length).toBeGreaterThan(0);
+    expect(fam.moves.every((m) => m.oldData === undefined && m.roomMayBeSmaller === undefined)).toBe(true);
+    expect(fam.oldAccounts).toEqual([]);
+  });
+
+  it('a fund-CAS-only account gets no marks', () => {
+    const cas = (date: string): Txn => ({ ...buy('a', 'X', date, 250, 1000), source: 'Mutual fund CAS (CAMS / KFintech)', account: 'Folio 123/45' });
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities: [sec('X', 2000)],
+      txns: [cas('2023-01-01'), cas(OLD)],
+    }, ASOF, R);
+    expect(fam.moves.length).toBeGreaterThan(0);
+    expect(fam.moves.every((m) => m.oldData === undefined && m.roomMayBeSmaller === undefined)).toBe(true);
+    expect(fam.oldAccounts).toEqual([]);
+  });
+});

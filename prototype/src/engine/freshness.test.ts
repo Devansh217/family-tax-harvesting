@@ -44,6 +44,17 @@ describe('newest evidence per account', () => {
     expect(isOld('2026-03-31', '2026-11-24')).toBe(true);
   });
 
+  it('fundStatements: false leaves a fund-CAS-only account undated', () => {
+    const m = newestEvidence({
+      txns: [
+        buy('2026-01-15', 'Mutual fund CAS (CAMS / KFintech)', 'Folio 123/45'), buy('2026-03-31', 'Mutual fund CAS (CAMS / KFintech)', 'Folio 123/45'),
+        buy('2026-05-01', 'Trade history (Zerodha)', 'Zerodha'),
+      ],
+    }, { fundStatements: false });
+    expect(m.has(accountKey('a', 'Folio 123/45'))).toBe(false);
+    expect(m.get(accountKey('a', 'Zerodha'))).toBe('2026-05-01');
+  });
+
   it('a combined CAS dates its folio accounts too', () => {
     const m = newestEvidence({ txns: [buy('2026-03-31', 'Combined CAS', 'Folio 123/45')] });
     expect(m.get(accountKey('a', 'Folio 123/45'))).toBe('2026-03-31');
