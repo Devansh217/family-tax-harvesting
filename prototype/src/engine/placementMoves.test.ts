@@ -30,6 +30,7 @@ const run = (state: FamilyState) => {
   const fam = computeFamily(state, ASOF, R);
   return { fam, view: computePlacement(state, fam), problem: placementProblem(state, fam) };
 };
+const isPlacementFrom = (m: Move) => (m.kind === 'place_sip' || m.kind === 'place_holding' ? `${m.fromId}>${m.toId}` : '');
 const sipConfirmed = (memberId = 'e', monthlyRs = 20_000) => ({ memberId, isin: hybrid.isin, monthly: rs(monthlyRs), confirmedAt: ASOF });
 
 describe('placement starts', () => {
@@ -157,6 +158,24 @@ describe('placement moves', () => {
     expect(fam.moves.filter((m) => !m.noRoom).map((m) => [m.kind, m.qty])).toEqual([['harvest_gain', q(2_250)], ['gift', q(1_250)]]);
     expect(problem).toMatchObject({ fixedGivers: ['e'], fixedReceivers: ['p'] });
     expect(view.moves.filter((m) => m.kind === 'place_sip' || m.kind === 'place_holding').map((m) => m.id)).toEqual([]);
+  });
+
+  it('a gift already done this season still fixes roles', () => {
+    // The family above after the gift went through: the earner's shares are gone, so no gift is suggested any more, and
+    // the gift is recorded as done. Without that record the parent's fund would go to the earner; with it the parent
+    // received this season and can't also give (D11).
+    const withShares: FamilyState = {
+      members: [person('e', 'self', 3_00_000), person('p', 'parent', 30_00_000)], securities: [shareX, hybrid],
+      txns: [buy('e', shareX.isin, '2023-01-01', 10_000, 1_000), buy('p', hybrid.isin, '2023-01-01', 10_000, 100)],
+    };
+    const gift = run(withShares).fam.moves.find((m) => m.kind === 'gift' && !m.noRoom)!;
+    const after: FamilyState = { ...withShares, txns: [buy('p', hybrid.isin, '2023-01-01', 10_000, 100)] };
+    const places = (st: FamilyState) => run(st).view.moves.filter((m) => m.kind === 'place_sip' || m.kind === 'place_holding');
+    expect(run(after).fam.moves.some((m) => m.kind === 'gift')).toBe(false);
+    expect(places(after).map((m) => [m.kind, isPlacementFrom(m)])).toEqual([['place_holding', 'p>e']]);
+    const done: FamilyState = { ...after, recommendations: [{ moveId: gift.id, at: ASOF, event: 'detected_done', move: gift }] };
+    expect(run(done).problem).toMatchObject({ fixedGivers: ['e'], fixedReceivers: ['p'] });
+    expect(places(done)).toEqual([]);
   });
 
   it('SIP placement', () => {

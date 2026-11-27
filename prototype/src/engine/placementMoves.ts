@@ -5,7 +5,7 @@ import { APPROX_MARGIN } from './openingLots';
 import { solvePlacement, type PlaceAsset, type Placement, type PlacementProblem } from './placement';
 import { PLACEMENT_YEARS, tenYearTax, type ProjectionStart, type Slice, type TaxClass } from './placementTax';
 import { nominalReturn } from './planner';
-import { moveId, type MoveDraft } from './records';
+import { doneThisSeason, moveId, type MoveDraft } from './records';
 import { canGift, clubbing, isRelative } from './relations';
 import { normalIncomeOf } from './rules';
 import { activeSips, guessSips, type SipGuess } from './sips';
@@ -188,9 +188,15 @@ function build(state: FamilyState, fam: FamilyView) {
   }
 
   // This season's gifts set roles placement keeps: a season giver never receives here, a season receiver never gives (D11).
+  // A gift or placement already done this season counts too: once done it can leave the suggested moves (or show as no
+  // room), but the money has still moved one way.
+  type Directed = Extract<Move, { kind: 'gift' | 'place_sip' | 'place_holding' }>;
   const seasonGifts = fam.moves.filter((m): m is Extract<Move, { kind: 'gift' }> => m.kind === 'gift' && !m.noRoom && m.qty > 0);
-  const fixedGivers = [...new Set(seasonGifts.map((m) => m.fromId))].sort();
-  const fixedReceivers = [...new Set(seasonGifts.map((m) => m.toId))].sort();
+  const doneMoves = doneThisSeason(state.recommendations ?? [], rules).map((d) => d.move)
+    .filter((m): m is Directed => m.kind === 'gift' || m.kind === 'place_sip' || m.kind === 'place_holding');
+  const roleMoves: Directed[] = [...seasonGifts, ...doneMoves];
+  const fixedGivers = [...new Set(roleMoves.map((m) => m.fromId))].sort();
+  const fixedReceivers = [...new Set(roleMoves.map((m) => m.toId))].sort();
   const problem: PlacementProblem = { members, starts, assets, asOf, fixedGivers, fixedReceivers };
   const unconfirmed = sipGuesses.some((g) => !confirmed.some((c) => c.memberId === g.memberId && c.isin === g.isin));
 
