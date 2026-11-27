@@ -223,7 +223,7 @@ export function Placement() {
       <SipEditor guesses={view.sipGuesses} unconfirmed={view.unconfirmed} />
       {moves.length > 0 && <div className="sheet">{moves.map((m) => <PlacementRow key={m.id} move={m} />)}</div>}
       {moves.length === 0 && !view.unconfirmed && view.missingIncome.length === 0 && (
-        <p className="small muted">Your money is already in the lowest-tax names.</p>
+        <p className="small muted">Nothing to move to another name this season.</p>
       )}
       {view.clubbedLeftOut.length > 0 && (
         <p className="small muted" style={{ maxWidth: '72ch' }}>{`Not suggested for ${nameList(view.clubbedLeftOut.map(nameOf))}: money you give them is still taxed as yours.`}</p>

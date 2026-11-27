@@ -57,7 +57,8 @@ describe('placement starts', () => {
     // Same family as above: the earner harvests 1,250 shares and gifts 4,250 to the parent. Of the 10,000 shares the
     // earner keeps 5,750 (₹63,25,000 at ₹1,100): the 1,250 sold and bought back have no gain left, the other 4,500 keep
     // ₹100 each (₹4,50,000). The parent holds the 4,250 gifted shares (₹46,75,000), their gain gone with the parent's
-    // own sale and buyback, and cannot place them again.
+    // own sale and buyback, and cannot place them again. The earner's shares wait too: the harvest is still to do, and a
+    // gift made first would take its units (first in, first out).
     const state: FamilyState = {
       members: [earner(), parent(1_00_000)], securities: [shareX],
       txns: [buy('e', shareX.isin, '2023-01-01', 10_000, 1_000)],
@@ -65,7 +66,7 @@ describe('placement starts', () => {
     const { fam, problem } = run(state);
     expect(fam.moves.filter((m) => !m.noRoom).map((m) => [m.kind, m.qty])).toEqual([['harvest_gain', q(1_250)], ['gift', q(4_250)]]);
     const mine = problem.assets.filter((a) => a.ownerId === 'e');
-    expect(mine).toEqual([expect.objectContaining({ movable: true, value: rs(63_25_000), gain: rs(4_50_000) })]);
+    expect(mine).toEqual([expect.objectContaining({ movable: false, value: rs(63_25_000), gain: rs(4_50_000) })]);
     const theirs = problem.assets.filter((a) => a.ownerId === 'p');
     expect(theirs).toEqual([expect.objectContaining({ movable: false, taxClass: 'equity', value: rs(46_75_000), gain: 0 })]);
   });
@@ -176,6 +177,31 @@ describe('placement moves', () => {
     const done: FamilyState = { ...after, recommendations: [{ moveId: gift.id, at: ASOF, event: 'detected_done', move: gift }] };
     expect(run(done).problem).toMatchObject({ fixedGivers: ['e'], fixedReceivers: ['p'] });
     expect(places(done)).toEqual([]);
+  });
+
+  it('a holding waits for its season move', () => {
+    // The earner (₹30 L) holds 1,000 shares bought in 2020 (₹100 long-term gain each) and 5,000 bought in Aug 2026. They
+    // harvest the 1,000; a gift of the same shares made first would take the 2020 lot, and the harvest would then sell
+    // short-term units and pay tax it says it won't. So no placement gift of those shares this season.
+    const state: FamilyState = {
+      members: [earner(), parent()], securities: [shareX],
+      txns: [buy('e', shareX.isin, '2020-01-01', 1_000, 1_000), buy('e', shareX.isin, '2026-08-01', 5_000, 1_050)],
+    };
+    const { fam, view } = run(state);
+    expect(fam.moves.some((m) => m.kind === 'harvest_gain' && m.memberId === 'e' && !m.noRoom)).toBe(true);
+    expect(view.moves.filter((m) => m.kind === 'place_holding' && m.isin === shareX.isin)).toEqual([]);
+  });
+
+  it('only lots in front of an unknown one can move', () => {
+    // The parent's hybrid fund units: one estimated lot first, then a known 2021 lot. A transfer takes the estimated lot
+    // first, so none of the fund can move, though without it the fund would go to the earner.
+    const members = [person('e', 'self', 3_00_000), person('p', 'parent', 30_00_000)];
+    const known: FamilyState = { members, securities: [hybrid], txns: [buy('p', hybrid.isin, '2021-01-01', 10_000, 100)] };
+    expect(run(known).view.moves.filter((m) => m.kind === 'place_holding').map((m) => isPlacementFrom(m))).toEqual(['p>e']);
+    const state: FamilyState = { ...known, txns: [buy('p', hybrid.isin, '2019-01-01', 100, 90, { estimated: true }), ...known.txns] };
+    const { view, problem } = run(state);
+    expect(view.moves.filter((m) => m.kind === 'place_holding')).toEqual([]);
+    expect(problem.assets.filter((a) => a.ownerId === 'p' && a.movable)).toEqual([]);
   });
 
   it('SIP placement', () => {

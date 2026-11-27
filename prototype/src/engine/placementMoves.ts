@@ -130,6 +130,10 @@ function build(state: FamilyState, fam: FamilyView) {
   const info = new Map<string, AssetInfo>();
   const needSoon = (memberId: string, isin: string) => !!state.needSoon?.[`${memberId}|${isin}`];
   const season = afterSeason(fam);
+  // A holding with a season move still to do waits for it: a gift made first would take the move's units from the
+  // front of the queue, and the move would then sell newer units and pay tax it says it won't (GUARDRAILS §1).
+  const seasonOpen = new Set(fam.moves.filter((m) => !m.noRoom && m.qty > 0 && m.kind !== 'place_sip' && m.kind !== 'place_holding')
+    .map((m) => `${'fromId' in m ? m.fromId : m.memberId}|${m.isin}|${m.account}`));
   for (const v of fam.members) {
     for (const h of v.holdings) {
       const sec = fam.securities.get(h.isin);
@@ -141,11 +145,15 @@ function build(state: FamilyState, fam: FamilyView) {
       for (const account of [...new Set(h.lots.map((l) => l.account))].sort()) {
         const lots = season.lotsOf(v.member.id, h.isin, account);
         const switchedNow = season.switchedOf(v.member.id, h.isin, account);
-        // Known lots only: never an estimated lot or an ELSS lot still locked (GUARDRAILS §1).
+        // Known lots only: never an estimated lot or an ELSS lot still locked (GUARDRAILS §1). A transfer takes units
+        // first in, first out, as a sale does, so only the lots in front of the first unknown one can move.
         const ok = (l: HoldingLot) => l.certain && !(l.lockedUntil && l.lockedUntil > asOf);
+        const stop = lots.findIndex((l) => !ok(l));
+        const front = stop < 0 ? lots : lots.slice(0, stop);
+        const movable = canMove && !seasonOpen.has(`${v.member.id}|${h.isin}|${account}`);
         const parts: Array<[string, HoldingLot[], boolean]> = [
-          [`holding|${v.member.id}|${h.isin}|${account}`, lots.filter(ok), canMove],
-          [`fixed|${v.member.id}|${h.isin}|${account}`, [...lots.filter((l) => !ok(l)), ...switchedNow], false],
+          [`holding|${v.member.id}|${h.isin}|${account}`, front, movable],
+          [`fixed|${v.member.id}|${h.isin}|${account}`, [...lots.slice(front.length), ...switchedNow], false],
         ];
         for (const [id, ls, movable] of parts) {
           const value = ls.reduce((a, l) => a + (l.value ?? 0), 0);
@@ -270,10 +278,9 @@ export function computePlacement(state: FamilyState, fam: FamilyView): Placement
       const total = x.lots.reduce((a, l) => a + l.qty, 0);
       const qty: Qty = Math.floor((total * p.share) / step) * step;
       if (qty <= 0) continue;
-      // The highest-gain lots go first; the move is approx if any of them is.
-      const perUnit = (l: HoldingLot) => (l.gain ?? 0) / l.qty;
+      // The transfer takes the oldest lots first; the move is approx if any of them is.
       let left = qty, approx = false;
-      for (const l of [...x.lots].sort((a, b) => perUnit(b) - perUnit(a) || a.date.localeCompare(b.date))) {
+      for (const l of x.lots) {
         if (left <= 0) break;
         approx ||= !!l.approx;
         left -= Math.min(left, l.qty);

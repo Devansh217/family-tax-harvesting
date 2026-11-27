@@ -275,11 +275,12 @@ for (const size of SIZES) {
         await expectNoSideScroll(page);
       });
 
-      test('placement on the sample: shares for a share, units for a fund, one clubbed name', async ({ page }) => {
+      test('placement on the sample: shares for a share, a fund waits for its harvest, one clubbed name', async ({ page }) => {
         await open(page, 'plan');
         const section = placementSection(page);
         await expect(section.locator('.move-title').filter({ hasText: 'Gift Kabir 300 shares of ITC' })).toBeVisible();
-        await expect(section.locator('.move-title').filter({ hasText: /^Gift Kabir [\d,.]+ units of Nifty 50 index fund \(sample\)$/ })).toBeVisible();
+        // The index fund has a harvest still to do this season, so it isn't gifted until that's done.
+        await expect(section.locator('.move-title').filter({ hasText: /Nifty 50 index fund \(sample\)/ })).toHaveCount(0);
         await expect(section.getByText('Not suggested for Meera: money you give them is still taxed as yours.')).toBeVisible();
       });
 
@@ -321,14 +322,14 @@ for (const size of SIZES) {
         await open(page, 'plan');
         const section = placementSection(page);
         await expect(section.getByRole('link', { name: "Add Pushpa's income to see what moving money to them could save." })).toHaveAttribute('href', '#member-p');
-        await expect(section.getByText('Your money is already in the lowest-tax names.')).toHaveCount(0);
+        await expect(section.getByText('Nothing to move to another name this season.')).toHaveCount(0);
 
         // Gita, who runs the SIP, with no income entered: she is asked for hers, and the money is not called placed.
         await restore(page, { ...base, members: base.members.map((m) => (m.id === 'g' ? { ...m, income: undefined } : m)) });
         await open(page, 'plan');
         await expect(section.getByRole('link', { name: "Add Gita's income to see what moving their money could save." })).toHaveAttribute('href', '#member-g');
         await expect(section.locator('.move-title')).toHaveCount(0);
-        await expect(section.getByText('Your money is already in the lowest-tax names.')).toHaveCount(0);
+        await expect(section.getByText('Nothing to move to another name this season.')).toHaveCount(0);
       });
 
       test('placement: stop a confirmed SIP the files no longer show', async ({ page }) => {
@@ -345,7 +346,7 @@ for (const size of SIZES) {
         await row.getByLabel('Stopped').check();
         await section.getByRole('button', { name: 'Save', exact: true }).click();
         await expect(sipMove).toHaveCount(0);
-        await expect(section.getByText('Your money is already in the lowest-tax names.')).toBeVisible();
+        await expect(section.getByText('Nothing to move to another name this season.')).toBeVisible();
       });
 
       test('placement: add a SIP the files don\'t show', async ({ page }) => {
