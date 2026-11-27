@@ -79,12 +79,14 @@ const rebought = (l: HoldingLot, asOf: ISODate): HoldingLot => {
  * Each member's lots after this season: planned sales gone, then every move in the order computeFamily sized it,
  * each from the front of the account's queue past the units earlier moves used (as `usedQty` skips them there).
  * A harvest, a loss harvest or a switch now sells and buys back, so its units stay with no gain left; a gift's units
- * leave the giver and land with the receiver, who sells and buys them back the same way.
+ * leave the giver and land with the receiver, who sells and buys them back the same way. Units switched now move to
+ * the direct plan this season, so they are kept apart (`switchedOf`): they count, but are not placed under the old ISIN.
  */
 function afterSeason(fam: FamilyView) {
   const key = (memberId: string, isin: string, account: string) => `${memberId}|${isin}|${account}`;
   const pending = new Map<string, HoldingLot[]>();
   const kept = new Map<string, HoldingLot[]>();
+  const switched = new Map<string, HoldingLot[]>();
   const gifted: Array<{ fromId: string; toId: string; isin: string; account: string; lots: HoldingLot[] }> = [];
   for (const v of fam.members) for (const h of v.holdings) for (const l of h.lots) {
     const k = key(v.member.id, h.isin, l.account);
@@ -98,14 +100,16 @@ function afterSeason(fam: FamilyView) {
     if (m.kind === 'gift') gifted.push({ fromId: m.fromId, toId: m.toId, isin: m.isin, account: m.account, lots: takeFront(front, m.qty).map((l) => rebought(l, fam.asOf)) });
     else if (m.kind === 'harvest_gain' || m.kind === 'harvest_loss' || (m.kind === 'switch_direct' && m.when === 'now')) {
       const k = key(from, m.isin, m.account);
-      kept.set(k, [...(kept.get(k) ?? []), ...takeFront(front, m.qty).map((l) => rebought(l, fam.asOf))]);
+      const to = m.kind === 'switch_direct' ? switched : kept;
+      to.set(k, [...(to.get(k) ?? []), ...takeFront(front, m.qty).map((l) => rebought(l, fam.asOf))]);
     }
   }
   const lotsOf = (memberId: string, isin: string, account: string) => {
     const k = key(memberId, isin, account);
     return [...(pending.get(k) ?? []), ...(kept.get(k) ?? [])];
   };
-  return { lotsOf, gifted };
+  const switchedOf = (memberId: string, isin: string, account: string) => switched.get(key(memberId, isin, account)) ?? [];
+  return { lotsOf, switchedOf, gifted };
 }
 
 function build(state: FamilyState, fam: FamilyView) {
@@ -134,11 +138,12 @@ function build(state: FamilyState, fam: FamilyView) {
       const canMove = rc != null && v.member.type !== 'huf' && !needSoon(v.member.id, h.isin);
       for (const account of [...new Set(h.lots.map((l) => l.account))].sort()) {
         const lots = season.lotsOf(v.member.id, h.isin, account);
+        const switchedNow = season.switchedOf(v.member.id, h.isin, account);
         // Known lots only: never an estimated lot or an ELSS lot still locked (GUARDRAILS §1).
         const ok = (l: HoldingLot) => l.certain && !(l.lockedUntil && l.lockedUntil > asOf);
         const parts: Array<[string, HoldingLot[], boolean]> = [
           [`holding|${v.member.id}|${h.isin}|${account}`, lots.filter(ok), canMove],
-          [`fixed|${v.member.id}|${h.isin}|${account}`, lots.filter((l) => !ok(l)), false],
+          [`fixed|${v.member.id}|${h.isin}|${account}`, [...lots.filter((l) => !ok(l)), ...switchedNow], false],
         ];
         for (const [id, ls, movable] of parts) {
           const value = ls.reduce((a, l) => a + (l.value ?? 0), 0);

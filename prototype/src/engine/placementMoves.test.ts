@@ -102,6 +102,23 @@ describe('placement starts', () => {
     expect(left).toBe(rs(43));
     expect(left).toBeLessThan(rs(11_400));
   });
+  it('units switched to the direct plan now are counted but not placed', () => {
+    // The earner (₹30 L) holds 10,000 units of a regular-plan equity fund bought at ₹100, now ₹110: ₹1,00,000 of gain,
+    // inside their ₹1,25,000 room, so all of it switches to the direct plan now. Those units leave the regular plan this
+    // season, so none can be gifted under the regular plan's ISIN; they still count in the earner's tax.
+    const regular: Security = {
+      isin: 'INF000TESTR1', name: 'Test Large Cap Fund - Regular Plan - Growth', taxType: 'equity', listed: false,
+      category: 'Equity Scheme - Large Cap Fund', plan: 'regular', option: 'growth', price: rs(110),
+    };
+    const state: FamilyState = {
+      members: [earner(), parent()], securities: [regular],
+      txns: [buy('e', regular.isin, '2023-01-01', 10_000, 100)],
+    };
+    const { fam, view, problem } = run(state);
+    expect(fam.moves.filter((m) => !m.noRoom).map((m) => [m.kind, m.kind === 'switch_direct' ? m.when : '', m.qty])).toEqual([['switch_direct', 'now', q(10_000)]]);
+    expect(problem.assets.filter((a) => a.ownerId === 'e')).toEqual([expect.objectContaining({ id: `fixed|e|${regular.isin}|`, movable: false, value: rs(11_00_000), gain: 0 })]);
+    expect(view.moves.some((m) => m.isin === regular.isin)).toBe(false);
+  });
 });
 
 describe('placement moves', () => {
