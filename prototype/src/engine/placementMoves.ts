@@ -132,8 +132,12 @@ function build(state: FamilyState, fam: FamilyView) {
   const season = afterSeason(fam);
   // A holding with a season move still to do waits for it: a gift made first would take the move's units from the
   // front of the queue, and the move would then sell newer units and pay tax it says it won't (GUARDRAILS §1).
-  const seasonOpen = new Set(fam.moves.filter((m) => !m.noRoom && m.qty > 0 && m.kind !== 'place_sip' && m.kind !== 'place_holding')
-    .map((m) => `${'fromId' in m ? m.fromId : m.memberId}|${m.isin}|${m.account}`));
+  // A planned sale is the same: it was costed on the oldest lots.
+  const seasonOpen = new Set([
+    ...fam.moves.filter((m) => !m.noRoom && m.qty > 0 && m.kind !== 'place_sip' && m.kind !== 'place_holding')
+      .map((m) => `${'fromId' in m ? m.fromId : m.memberId}|${m.isin}|${m.account}`),
+    ...fam.plannedRealised.map((r) => `${r.memberId}|${r.isin}|${r.account ?? ''}`),
+  ]);
   for (const v of fam.members) {
     for (const h of v.holdings) {
       const sec = fam.securities.get(h.isin);

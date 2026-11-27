@@ -192,6 +192,19 @@ describe('placement moves', () => {
     expect(view.moves.filter((m) => m.kind === 'place_holding' && m.isin === shareX.isin)).toEqual([]);
   });
 
+  it('a holding with a planned sale waits for it', () => {
+    // The parent's hybrid fund would go to the earner (see the next test), but the parent plans to sell 1,000 units.
+    // That sale was costed on the oldest lots, so a gift made first would change what it sells: no gift this season.
+    const members = [person('e', 'self', 3_00_000), person('p', 'parent', 30_00_000)];
+    const state: FamilyState = {
+      members, securities: [hybrid], txns: [buy('p', hybrid.isin, '2021-01-01', 10_000, 100)],
+      plannedSales: [{ id: 'ps1', memberId: 'p', isin: hybrid.isin, qty: q(1_000) }],
+    };
+    const { fam, view } = run(state);
+    expect(fam.plannedRealised.length).toBeGreaterThan(0);
+    expect(view.moves.filter((m) => m.kind === 'place_holding')).toEqual([]);
+  });
+
   it('only lots in front of an unknown one can move', () => {
     // The parent's hybrid fund units: one estimated lot first, then a known 2021 lot. A transfer takes the estimated lot
     // first, so none of the fund can move, though without it the fund would go to the earner.
