@@ -266,7 +266,9 @@ describe('solvePlacement', () => {
     const r = solvePlacement(p);
     const ms = performance.now() - t0;
     expect(r.planTax).toBeLessThanOrEqual(r.baselineTax);
-    expect(ms).toBeLessThan(500);
+    // The 500 ms budget is for a laptop or phone (about 200 ms on a recent laptop). Shared CI runners measure about
+    // three times slower on the same code, so CI gets three times the budget: a real slowdown still fails there.
+    expect(ms).toBeLessThan(process.env.CI ? 1_500 : 500);
   });
 });
 
