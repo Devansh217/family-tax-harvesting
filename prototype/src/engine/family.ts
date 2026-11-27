@@ -9,6 +9,7 @@ import { giftTransferCost, ltRate, roundTripCost, slabRate, stRate, type TaxRule
 import { switchDecision } from './switch';
 import { moveId, retiredMoveIds, type MoveDraft, type RecommendationRecord } from './records';
 import { canGift } from './relations';
+import type { ConfirmedSip } from './sips';
 import { NSE_HOLIDAYS_2027, buybackDate } from './season';
 import { longTermMonthsFor, lotTaxType, summariseYear, type BusinessIncome, type YearSummary } from './tax';
 import { inRange } from './dates';
@@ -40,6 +41,8 @@ export interface FamilyState {
   recommendations?: RecommendationRecord[];
   /** The family's answers for sales whose buy date is unknown (see `Realised.termUnknown`). */
   termAnswers?: TermAnswer[];
+  /** SIP amounts the family confirmed per member and fund (sips.ts); `monthly: 0` means stopped. */
+  confirmedSips?: ConfirmedSip[];
 }
 
 export interface DatedMove { moveId: string; date: ISODate }

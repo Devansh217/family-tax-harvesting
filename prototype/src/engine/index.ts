@@ -20,3 +20,4 @@ export * from './categories';
 export * from './seasonSummary';
 export * from './market';
 export * from './cgSchedule';
+export * from './sips';
