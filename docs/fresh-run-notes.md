@@ -1,6 +1,6 @@
 # Fresh-run notes (22 Nov 2026), anonymised
 
-The founder re-imported a real family from scratch on the live site; these are the findings. **Names, share names, unit counts and rupee figures are replaced.** Members are A (self, Zerodha shares and Coin funds), B (a parent, Zerodha shares) and C (a spouse, Angel One). Shares are S1, S2 and so on; funds are F1, F2 and so on. Figures are illustrative but keep the real order of magnitude. Where each point is handled: `docs/NEXT-WORK.md` §4.
+The founder re-imported a real family from scratch on the live site; these are the findings. **Names, share names, unit counts and rupee figures are replaced.** Members are A (self, Zerodha shares and Coin funds), B (a parent, Zerodha shares) and C (a spouse, Angel One). Shares are S1, S2 and so on; funds are F1, F2 and so on. Figures are illustrative but keep the real order of magnitude. Where each point is handled: the findings table in `docs/NEXT-WORK.md`.
 
 ## Points
 
