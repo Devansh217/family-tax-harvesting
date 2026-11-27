@@ -38,10 +38,15 @@ function newest(state: EvidenceState, holdings: boolean): Map<string, ISODate> {
 
 /**
  * Per folio, the day fund statements are known to cover it without a gap. A statement lists every trade in its period
- * only, so it counts when it starts on or before the folio's first trade, or the day after the cover so far ends:
- * a month-only statement after a gap says nothing about the redemptions in the gap. Statements are taken in order of
+ * only, so a chain starts with one that begins on or before both the folio's first trade in any file and 1 April of
+ * the tax year it reaches (a sale earlier that year may be in no file, and the first trade seen may not be the
+ * first), and each next one must begin by the day after the cover so far ends: a month-only statement after a gap
+ * says nothing about the redemptions in the gap. Statements are taken in order of
  * start, so the answer is the same whatever order the files came in. A folio with no trade in any file gets none.
  */
+/** 1 April of the Indian tax year `d` falls in. */
+const taxYearStart = (d: ISODate): ISODate => `${Number(d.slice(0, 4)) - (d.slice(5, 7) < '04' ? 1 : 0)}-04-01`;
+
 function statementCover(state: EvidenceState): Map<string, ISODate> {
   const first = new Map<string, ISODate>();
   for (const t of state.txns) {
@@ -62,7 +67,8 @@ function statementCover(state: EvidenceState): Map<string, ISODate> {
     if (!f) continue;
     let cover: ISODate | null = null;
     for (const p of [...ps].sort((a, b) => a.from.localeCompare(b.from))) {
-      const joins = p.from <= f || (cover != null && p.from <= addDays(cover, 1));
+      const starts = p.from <= f && p.from <= taxYearStart(p.to);
+      const joins = starts || (cover != null && p.from <= addDays(cover, 1));
       if (joins && (!cover || p.to > cover)) cover = p.to;
     }
     if (cover) out.set(k, cover);
