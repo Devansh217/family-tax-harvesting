@@ -241,6 +241,19 @@ for (const size of SIZES) {
         await expect(page.getByText(/Test Share A, sold 10 Jun 2026: Buy date entered by you/)).toBeVisible();
       });
 
+      test('an old account\'s moves are marked and listed as a gap', async ({ page }) => {
+        // Synthetic family: Olga's only account has data to 31 Mar 2026, so its harvest rests on old data.
+        await open(page, 'family');
+        await page.locator('input[type="file"]').setInputFiles(new URL('./fixtures/old-data-family.json', import.meta.url).pathname);
+        await expect(page.getByText('Backup restored')).toBeVisible();
+        await open(page, 'plan');
+        await expect(page.getByText('Based on data from 31 Mar 2026. Check you still hold these before acting.').first()).toBeVisible();
+        await expect(page.getByText(/the tax-free room may be smaller/).first()).toBeVisible();
+        await expect(page.getByText(/Olga's Zerodha: newest data from 31 Mar 2026/)).toBeVisible();
+        await open(page, 'home');
+        await expect(page.getByText('Based on data from 31 Mar 2026. Check you still hold these before acting.').first()).toBeVisible();
+      });
+
       test('importing the same tradebook twice names the earlier file the second time', async ({ page }) => {
         await startOwnFamilyImport(page);
         // The family table's first row opens that member's checklist.
