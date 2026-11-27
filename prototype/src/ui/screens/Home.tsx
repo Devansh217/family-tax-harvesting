@@ -7,7 +7,7 @@ import { LastSafeDay, MoveRow, movesNotDone } from './Plan';
 import { needsSetup } from './memberFields';
 import { FirstRunNotice } from './About';
 import { SinceClose } from './SinceClose';
-import { isLaterBenefit } from '../../engine/family';
+import { isLaterBenefit, isMarked } from '../../engine/family';
 import { visibleGapCount } from '../warnings';
 
 export function SampleBanner() {
@@ -41,7 +41,10 @@ export function Home({ days }: { days: number }) {
 
   const { totals } = fam;
   const used = totals.limit - totals.freeRoom;
-  const open = movesNotDone(fam.moves, state.done);
+  const notDone = movesNotDone(fam.moves, state.done);
+  // Moves on old data are left out of the figures, as on the Plan headline.
+  const open = notDone.filter((m) => !isMarked(m));
+  const leftOut = notDone.length - open.length;
   const openGain = open.reduce((a, m) => a + (m.kind === 'harvest_gain' || m.kind === 'gift' ? m.gain : 0), 0);
   const openLater = open.filter(isLaterBenefit).reduce((a, m) => a + m.saving, 0);
   const openNow = open.filter((m) => !isLaterBenefit(m)).reduce((a, m) => a + m.saving, 0);
@@ -94,6 +97,11 @@ export function Home({ days }: { days: number }) {
             That avoids up to {inr(openLater)} of tax later, when you sell, in a year your gains would pass {inr(fam.rules.ltcgExemption)}.
             {openNow > 0 && <> Plus {inr(openNow)} less tax this year from losses and waiting.</>}
           </p>
+          {leftOut > 0 && (
+            <p className="tiny" style={{ color: 'var(--time)' }}>
+              {leftOut === 1 ? 'Leaves out 1 move that rests on old data. See the plan.' : `Leaves out ${leftOut} moves that rest on old data. See the plan.`}
+            </p>
+          )}
           <a className="btn primary block" href="#plan">See the plan <Svg size={18}>{Icon.arrow}</Svg></a>
         </section>
 
@@ -150,10 +158,10 @@ export function Home({ days }: { days: number }) {
       )}
 
       <Section title="Act before it lapses" id="act-h" action={<a href="#plan" className="small link-action" style={{ fontWeight: 600, textDecoration: 'none' }}>All {fam.moves.length} moves</a>}>
-        {open.length === 0 ? (
+        {notDone.length === 0 ? (
           <div className="sheet empty"><p>No moves left. Every member's room is used or there are no long-term gains to harvest.</p></div>
         ) : (
-          <div className="sheet">{open.slice(0, 3).map((m) => <MoveRow key={m.id} move={m} />)}</div>
+          <div className="sheet">{notDone.slice(0, 3).map((m) => <MoveRow key={m.id} move={m} />)}</div>
         )}
         <Disclaimer />
       </Section>

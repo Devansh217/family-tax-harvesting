@@ -2,6 +2,10 @@
 
 The app lives in `prototype/` (React + Vite, tax engine in `prototype/src/engine/`). Product, architecture and design specs are in `docs/`.
 
+## Next work
+
+GitHub issues are the one list of planned and unbuilt work: one issue per one-session item, labelled by epic and status. Each issue says whether it is blocked (and by which issues) and how to pick it up. A PR closes its issue with `Closes #N`; new work found along the way becomes a new issue, never only a note in chat. `docs/NEXT-WORK.md` holds the conventions, the founder's priority order and the map from old item IDs (B2, F3…) to issue numbers.
+
 ## Guardrails
 
 `docs/GUARDRAILS.md` holds the rules every change keeps: tax safety, saved families, privacy, security, wording. Read it before changing the engine, imports, storage, Supabase or user-facing copy.

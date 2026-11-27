@@ -1,8 +1,8 @@
-import { countingSummaries, pnlGroups, taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
+import { countingSummaries, isLaterBenefit, isMarked, pnlGroups, taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
 import { doneThisSeason, type RecommendationRecord } from '../engine/records';
 import { APPROX_MARGIN, normAccount, TRIMMING_HOLDINGS_SOURCES } from '../engine/openingLots';
 import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
-import { possessive } from './format';
+import { dateLabel, possessive } from './format';
 import { currentPnls, hasYearPnl, preBuybackPnls, type ImportLike } from './warnings';
 
 /** Days a move can be put on: from today to the last safe day, or to the end of the tax year when that is not known. */
@@ -24,11 +24,15 @@ export function planView(fam: Pick<FamilyView, 'moves' | 'rules'>, records: Reco
   const doneIds = new Set(done.map((d) => d.move.id));
   const open = fam.moves.filter((m) => !doneIds.has(m.id));
   const sum = (ms: Move[], f: (m: Move) => number) => ms.reduce((a, m) => a + f(m), 0);
+  // A move on old data, or one whose room may be smaller, is shown but left out of the headline until it is fresh.
+  const counted = open.filter((m) => !isMarked(m));
+  const laterOf = (m: Move) => (isLaterBenefit(m) ? m.saving : m.kind === 'switch_direct' ? m.taxAvoided : 0);
   const doneMoves = done.map((d) => d.move).filter((m) => !m.noRoom);
   const gainDone = sum(doneMoves, taxFreeGainOf);
   const nowDone = sum(doneMoves, nowSavingOf);
   return {
-    open, done, gainDone, gainTotal: gainDone + sum(open, taxFreeGainOf), nowDone, nowTotal: nowDone + sum(open, nowSavingOf),
+    open, done, gainDone, gainTotal: gainDone + sum(counted, taxFreeGainOf), nowDone, nowTotal: nowDone + sum(counted, nowSavingOf),
+    laterSaving: sum(counted, laterOf),
     doneCount: doneMoves.length, liveCount: doneMoves.length + open.filter((m) => !m.noRoom).length,
   };
 }
@@ -39,7 +43,7 @@ export const importMemberOf = (route: string) => (route.startsWith('import-') ? 
 
 export interface PlanGap {
   memberId: string;
-  key: 'no_holdings' | 'shares_no_dates' | 'funds_no_dates' | 'funds_to_check' | 'holdings_no_date' | 'buyback_pnl' | 'pnl_again' | 'pnl_overlap';
+  key: 'no_holdings' | 'shares_no_dates' | 'funds_no_dates' | 'funds_to_check' | 'holdings_no_date' | 'buyback_pnl' | 'pnl_again' | 'pnl_overlap' | 'old_data' | 'old_room';
   text: string;
   /** Where to fix it. */
   href: string;
@@ -51,11 +55,36 @@ type SummaryLike = { importId?: string; memberId: string; account: string; summa
 const rupees = (p: number) => `₹${Math.round(p / 100).toLocaleString('en-IN')}`;
 
 /**
+ * The value of units a holdings row shows that the member's lots do not explain: the row's units less the units held
+ * in that security, at its latest price. Zero when the lots cover the row.
+ */
+export function unexplainedValue(
+  fam: Pick<FamilyView, 'members'> & Partial<Pick<FamilyView, 'securities'>>, memberId: string, isin: string, positionQty: number,
+): Paise {
+  const held = fam.members.find((m) => m.member.id === memberId)?.holdings.find((h) => h.isin === isin);
+  const short = positionQty - (held?.qty ?? 0);
+  const price = fam.securities?.get(isin)?.price ?? held?.price ?? 0;
+  return short > 0 ? Math.round((short * price) / QTY_SCALE) : 0;
+}
+
+/** The gap for mutual funds with no buy dates, worth `funds`: the detailed CAS has every purchase. */
+export const fundsNoDatesGap = (memberId: string, name: string, funds: Paise): PlanGap => ({
+  memberId, key: 'funds_no_dates', href: importHref(memberId), action: 'Import',
+  text: `${name}: ${rupees(funds)} in mutual funds has no buy dates, so it gets no moves. Import their detailed CAS (free from MF Central, CAMS or KFintech): it has every purchase.`,
+});
+
+/** The gap for shares with no buy dates, worth `shares`, when no holdings file gives a long-term count. */
+export const sharesNoDatesGap = (memberId: string, name: string, shares: Paise): PlanGap => ({
+  memberId, key: 'shares_no_dates', href: importHref(memberId), action: 'Import',
+  text: `${name}: ${rupees(shares)} in shares has no buy dates, so it gets no moves. Import the broker's holdings file, or tradebooks going back to the first purchase.`,
+});
+
+/**
  * What keeps the plan from being complete, per member, each with the file or step that fixes it. Holdings without
  * buy dates get no moves; funds with an unknown tax type get none either.
  */
 export function planGaps(
-  fam: Pick<FamilyView, 'members'> & Partial<Pick<FamilyView, 'securities' | 'holdingsNotes' | 'rules'>>, positions: HeldPositionLike[], brokerSummaries: SummaryLike[] = [],
+  fam: Pick<FamilyView, 'members'> & Partial<Pick<FamilyView, 'securities' | 'holdingsNotes' | 'rules' | 'oldAccounts' | 'oldRoom'>>, positions: HeldPositionLike[], brokerSummaries: SummaryLike[] = [],
   imports: ImportLike[] = [],
 ): PlanGap[] {
   const out: PlanGap[] = [];
@@ -79,12 +108,7 @@ export function planGaps(
       if (p.memberId !== id || !p.isin || p.qty == null) continue;
       missing.set(p.isin, Math.max(missing.get(p.isin) ?? 0, p.qty));
     }
-    const unexplained = (isin: string) => {
-      const held = v.holdings.find((h) => h.isin === isin);
-      const short = (missing.get(isin) ?? 0) - (held?.qty ?? 0);
-      const price = fam.securities?.get(isin)?.price ?? held?.price ?? 0;
-      return short > 0 ? Math.round((short * price) / QTY_SCALE) : 0;
-    };
+    const unexplained = (isin: string) => unexplainedValue(fam, id, isin, missing.get(isin) ?? 0);
     const undated = (fund: boolean) => v.holdings
       .filter((h) => h.isin.startsWith('INF') === fund && h.uncertainLots > 0)
       .reduce((a, h) => a + h.lots.filter((l) => !l.certain).reduce((b, l) => b + (l.value ?? 0), 0), 0)
@@ -103,15 +127,12 @@ export function planGaps(
           ? `${name}: ${rupees(shares)} in shares has no buy dates. Import their holdings file again: it now fills in shares bought before the tradebook.`
           : filled
             ? `${name}: ${rupees(shares)} in shares was bought in the year before the tradebook starts, so the app can't tell when it turns long-term. Import last year's tradebook.`
-            : `${name}: ${rupees(shares)} in shares has no buy dates, so it gets no moves. Import the broker's holdings file, or tradebooks going back to the first purchase.`,
+            : sharesNoDatesGap(id, name, shares).text,
       });
     }
     const funds = undated(true);
     if (funds > 0) {
-      out.push({
-        memberId: id, key: 'funds_no_dates', href: importHref(id), action: 'Import',
-        text: `${name}: ${rupees(funds)} in mutual funds has no buy dates, so it gets no moves. Import their CAS (free from MF Central, CAMS or KFintech): it has every purchase.`,
-      });
+      out.push(fundsNoDatesGap(id, name, funds));
     }
     // A holdings file saved before files were dated never trims: importing it again lets sold or moved shares drop out.
     // Not when a dated file for that account decides instead, or another gap already asks for the file again.
@@ -156,6 +177,22 @@ export function planGaps(
       out.push({
         memberId: id, key: 'funds_to_check', href: `#member-${id}`, action: 'Pick',
         text: `${name}: ${check} ${check === 1 ? 'fund needs' : 'funds need'} a tax type before they get moves.`,
+      });
+    }
+    // Accounts whose newest data is old: their moves are marked and left out of the headline.
+    for (const o of fam.oldAccounts ?? []) {
+      if (o.memberId !== id) continue;
+      out.push({
+        memberId: id, key: 'old_data', href: importHref(id), action: 'Import',
+        text: `${possessive(name)} ${o.account}: newest data from ${dateLabel(o.newest)}, so its moves may be out of date. Import today's holdings file.`,
+      });
+    }
+    // A member whose room a move uses while that room rests on old data: gains booked since may be missing.
+    for (const o of fam.oldRoom ?? []) {
+      if (o.memberId !== id) continue;
+      out.push({
+        memberId: id, key: 'old_room', href: importHref(id), action: 'Import',
+        text: `${possessive(name)} tax-free room: gains booked since ${dateLabel(o.since)} aren't counted. Import this year's tax P&L.`,
       });
     }
   }

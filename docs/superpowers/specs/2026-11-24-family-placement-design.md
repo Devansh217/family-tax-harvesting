@@ -34,7 +34,7 @@ The app should answer both with moves that show how much tax they save. It shoul
 - On the Plan, a section "Holding in another name" lists placement moves (an estimate, not advice: GUARDRAILS §6), biggest saving first, each with a one-line saving.
 - It covers new money (SIPs, D1–D2) and existing holdings (gifts of units, D3).
 - Every number comes from the one tax function (`taxForYear`) with each member's own income, regime, age and residency.
-- It replaces the Compare page. The page goes in the design pass for points 4, 7 and 8. Its engine code (`bringsHome`, `nominalReturn`) is reused here.
+- It answers what the Compare page tried to. That page is removed on its own (NEXT-WORK E2); `nominalReturn` is reused here.
 
 **Non-goals (this version)**
 - No target family mix, emergency fund or goals. Those belong to the full planner.
@@ -68,7 +68,7 @@ The headroom-bucket method (placement note §3.6, close to A) is kept as a **tes
 - **Monthly investing per giver** (D1): a new stored list of confirmed SIPs: `{ giverId, isin, monthly: Paise, confirmedAt }`. It is guessed on every compute from transactions and stored only when the user confirms or edits it.
 - **Existing holdings:** each member's holdings from the engine, only **known lots** (known date and cost). Estimated lots and fund tax types still "check" are left out, as for harvest moves (GUARDRAILS §1).
 - **Assumed returns:** `nominalReturn` by the fund's return class (`engine/planner.ts`, `engine/marketAssumptions.ts`), base scenario.
-- **Rules:** `rulesFor(date)` per year. Future years use today's rules and today's incomes (as `bringsHome` does).
+- **Rules:** `rulesFor(date)` per year. Future years use today's rules and today's incomes.
 
 ### 5.2 The problem
 

@@ -117,6 +117,8 @@ export function MoveRow({ move }: { move: Move }) {
         </p>
         )}
         {move.noRoom && <p className="tiny" style={{ color: 'var(--time)' }}>{move.reasons[0]}</p>}
+        {!move.noRoom && move.oldData && <p className="tiny" style={{ color: 'var(--time)' }}>{`Based on data from ${dateLabel(move.oldData)}. Check you still hold these before acting.`}</p>}
+        {!move.noRoom && move.roomMayBeSmaller && <p className="tiny" style={{ color: 'var(--time)' }}>{`Gains booked since ${dateLabel(move.roomMayBeSmaller)} aren't counted, so the tax-free room may be smaller. Import this year's tax P&L before acting.`}</p>}
         {move.approx && !move.noRoom && <p className="tiny muted">Some units were bought before your trade history, so this uses their average cost and leaves 10% of the room spare. After selling, check the gain in your broker&rsquo;s tax P&amp;L.</p>}
         {nudge && <p className="tiny muted">{nudge.fy ? `Import the ${nudge.fy} tradebook` : 'Import older tradebooks'} from {brokerOf(move.account)} to use the {inr(nudge.rupees)} of room left spare.</p>}
         {move.date && !move.noRoom && <p className="tiny">{`${move.kind === 'gift' ? 'Gift and sell' : 'Sell'} on ${dateLabel(move.date)}`}{move.buyOn && ` · ${move.kind === 'switch_direct' ? 'Buy the direct plan' : 'Buy back'} on ${dateLabel(move.buyOn)}`}</p>}
@@ -174,7 +176,7 @@ function CalendarButton() {
 
 export function Plan() {
   const { fam, state, update, nameOf } = useApp();
-  const { open, done, gainDone, gainTotal, nowDone, nowTotal, doneCount, liveCount } = planView(fam, state.recommendations);
+  const { open, done, gainDone, gainTotal, nowDone, nowTotal, doneCount, liveCount, laterSaving } = planView(fam, state.recommendations);
   const gaps = state.isSample ? [] : planGaps(fam, fam.positions, state.brokerSummaries, state.imports);
   const empty = fam.moves.length === 0 && done.length === 0;
 
@@ -191,7 +193,7 @@ export function Plan() {
         <span className="meter" aria-hidden="true"><span className="seg-free" style={{ width: `${gainTotal ? (gainDone / gainTotal) * 100 : 0}%` }} /></span>
         {nowTotal > 0 && <p className="small"><strong className="fig">{inr(nowDone)}</strong> cut from this year&rsquo;s tax <span className="muted">of {inr(nowTotal)} possible</span></p>}
         <p className="small muted" style={{ maxWidth: '72ch' }}>
-          Gains made tax-free stop being taxed later, when you sell. That is worth up to {inr(fam.totals.laterSaving)} after costs, but only in a year your gains would go past the {inr(fam.rules.ltcgExemption)} exemption. {doneCount} of {liveCount} moves done.
+          Gains made tax-free stop being taxed later, when you sell. That is worth up to {inr(laterSaving)} after costs, but only in a year your gains would go past the {inr(fam.rules.ltcgExemption)} exemption. {doneCount} of {liveCount} moves done.
         </p>
         <p className="note" style={{ maxWidth: '72ch' }}>
           <strong style={{ color: 'var(--ink)' }}>Not a recommendation to buy or sell.</strong> Each move shows the tax effect of an action on holdings you already own. Whether to act is your decision; check large moves with a CA. <a href="#about">How to read this</a>

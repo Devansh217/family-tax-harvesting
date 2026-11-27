@@ -45,6 +45,38 @@ const h1 = (page: Page, name: string) => page.getByRole('heading', { level: 1, n
 /** Plan's "Done this season" list. */
 const doneSection = (page: Page) => page.locator('section').filter({ has: page.getByRole('heading', { level: 2, name: 'Done this season' }) });
 
+/** Leaves the sample for an own family and opens the Import screen's family table. */
+async function startOwnFamilyImport(page: Page) {
+  await open(page, 'home');
+  await page.getByRole('button', { name: 'Start my own family' }).click();
+  await expect(page).toHaveURL(/#family$/);
+  await page.evaluate(() => { location.hash = 'import'; });
+  await expect(h1(page, 'Import statements')).toBeVisible();
+}
+
+/** The family table's member rows. */
+const memberRows = (page: Page) => page.getByRole('button', { name: /: open checklist$/ });
+
+/**
+ * A tiny PDF with the standard security handler and a user-password check that no password passes, so the reader asks
+ * for one. It holds no content: it only needs to be locked.
+ */
+function lockedPdf(): Buffer {
+  const hex = (b: number) => b.toString(16).padStart(2, '0').repeat(32);
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [] /Count 0 >>',
+    `<< /Filter /Standard /V 1 /R 2 /O <${hex(0x11)}> /U <${hex(0x22)}> /P -4 >>`,
+  ];
+  let out = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objs.forEach((o, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R /Encrypt 3 0 R /ID [<${'ab'.repeat(16)}> <${'ab'.repeat(16)}>] >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
+
 async function expectNoSideScroll(page: Page) {
   const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
   expect(scroll, 'page scrolls sideways').toBeLessThanOrEqual(client);
@@ -209,26 +241,91 @@ for (const size of SIZES) {
         await expect(page.getByText(/Test Share A, sold 10 Jun 2026: Buy date entered by you/)).toBeVisible();
       });
 
-      test('importing the same tradebook twice says nothing is new the second time', async ({ page }) => {
+      test('an old account\'s moves are marked and listed as a gap', async ({ page }) => {
+        // Synthetic family: Olga's only account has data to 31 Mar 2026, so its harvest rests on old data.
+        await open(page, 'family');
+        await page.locator('input[type="file"]').setInputFiles(new URL('./fixtures/old-data-family.json', import.meta.url).pathname);
+        await expect(page.getByText('Backup restored')).toBeVisible();
+        await open(page, 'plan');
+        await expect(page.getByText('Based on data from 31 Mar 2026. Check you still hold these before acting.').first()).toBeVisible();
+        await expect(page.getByText(/the tax-free room may be smaller/).first()).toBeVisible();
+        await expect(page.getByText(/Olga's Zerodha: newest data from 31 Mar 2026/)).toBeVisible();
+        await expect(page.getByText("Olga's tax-free room: gains booked since 31 Mar 2026 aren't counted. Import this year's tax P&L.")).toBeVisible();
         await open(page, 'home');
-        await page.getByRole('button', { name: 'Start my own family' }).click();
-        await expect(page).toHaveURL(/#family$/);
-        await page.evaluate(() => { location.hash = 'import'; });
-        await expect(h1(page, 'Import statements')).toBeVisible();
-        const csv = 'symbol,isin,trade_date,segment,trade_type,quantity,price\nINFY,INE009A01021,2024-03-12,EQ,buy,10,1500\n';
-        const files = page.locator('input[type="file"]');
-        const addFile = async (name: string) => {
-          await files.setInputFiles({ name, mimeType: 'text/csv', buffer: Buffer.from(csv) });
-          const card = page.getByRole('article', { name });
+        await expect(page.getByText('Based on data from 31 Mar 2026. Check you still hold these before acting.').first()).toBeVisible();
+        await expect(page.getByText(/^Leaves out (1 move that rests|\d+ moves that rest) on old data\. See the plan\.$/)).toBeVisible();
+      });
+
+      test('importing the same tradebook twice names the earlier file the second time', async ({ page }) => {
+        await startOwnFamilyImport(page);
+        // The family table's first row opens that member's checklist.
+        const row = memberRows(page).first();
+        const name = (await row.getAttribute('aria-label'))!.replace(/: open checklist$/, '');
+        await row.click();
+        await expect(page.getByRole('heading', { level: 2, name, exact: true })).toBeVisible();
+        // Live regions are mounted empty, so what lands in them later is announced.
+        const addedRegion = page.getByRole('status', { name: 'File added' });
+        await expect(addedRegion).toHaveCount(1);
+        await expect(addedRegion).toHaveText('');
+        const csv = 'symbol,isin,trade_date,segment,trade_type,quantity,price\nINFY,INE009A01021,2024-03-12,EQ,buy,10,1500\nINFY,INE009A01021,2024-03-14,EQ,buy,5,1510\n';
+        const addFile = async (file: string) => {
+          // Every drop zone takes any file.
+          await page.locator('input[type="file"]').first().setInputFiles({ name: file, mimeType: 'text/csv', buffer: Buffer.from(csv) });
+          const card = page.getByRole('article', { name: file });
+          await expect(card.getByRole('status', { name: 'Notes on this file' })).toHaveText('');
           await card.getByRole('button', { name: /^Add to / }).click();
           return card;
         };
         const first = await addFile('tradebook-a.csv');
         await expect(first.getByText('Added', { exact: true })).toBeVisible();
-        await expect(page.getByText('Nothing new: these trades are already in')).toHaveCount(0);
-        await addFile('tradebook-b.csv');
-        await expect(page.getByText('Nothing new: these trades are already in')).toHaveCount(1);
+        await expect(page.getByRole('status').filter({ hasText: /Read: .*trades/ })).toBeVisible();
+        await expect(addedRegion).toContainText(/Read: .*trades/);
+        const second = await addFile('tradebook-b.csv');
+        await expect(second.getByText(/^Same as tradebook-a.csv you added on /)).toBeVisible();
+        await expect(second.getByRole('status', { name: 'Notes on this file' })).toContainText(/^Same as tradebook-a.csv/);
+        // A file that changed nothing gets no success card.
+        await expect(page.getByRole('status').filter({ hasText: /Read: / })).toHaveCount(0);
         await expectNoSideScroll(page);
+      });
+
+      test('a member with no next step can still add a file', async ({ page }) => {
+        await startOwnFamilyImport(page);
+        await memberRows(page).first().click();
+        // A synthetic holdings export from another broker: holdings done, trade history a suggestion, no step next.
+        const csv = 'symbol,isin,quantity,ltp\nTEST,INE009A01021,10,1500\n';
+        await page.locator('input[type="file"]').first().setInputFiles({ name: 'groww-holdings.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+        const card = page.getByRole('article', { name: 'groww-holdings.csv' });
+        await card.getByRole('button', { name: /^Add to / }).click();
+        await expect(card.getByText('Added', { exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { level: 3, name: 'Groww', exact: true })).toBeVisible();
+        await expect(page.locator('.step.next')).toHaveCount(0);
+        // The checklist always has a drop zone, and the trade-history suggestion has its own.
+        await expect(page.getByRole('region', { name: 'Add another file' }).locator('input[type="file"]')).toHaveCount(1);
+        await expect(page.locator('.step.quiet').filter({ hasText: 'Trade history' }).locator('input[type="file"]')).toHaveCount(1);
+        await expectNoSideScroll(page);
+      });
+
+      test('a locked PDF asks for the password the statement was ordered with', async ({ page }) => {
+        await startOwnFamilyImport(page);
+        await memberRows(page).first().click();
+        await page.locator('input[type="file"]').first().setInputFiles({ name: 'locked.pdf', mimeType: 'application/pdf', buffer: lockedPdf() });
+        const card = page.getByRole('article', { name: 'locked.pdf' });
+        await expect(card.getByLabel(/This PDF is locked/)).toBeVisible();
+        await expect(card.getByText('From MF Central, CAMS or KFintech: the password you chose. NSDL / CDSL CAS: your PAN in capitals.')).toBeVisible();
+        await expect(card.getByText(/usually your PAN/)).toHaveCount(0);
+      });
+
+      test('#import shows a row per member, and Stop here opens the plan', async ({ page }) => {
+        await startOwnFamilyImport(page);
+        const table = page.getByRole('table');
+        await expect(table).toBeVisible();
+        const rows = memberRows(page);
+        expect(await rows.count()).toBeGreaterThan(0);
+        await expect(table.locator('tbody tr')).toHaveCount(await rows.count());
+        await expectNoSideScroll(page);
+        await page.getByRole('button', { name: 'Stop here, show my plan' }).click();
+        await expect(page).toHaveURL(/#plan$/);
+        await expect(h1(page, 'Plan')).toBeVisible();
       });
 
       test('download a backup on Family', async ({ page }) => {

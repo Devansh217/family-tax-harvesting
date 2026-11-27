@@ -4,6 +4,8 @@ import type { DatedMove, PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
 import type { RecommendationRecord } from './engine/records';
 import { normAccount, TRIMMING_HOLDINGS_SOURCES } from './engine/openingLots';
+import { accountKey, newestEvidence } from './engine/freshness';
+import { todayISO } from './engine/dates';
 import { FY_2026_27 } from './engine/rules';
 import type { ISODate, Member, Paise, Qty, Security, TaxType, TermAnswer, Txn } from './engine/types';
 import type { BrokerSummary, ParsedPrice, ParseResult } from './parsers';
@@ -17,6 +19,10 @@ export interface ImportRecord {
   txns: number;
   prices: number;
   warnings: string[];
+  /** A fund statement's period, which dates its folios (`accounts`) for the Plan's old-data marks (freshness.ts). */
+  statementFrom?: ISODate;
+  statementTo?: ISODate;
+  accounts?: string[];
 }
 
 /** Units a statement says a member holds, to check the trade history against. */
@@ -110,6 +116,7 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
   const done = Object.fromEntries(Object.entries(s.done ?? {}).map(([k, v]) => [k.startsWith('FY ') ? k : `${TICK_YEAR}|${k}`, v]));
   return {
     ...s,
+    imports: (s.imports ?? []).map(cleanImport),
     members: autoLink((s.members as LegacyMember[]).map(migrateMember)),
     securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
     plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
@@ -207,28 +214,44 @@ export interface ImportOptions {
 }
 
 /**
+ * Each of a file's transactions with its resolved ISIN and the id it is saved under: its content plus its occurrence
+ * count within the file, so identical fills stay separate but repeats merge. `securities` must already hold the file's
+ * securities. A check-only import saves no transactions.
+ */
+function keyedTxns(securities: Security[], memberId: string, r: ParseResult, opts: ImportOptions) {
+  const seen = new Map<string, number>();
+  return (opts.checkOnly ? [] : r.txns).map((t) => {
+    const isin = resolveIsin(t.isin, t.name, securities);
+    const base = `${memberId}|${t.ref ?? isin}|${t.date}|${t.side}|${t.qty}|${t.amount}`;
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    return { t, isin, id: `${base}|${n}` };
+  });
+}
+
+/** The ids `applyImport` would give a file's transactions in this state, without changing it. */
+export function importTxnIds(state: Pick<AppState, 'securities' | 'txns'>, memberId: string, r: ParseResult, opts: ImportOptions = {}): string[] {
+  const securities = structuredClone(state.securities);
+  for (const t of r.txns) upsertSecurity(securities, t);
+  return keyedTxns(securities, memberId, r, opts).map((k) => k.id);
+}
+
+/**
  * Adds a parsed file to a member. Re-importing the same file is harmless: each transaction's id is derived from its
  * content plus its occurrence count within the file, so identical fills stay separate but repeats merge.
  */
 export function applyImport(state: AppState, memberId: string, fileName: string, r: ParseResult, opts: ImportOptions = {}): AppState {
   const s: AppState = structuredClone(state);
   const importId = uid('imp');
-  const seen = new Map<string, number>();
   // A holdings file may trim lots only when every row was read and matched to an ISIN.
   const fileComplete = r.skipped === 0 && !r.prices.some((x) => x.isin.startsWith('SYM:'));
   const existing = new Map(s.txns.map((t) => [t.id, t]));
   let added = 0;
 
-  const txns = opts.checkOnly ? [] : r.txns;
   for (const t of r.txns) upsertSecurity(s.securities, t);
-  for (const t of txns) {
-    const isin = resolveIsin(t.isin, t.name, s.securities);
+  for (const { t, isin, id } of keyedTxns(s.securities, memberId, r, opts)) {
     // A name matched now also matches this member's trades saved earlier by that name, from any file.
     if (t.ref && !isin.startsWith('SYM:')) for (const x of s.txns) if (x.memberId === memberId && x.isin === t.ref) x.isin = isin;
-    const base = `${memberId}|${t.ref ?? isin}|${t.date}|${t.side}|${t.qty}|${t.amount}`;
-    const n = (seen.get(base) ?? 0) + 1;
-    seen.set(base, n);
-    const id = `${base}|${n}`;
     const prior = existing.get(id);
     if (prior) {
       // The same row again: a name matched now upgrades the trade saved by name; a match is never undone.
@@ -289,14 +312,37 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
 
   s.imports.push({
     id: importId, memberId, fileName, format: r.format, at: new Date().toISOString(), txns: added, prices: r.prices.length, warnings: r.warnings,
+    ...(validPeriod(r.statementFrom, r.statementTo) ? { statementFrom: r.statementFrom, statementTo: r.statementTo, accounts: r.statementAccounts ?? [] } : {}),
   });
   return s;
 }
 
-/** True when `after` (from `applyImport`) holds the same transactions and positions as `before`: the file was already in. */
+/** A period of real dates, start before end, ending no later than today: a future end would clear every mark. */
+function validPeriod(from: unknown, to: unknown): boolean {
+  const iso = (d: unknown): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+  return iso(from) && iso(to) && from <= to && to <= todayISO();
+}
+
+/** An import record from a saved copy or backup, keeping its statement period only when it is well formed. */
+function cleanImport(i: ImportRecord): ImportRecord {
+  const { statementFrom, statementTo, accounts, ...rest } = i;
+  const ok = validPeriod(statementFrom, statementTo) && Array.isArray(accounts) && accounts.every((a) => typeof a === 'string');
+  return ok ? { ...rest, statementFrom, statementTo, accounts } : rest;
+}
+
+/**
+ * True when `after` (from `applyImport`) holds the same transactions and positions as `before` and its fund statement,
+ * if any, moves no folio's date: the file was already in.
+ */
 export function importAddedNothing(before: AppState, after: AppState): boolean {
   const strip = (ps: AppState['positions']) => JSON.stringify(ps.map(({ importId: _i, ...p }) => JSON.stringify(p)).sort());
-  return after.txns.length === before.txns.length && strip(after.positions) === strip(before.positions);
+  const last = after.imports[after.imports.length - 1];
+  let reachesFurther = false;
+  if (last?.statementTo) {
+    const [was, now] = [newestEvidence(before), newestEvidence(after)];
+    reachesFurther = (last.accounts ?? []).some((a) => (now.get(accountKey(last.memberId, a)) ?? '') > (was.get(accountKey(last.memberId, a)) ?? ''));
+  }
+  return !reachesFurther && after.txns.length === before.txns.length && strip(after.positions) === strip(before.positions);
 }
 
 export function removeImport(state: AppState, importId: string): AppState {

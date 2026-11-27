@@ -153,3 +153,42 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--line-strong); border-bo
 details summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--plan); }
 pre.lines { max-height: 280px; overflow: auto; font-size: 12px; line-height: 1.5; background: var(--sunk); border-radius: 10px; padding: 10px; margin: 8px 0 0; white-space: pre; }
 .toast { position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 20; background: var(--ink); color: var(--ground); padding: 10px 16px; border-radius: 12px; font-size: 14px; box-shadow: var(--shadow); }
+
+/* Import: family table (stacked cards on phones), member checklist, success card */
+/* A live region kept mounted while empty: out of the layout (no gap) but still in the accessibility tree. */
+.live:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.famtable td { white-space: normal; }
+.famtable tbody tr { cursor: pointer; }
+.famtable tbody tr:hover { background: var(--sunk); }
+.who-in { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.famrow-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--ink); cursor: pointer; text-align: left; }
+.famrow-btn svg { color: var(--ink-2); flex: none; }
+.note.amber { background: var(--time-soft); border-color: color-mix(in srgb, var(--time) 25%, transparent); color: var(--ink); }
+.note.tight { padding: 2px 8px; border-radius: 8px; }
+@media (max-width: 600px) {
+  .famtable, .famtable tbody, .famtable tr, .famtable td { display: block; width: 100%; }
+  .famtable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .famtable tbody tr { padding: 6px 16px 12px; }
+  .famtable tbody tr + tr { border-top: 1px solid var(--line); }
+  .famtable td { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0; border: 0; text-align: right; }
+  .famtable td::before { content: attr(data-label); font-size: 13px; font-weight: 600; color: var(--ink-2); text-align: left; }
+  .famtable td.who { padding: 0 0 4px; }
+  .famtable td.who::before { content: none; }
+  .who-in, .famrow-btn { width: 100%; }
+  .famrow-btn { justify-content: space-between; }
+}
+.member-h { font-family: var(--f-display); font-size: 21px; letter-spacing: -0.01em; }
+.success { padding: 16px 18px; border-radius: 16px; background: var(--room-soft); border: 1px solid color-mix(in srgb, var(--room) 35%, transparent); color: var(--ink); gap: 8px; }
+.success-list { margin: 0; padding-left: 18px; font-weight: 600; display: flex; flex-direction: column; gap: 2px; }
+.fill-bar { height: 10px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.fill-bar > span { display: block; height: 100%; background: var(--room-strong); }
+@media (prefers-reduced-motion: no-preference) { .fill-bar > span { transition: width .6s cubic-bezier(.16, 1, .3, 1); } }
+.brokers { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.step.done { display: flex; gap: 10px; align-items: baseline; color: var(--ink-2); font-size: 14px; }
+.step .tick { color: var(--room-ink); font-weight: 700; }
+.step.next { gap: 6px; padding: 14px; border: 1px solid var(--line-strong); border-radius: 12px; }
+.step.later { color: var(--ink-2); opacity: .75; font-size: 14px; }
+.step.quiet { font-size: 13px; }
+.drop.compact { padding: 14px 16px; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 4px; }
