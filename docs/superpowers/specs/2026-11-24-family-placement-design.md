@@ -102,7 +102,7 @@ The headroom-bucket method (placement note §3.6, close to A) is kept as a **tes
 - **"Why?" tooltip:** whose name now and whose after, the tax in each name, and that the money becomes the receiver's for good, counts as their income and passes by their will or nominee. Gifts over ₹5 L get the 15 Nov cooling-off step.
 - **Gift paperwork checklist:** bank transfer from the giver's account, signed gift letter, and for units the off-market or AMC transmission route.
 - **Clubbed members, once per section:** "Not suggested for your spouse or the HUF: money you give them is still taxed as yours."
-- **No room anywhere:** "Your money is already in the lowest-tax names."
+- **Nothing to suggest:** "Nothing to move to another name this season." (It also shows when holdings could not be placed: estimated lots, a season move still to do, an unknown fund type, so it claims no more than that.)
 - **Income missing:** "Add Mum's income to see what moving money to her saves."
 - **Wording:** "could save", never "recommended" or "you should" (GUARDRAILS §6). The Plan's disclaimer covers the section.
 

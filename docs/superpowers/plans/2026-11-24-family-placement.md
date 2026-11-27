@@ -235,7 +235,7 @@
 - **Why?:** the move's `reasons`, plus `{inr(saving10y)} over 10 years, at assumed average returns`
 - **Clubbed line** (once): `Not suggested for {names}: money you give them is still taxed as yours.`
 - **Missing income:** `Add {name}'s income to see what moving money to them could save.`, linking to the member page
-- **Nothing to move:** `Your money is already in the lowest-tax names.`
+- **Nothing to move:** `Nothing to move to another name this season.`
 - **Gift over ₹5 L:** "Mark as done" first asks `This is {inr(value)} that becomes {to}'s for good. Sleep on it?` with `Not yet` / `Mark as done`.
 
 - [ ] **Step 1: Write the failing smoke test** `e2e/smoke.spec.ts › placement section shows a gift to a parent`: use the sample family fixture with a parent at low income and a confirmed SIP in a slab-taxed fund. Expect `Holding in another name`, a line starting `Gift`, `less tax a year`, and the clubbed line for the spouse.

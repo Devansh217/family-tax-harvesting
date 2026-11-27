@@ -9,6 +9,7 @@ import { giftTransferCost, ltRate, roundTripCost, slabRate, stRate, type TaxRule
 import { switchDecision } from './switch';
 import { moveId, retiredMoveIds, type MoveDraft, type RecommendationRecord } from './records';
 import { canGift } from './relations';
+import type { ConfirmedSip } from './sips';
 import { NSE_HOLIDAYS_2027, buybackDate } from './season';
 import { longTermMonthsFor, lotTaxType, summariseYear, type BusinessIncome, type YearSummary } from './tax';
 import { inRange } from './dates';
@@ -40,6 +41,8 @@ export interface FamilyState {
   recommendations?: RecommendationRecord[];
   /** The family's answers for sales whose buy date is unknown (see `Realised.termUnknown`). */
   termAnswers?: TermAnswer[];
+  /** SIP amounts the family confirmed per member and fund (sips.ts); `monthly: 0` means stopped. */
+  confirmedSips?: ConfirmedSip[];
 }
 
 export interface DatedMove { moveId: string; date: ISODate }
@@ -175,7 +178,23 @@ export type Move =
     /** The part of `gain` booked inside the member's tax-free room: made tax-free, like a harvest. */
     taxFreeGain: Paise;
     when: 'now' | 'wait' | 'next_year'; until?: ISODate;
-  });
+  })
+  /**
+   * Placement (placementMoves.ts): a yearly gift of a SIP's money, so the receiver runs the SIP. `value` is the yearly
+   * gift, `qty` 0; `taxAvoided` and `saving` are `savingPerYear`, the ten-year saving averaged per year.
+   */
+  | (MoveBase & { kind: 'place_sip'; fromId: string; toId: string; monthly: Paise; yearlyGift: Paise; savingPerYear: Paise; saving10y: Paise })
+  /** Placement: a gift of held units. `value` is those units' value; `taxAvoided` and `saving` are `savingPerYear`. */
+  | (MoveBase & { kind: 'place_holding'; fromId: string; toId: string; savingPerYear: Paise; saving10y: Paise; approx?: true });
+
+/** A placement move: whose name money sits in over the years. Kept out of this season's lists and totals. */
+export const isPlacement = (m: Move): m is Extract<Move, { kind: 'place_sip' | 'place_holding' }> =>
+  m.kind === 'place_sip' || m.kind === 'place_holding';
+
+/** The member whose units or money a move uses: the giver for a gift or placement. */
+export const giverOf = (m: Move): string => ('fromId' in m ? m.fromId : m.memberId);
+/** The member whose room a move uses or who ends up holding: the receiver for a gift or placement. */
+export const receiverOf = (m: Move): string => ('fromId' in m ? m.toId : m.memberId);
 
 export const isLaterBenefit = (m: Move) => m.kind === 'harvest_gain' || m.kind === 'gift';
 
@@ -843,9 +862,9 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   };
   const marked: Move[] = moves.map((m) => {
     if (m.noRoom) return m;
-    const oldData = oldFor(m.kind === 'gift' ? m.fromId : m.memberId, m.account);
+    const oldData = oldFor(giverOf(m), m.account);
     const usesRoom = m.kind === 'harvest_gain' || m.kind === 'gift' || (m.kind === 'switch_direct' && m.taxFreeGain > 0);
-    const roomMayBeSmaller = usesRoom ? oldestOldOf(m.kind === 'gift' ? m.toId : m.memberId) : undefined;
+    const roomMayBeSmaller = usesRoom ? oldestOldOf(receiverOf(m)) : undefined;
     return { ...m, ...(oldData ? { oldData } : {}), ...(roomMayBeSmaller ? { roomMayBeSmaller } : {}) };
   });
   const oldAccounts: FamilyView['oldAccounts'] = [];
@@ -864,7 +883,7 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   moves.splice(0, moves.length, ...marked);
   const oldRoom: FamilyView['oldRoom'] = [];
   for (const m of moves) {
-    const memberId = m.kind === 'gift' ? m.toId : m.memberId;
+    const memberId = receiverOf(m);
     if (!m.noRoom && m.roomMayBeSmaller && !oldRoom.some((o) => o.memberId === memberId)) oldRoom.push({ memberId, since: m.roomMayBeSmaller });
   }
 

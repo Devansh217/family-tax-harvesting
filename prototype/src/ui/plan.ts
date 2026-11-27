@@ -1,4 +1,4 @@
-import { countingSummaries, isLaterBenefit, isMarked, pnlGroups, taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
+import { countingSummaries, giverOf, isLaterBenefit, isMarked, isPlacement, pnlGroups, taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
 import { doneThisSeason, type RecommendationRecord } from '../engine/records';
 import { APPROX_MARGIN, normAccount, TRIMMING_HOLDINGS_SOURCES } from '../engine/openingLots';
 import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
@@ -13,12 +13,20 @@ export const dateVerb = (kind: Move['kind']) => (kind === 'gift' ? 'Gift and sel
 /** Tax cut this year by a move (losses and waits); harvests, gifts and switches pay off later or in fees. */
 const nowSavingOf = (m: Move) => (m.kind === 'harvest_loss' || m.kind === 'wait' ? m.saving : 0);
 
+/** A placement gift worth more than this asks the family to sleep on it before marking it done (spec 2026-11-24 §5.4). */
+export const SLEEP_ON_IT_ABOVE: Paise = 5_00_000_00;
+export const sleepOnIt = (m: Move) => isPlacement(m) && m.value > SLEEP_ON_IT_ABOVE;
+
+/** "Hari", "Hari and Kabir", "Hari, Kabir and Meera". */
+export const nameList = (names: string[]) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
+
 /**
  * The Plan screen's lists and headline. Done moves (marked, or seen in a statement) leave the open lists for "Done this
  * season", built from their records, so they stay counted after the next import sells the units and the move is gone.
  */
 export function planView(fam: Pick<FamilyView, 'moves' | 'rules'>, records: RecommendationRecord[]) {
-  const done = doneThisSeason(records, fam.rules).map((d) => ({
+  // Placement moves have their own section ("Holding in another name"), so they stay out of these lists and counts.
+  const done = doneThisSeason(records, fam.rules).filter((d) => !isPlacement(d.move)).map((d) => ({
     ...d, label: d.detected ? 'Done, seen in your statement' : 'Marked done',
   }));
   const doneIds = new Set(done.map((d) => d.move.id));
@@ -215,11 +223,12 @@ function yearBefore(date: ISODate): string {
  * none. Null for an exact move or when the room is under ₹1,000 (rounded to ₹100).
  */
 export function cushionNudge(move: Move, fam: Pick<FamilyView, 'tradebookFrom'>): { fy: string | null; rupees: Paise } | null {
-  if (!move.approx || move.noRoom) return null;
+  // A placement uses no room this season, so it leaves none spare.
+  if (!move.approx || move.noRoom || isPlacement(move)) return null;
   const gain = move.kind === 'harvest_loss' ? move.loss : move.gain;
   const rupees = Math.round((Math.abs(gain) * APPROX_MARGIN) / 10_000) * 10_000;
   if (rupees < NUDGE_MIN) return null;
-  const memberId = move.kind === 'gift' ? move.fromId : move.memberId;
+  const memberId = giverOf(move);
   const oldest = fam.tradebookFrom[`${memberId}|${normAccount(move.account)}`];
   return { fy: oldest ? yearBefore(oldest) : null, rupees };
 }

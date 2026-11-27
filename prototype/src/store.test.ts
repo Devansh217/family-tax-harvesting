@@ -251,6 +251,13 @@ describe('migrating saved families', () => {
       .toEqual({ 'FY 2026-27|harvest_gain|m1|INE1|': true, 'FY 2026-27|wait|m1|INE2|': true });
   });
 
+  it('old family without confirmedSips loads with an empty list', () => {
+    expect(normalizeState(oldState({}))!.confirmedSips).toEqual([]);
+    const ok = { memberId: 'm1', isin: 'INF000TEST01', monthly: 10_000_00, confirmedAt: '2026-11-01' };
+    const bad = [{ memberId: 'm1', isin: 'INF1', monthly: -5, confirmedAt: '2026-11-01' }, { memberId: 'm1', monthly: 5, confirmedAt: '2026-11-01' }, { memberId: 'm1', isin: 'INF1', monthly: 5, confirmedAt: 'soon' }];
+    expect(normalizeState(oldState({}, { confirmedSips: [ok, ...bad] }))!.confirmedSips).toEqual([ok]);
+  });
+
   it('normalizeState keeps termAnswers and defaults to none', () => {
     expect(normalizeState(oldState({}))!.termAnswers).toEqual([]);
     const termAnswers = [{ memberId: 'm1', account: 'Zerodha', isin: 'INE1', sellDate: '2026-04-10', term: 'st' as const }];

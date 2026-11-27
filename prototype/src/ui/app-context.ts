@@ -12,6 +12,8 @@ export interface Ctx {
   /** The same family at the previous close, when the site has yesterday's prices. */
   famPrev: FamilyView | null;
   market: Market;
+  /** The funds file has arrived or failed for good: fund categories are known, so moves can be recorded as shown. */
+  marketSettled: boolean;
   cloud: Cloud;
   asOf: ISODate;
   go: (route: string) => void;

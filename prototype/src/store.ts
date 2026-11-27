@@ -1,6 +1,7 @@
 import { classifyByIsin } from './parsers/common';
 import { autoLink } from './engine/links';
 import type { DatedMove, PlannedSale } from './engine/family';
+import type { ConfirmedSip } from './engine/sips';
 import type { Snapshot } from './ui/market';
 import type { RecommendationRecord } from './engine/records';
 import { normAccount, TRIMMING_HOLDINGS_SOURCES } from './engine/openingLots';
@@ -60,13 +61,15 @@ export interface AppState {
   datedMoves: DatedMove[];
   /** The family's answers for sales whose buy date is unknown: a term or a buy date per sale. */
   termAnswers: TermAnswer[];
+  /** SIP amounts the family confirmed per member and fund; `monthly: 0` means stopped. */
+  confirmedSips: ConfirmedSip[];
   /** Harvest season help: the server may read this family on email days, 1 Feb to 31 Mar, to email what is left to do. Off until switched on. */
   alerts?: { seasonHelp: boolean; chosen?: boolean };
 }
 
 
 export const emptyState = (): AppState => ({
-  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [], datedMoves: [], termAnswers: [], alerts: { seasonHelp: false, chosen: false },
+  version: 1, isSample: false, members: [], securities: [], txns: [], positions: [], imports: [], done: {}, plannedSales: [], needSoon: {}, history: [], brokerSummaries: [], taxTypeOverrides: {}, recommendations: [], datedMoves: [], termAnswers: [], confirmedSips: [], alerts: { seasonHelp: false, chosen: false },
 });
 
 /** Shapes saved before the member profile and tax-type changes (Nov 2026). */
@@ -99,6 +102,10 @@ const isDate = (v: unknown) => typeof v === 'string' && ISO_DATE.test(v);
 const validAnswer = (a: TermAnswer) => typeof a.memberId === 'string' && typeof a.account === 'string' && typeof a.isin === 'string'
   && isDate(a.sellDate) && (a.term === 'lt' || a.term === 'st' || isDate(a.buyDate));
 
+/** A saved or restored confirmed SIP: ids as text, a whole-paise amount of zero or more, and a real date. */
+const validSip = (c: ConfirmedSip) => typeof c.memberId === 'string' && typeof c.isin === 'string'
+  && Number.isInteger(c.monthly) && c.monthly >= 0 && isDate(c.confirmedAt);
+
 /**
  * Saves the family's answer for one sale whose buy date is unknown, replacing any earlier answer for that sale (same
  * member, ISIN, sale date and account, whatever its spaces and case). An answer with no term and no buy date clears it.
@@ -121,6 +128,7 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
     securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
     plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
     brokerSummaries: s.brokerSummaries ?? [], taxTypeOverrides: s.taxTypeOverrides ?? {}, recommendations: s.recommendations ?? [], datedMoves: s.datedMoves ?? [], termAnswers: Array.isArray(s.termAnswers) ? s.termAnswers.filter((a) => a && typeof a === 'object' && validAnswer(a)) : [],
+    confirmedSips: Array.isArray(s.confirmedSips) ? s.confirmedSips.filter((c) => c && typeof c === 'object' && validSip(c)) : [],
     alerts: { seasonHelp: s.alerts?.seasonHelp === true, chosen: s.alerts?.chosen === true },
   };
 }
@@ -139,7 +147,7 @@ export function parseBackup(text: string): AppState | null {
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const LIST_FIELDS = ['members', 'securities', 'txns', 'positions', 'imports', 'plannedSales', 'history', 'brokerSummaries', 'recommendations', 'datedMoves', 'termAnswers'];
+const LIST_FIELDS = ['members', 'securities', 'txns', 'positions', 'imports', 'plannedSales', 'history', 'brokerSummaries', 'recommendations', 'datedMoves', 'termAnswers', 'confirmedSips'];
 const MAP_FIELDS = ['done', 'needSoon', 'taxTypeOverrides'];
 
 /**

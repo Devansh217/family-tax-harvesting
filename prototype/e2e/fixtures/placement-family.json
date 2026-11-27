@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "isSample": false,
+  "ackGuidance": true,
+  "members": [
+    { "id": "g", "name": "Gita", "relation": "self", "age": 42, "regime": "new", "type": "person", "income": [{ "kind": "other", "amount": 300000000, "from": "manual" }] },
+    { "id": "h", "name": "Hari", "relation": "spouse", "age": 43, "regime": "new", "type": "person", "income": [{ "kind": "other", "amount": 180000000, "from": "manual" }] },
+    { "id": "p", "name": "Pushpa", "relation": "parent", "age": 66, "regime": "new", "type": "person", "income": [{ "kind": "other", "amount": 30000000, "from": "manual" }] }
+  ],
+  "securities": [
+    { "isin": "INF0TESTD001", "name": "Test Bond Fund", "taxType": "slab", "listed": false, "category": "Debt Scheme - Corporate Bond Fund", "price": 1000 }
+  ],
+  "txns": [],
+  "positions": [],
+  "imports": [],
+  "done": {},
+  "plannedSales": [],
+  "needSoon": {},
+  "history": [],
+  "brokerSummaries": [],
+  "taxTypeOverrides": {},
+  "recommendations": [],
+  "datedMoves": [],
+  "termAnswers": [],
+  "confirmedSips": [{ "memberId": "g", "isin": "INF0TESTD001", "monthly": 2000000, "confirmedAt": "2026-11-01" }],
+  "alerts": { "seasonHelp": false, "chosen": true }
+}
