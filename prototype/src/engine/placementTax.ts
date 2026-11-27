@@ -130,7 +130,17 @@ function finalSale(member: Member, start: ProjectionStart, slices: Slice[], asOf
  * between slices.
  */
 export function tenYearTax(member: Member, start: ProjectionStart, slices: Slice[], asOf: ISODate, years: number = PLACEMENT_YEARS): Paise {
-  if (slices.length === 0 || years < 1) return 0;
+  return tenYearTaxDetail(member, start, slices, asOf, years).tax;
+}
+
+/**
+ * `tenYearTax`, and whether the final year sits in the marginal-relief band: `taxForYear` gives marginal relief while
+ * the year holds special-rate gains (short- or long-term equity, other long-term). Issue #49
+ * (https://github.com/Devansh217/family-tax-harvesting/issues/49): that relief may not cover capital-gains tax, so the
+ * placement solver keeps members out of the band.
+ */
+export function tenYearTaxDetail(member: Member, start: ProjectionStart, slices: Slice[], asOf: ISODate, years: number = PLACEMENT_YEARS): { tax: Paise; reliefBand: boolean } {
+  if (slices.length === 0 || years < 1) return { tax: 0, reliefBand: inReliefBand(member, start, slices, asOf, years) };
   const sale = finalSale(member, start, slices, asOf, years);
   const date = yearDate(asOf, years);
   const r = rulesOn(date);
@@ -142,7 +152,16 @@ export function tenYearTax(member: Member, start: ProjectionStart, slices: Slice
   const m = memoOf(member, start), key = `b${years === 1 ? 1 : ''}|${date}`;
   let without = m.get(key);
   if (without === undefined) { without = taxForYear(member, start.normal, base, r, date).tax; m.set(key, without); }
-  return Math.max(0, taxForYear(member, start.normal, withSale, r, date).tax - without);
+  const t = taxForYear(member, start.normal, withSale, r, date);
+  return { tax: Math.max(0, t.tax - without), reliefBand: bandOf(withSale, t.marginalRelief) };
+}
+
+const bandOf = (b: GainBuckets, relief: Paise) => relief > 0 && b.equitySt + b.equityLt + b.otherLt > 0;
+
+/** Whether this member's final year, with these slices, sits in the marginal-relief band (see `tenYearTaxDetail`). */
+export function inReliefBand(member: Member, start: ProjectionStart, slices: Slice[], asOf: ISODate, years: number = PLACEMENT_YEARS): boolean {
+  const { buckets, date } = finalYearBuckets(member, start, slices, asOf, years);
+  return bandOf(buckets, taxForYear(member, start.normal, buckets, rulesOn(date), date).marginalRelief);
 }
 
 /**

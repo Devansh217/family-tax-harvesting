@@ -1,5 +1,5 @@
 import { addMonths } from './dates';
-import { finalYearIncome, PLACEMENT_YEARS, tenYearTax, type ProjectionStart, type Slice, type TaxClass } from './placementTax';
+import { finalYearIncome, PLACEMENT_YEARS, tenYearTaxDetail, type ProjectionStart, type Slice, type TaxClass } from './placementTax';
 import { canGift } from './relations';
 import { basicExemption, rulesFor } from './rules';
 import { taxForYear } from './tax';
@@ -69,10 +69,17 @@ export const ROUND_HOLDING: Paise = 1_000_00;
 /** …and to this a month for a SIP. */
 export const ROUND_SIP_MONTHLY: Paise = 500_00;
 
-/** Most rounds of the role search. */
 /** Most sizes tried on each side of a pair swap. */
 export const PAIR_SIZES = 6;
+/** Most rounds of the role search. */
 export const ROLE_ROUNDS = 3;
+/**
+ * Added to a member's tax when a state puts them in the marginal-relief band (see `tenYearTaxDetail`) and they were
+ * not in it at baseline, so every pass rejects such a state. Issue #49
+ * (https://github.com/Devansh217/family-tax-harvesting/issues/49): remove this guard if #49 settles that the relief
+ * does cover special-rate tax.
+ */
+const BAND_REJECT: Paise = 1e13;
 
 const MONTHS = 12;
 const NONE = { equitySt: 0, equityLt: 0, otherLt: 0, slab: 0 };
@@ -93,7 +100,10 @@ interface Ctx {
   /** Allowed receivers per asset (empty when the asset can't move). */
   receivers: number[][];
   amt: number[][];
-  cache: Array<Map<string, Paise>>;
+  /** Per member, by holdings: the tax and whether the final year is in the marginal-relief band. */
+  cache: Array<Map<string, { tax: Paise; band: boolean }>>;
+  /** Who is in the band at baseline (they may stay there; nobody else may enter it). */
+  baseBand: boolean[];
   lines: Map<number, Paise>;
   /** When set, only these members may give and only the others may receive (the role search below). */
   allow: boolean[] | null;
@@ -106,7 +116,8 @@ const baseOf = (a: PlaceAsset) => (a.kind === 'sip' && a.yearlyAdd > 0 ? a.yearl
 function build(p: PlacementProblem): Ctx {
   const members = byId(p.members);
   const idx = new Map(members.map((m, i) => [m.id, i]));
-  const assets = byId(p.assets.filter((a) => idx.has(a.ownerId)));
+  for (const a of p.assets) if (!idx.has(a.ownerId)) throw new Error(`Placement: asset ${a.id} belongs to ${a.ownerId}, who is not a member`);
+  const assets = byId(p.assets);
   const starts = members.map((m) => p.starts[m.id] ?? null);
   const owner = assets.map((a) => idx.get(a.ownerId)!);
   const base = assets.map((a) => Math.max(0, baseOf(a)));
@@ -116,7 +127,9 @@ function build(p: PlacementProblem): Ctx {
     return members.flatMap((m, j) => (j !== owner[i] && starts[j] != null && canGift(g, m, p.members, p.asOf) ? [j] : []));
   });
   const amt = assets.map((_, i) => members.map((_, j) => (j === owner[i] ? base[i]! : 0)));
-  return { p, years: p.years ?? PLACEMENT_YEARS, members, starts, assets, base, owner, receivers, amt, cache: members.map(() => new Map()), lines: new Map(), allow: null };
+  const c: Ctx = { p, years: p.years ?? PLACEMENT_YEARS, members, starts, assets, base, owner, receivers, amt, cache: members.map(() => new Map()), baseBand: [], lines: new Map(), allow: null };
+  c.baseBand = members.map((_, m) => detailOf(c, m).band);
+  return c;
 }
 
 const clone = (c: Ctx): Ctx => ({ ...c, amt: c.amt.map((row) => [...row]) });
@@ -133,17 +146,26 @@ function slicesOf(c: Ctx, m: number): Slice[] {
   return out;
 }
 
-function taxOf(c: Ctx, m: number): Paise {
+function detailOf(c: Ctx, m: number): { tax: Paise; band: boolean } {
   const s = c.starts[m];
-  if (s == null) return 0;
+  if (s == null) return { tax: 0, band: false };
   let key = '';
   for (let i = 0; i < c.assets.length; i++) { const x = c.amt[i]![m]!; if (x > 0) key += `${i}:${x},`; }
   const hit = c.cache[m]!.get(key);
   if (hit !== undefined) return hit;
-  const t = tenYearTax(c.members[m]!, s, slicesOf(c, m), c.p.asOf, c.years);
-  c.cache[m]!.set(key, t);
-  return t;
+  const d = tenYearTaxDetail(c.members[m]!, s, slicesOf(c, m), c.p.asOf, c.years);
+  const out = { tax: d.tax, band: d.reliefBand };
+  c.cache[m]!.set(key, out);
+  return out;
 }
+
+/** The member's ten-year tax, plus `BAND_REJECT` when this state newly puts them in the marginal-relief band (#49). */
+function taxOf(c: Ctx, m: number): Paise {
+  const d = detailOf(c, m);
+  return d.band && !c.baseBand[m] ? d.tax + BAND_REJECT : d.tax;
+}
+/** The family's tax without the band guard: the figure shown. */
+const realTax = (c: Ctx) => c.members.reduce((sum, _, m) => sum + detailOf(c, m).tax, 0);
 
 const familyTax = (c: Ctx) => c.members.reduce((sum, _, m) => sum + taxOf(c, m), 0);
 
@@ -377,7 +399,8 @@ function bucketFill(c: Ctx) {
     for (const r of rs) {
       const { gave, got } = roles(c);
       const held = c.amt[i]![o]!;
-      if (held <= 0 || got[o] || gave[r]) break;
+      if (held <= 0 || got[o]) break;
+      if (gave[r]) continue;
       const t0 = taxOf(c, r);
       const free = (x: Paise) => { apply(c, i, o, r, x); const ok = taxOf(c, r) <= t0; apply(c, i, r, o, x); return ok; };
       let x: Paise;
@@ -417,7 +440,7 @@ function credits(c: Ctx, plan: Paise) {
       const x = c.amt[i]![r]!;
       if (r === o || x <= 0) continue;
       apply(c, i, r, o, x);
-      out.push({ i, r, saving: familyTax(c) - plan });
+      out.push({ i, r, saving: realTax(c) - plan });
       apply(c, i, o, r, x);
     }
   }
@@ -428,11 +451,12 @@ function credits(c: Ctx, plan: Paise) {
 function finish(c: Ctx, baselineTax: Paise): PlacementResult {
   for (;;) {
     roundAll(c);
-    const plan = familyTax(c);
+    const plan = realTax(c);
     const list = credits(c, plan).map((x) => ({ ...x, perYear: Math.round(x.saving / c.years / 100) * 100 }));
     const worst = list.reduce<(typeof list)[number] | null>((w, x) => (!w || x.perYear < w.perYear ? x : w), null);
     if (worst && worst.perYear < MIN_SAVING_PER_YEAR) { apply(c, worst.i, worst.r, c.owner[worst.i]!, c.amt[worst.i]![worst.r]!); continue; }
-    if (plan > baselineTax) return { placements: [], baselineTax, planTax: baselineTax };
+    // familyTax carries the band guard (#49): a rounded plan that newly puts someone in the band is not returned.
+    if (familyTax(c) > baselineTax) return { placements: [], baselineTax, planTax: baselineTax };
     const placements = list.map(({ i, r, saving, perYear }) => ({
       assetId: c.assets[i]!.id, fromId: c.members[c.owner[i]!]!.id, toId: c.members[r]!.id,
       share: c.amt[i]![r]! / c.base[i]!, savingPerYear: perYear, saving10y: saving,

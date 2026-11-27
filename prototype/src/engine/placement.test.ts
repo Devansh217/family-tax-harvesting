@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bucketCheck, MIN_SAVING_PER_YEAR, solvePlacement, type PlaceAsset, type PlacementProblem, type PlacementResult } from './placement';
-import { finalYearBuckets, tenYearTax, type ProjectionStart, type Slice } from './placementTax';
-import { rulesFor } from './rules';
-import { taxForYear } from './tax';
+import { inReliefBand, tenYearTax, type ProjectionStart, type Slice } from './placementTax';
 import { canGift } from './relations';
 import type { Member, Paise } from './types';
 
@@ -60,6 +58,41 @@ describe('solvePlacement', () => {
     };
     expect(solvePlacement(p).placements).toEqual([]);
     expect(bucketCheck(p).placements).toEqual([]);
+  });
+
+  // Issue #49 band guard. Earner at 30 L owns an other-long-term fund, 10 L with a 9 L gain, at 0% return; the parent
+  // has 4 L income (no basic-exemption gap left). Baseline: 9 L * 12.5% * 1.04 = 1,17,000.
+  // Unguarded, 90% to the parent would park her at 12.1 L, where marginal relief caps her tax at the 0.1 L over the
+  // line: 0.1 L * 1.04 = 10,400, plus the earner's 0.9 L * 12.5% * 1.04 = 11,700, so 22,100 in all.
+  // Guarded, the parent may hold at most 8 L of gain (income 12 L, out of the band) and pays the same 12.5% on it as
+  // the earner, so nothing is worth moving: no placement and no member newly in the band.
+  it('keeps members out of the marginal-relief band (#49)', () => {
+    const p: PlacementProblem = {
+      members: [earner, parent],
+      starts: { earner: start(30 * L), parent: start(4 * L) },
+      assets: [asset('gold', 'earner', { taxClass: 'other_lt', value: 10 * L, gain: 9 * L, annualReturn: 0 })],
+      asOf: ASOF,
+    };
+    const a = p.assets[0]!;
+    expect(tenYearTax(earner, p.starts.earner!, [sliceOf(a, 1)], ASOF)).toBe(1_17_000_00);
+    const trap = tenYearTax(parent, p.starts.parent!, [sliceOf(a, 0.9)], ASOF) + tenYearTax(earner, p.starts.earner!, [sliceOf(a, 0.1)], ASOF);
+    expect(trap).toBe(22_100_00);
+    expect(inReliefBand(parent, p.starts.parent!, [sliceOf(a, 0.9)], ASOF)).toBe(true);
+    const r = solvePlacement(p);
+    expect(r.baselineTax).toBe(1_17_000_00);
+    expect(r.planTax).toBe(1_17_000_00);
+    expect(r.placements).toEqual([]);
+    for (const m of p.members) {
+      const held = r.placements.filter((x) => x.toId === m.id).map((x) => sliceOf(a, x.share));
+      const own = m.id === 'earner' ? [sliceOf(a, 1 - r.placements.reduce((t, x) => t + x.share, 0))] : held;
+      expect(inReliefBand(m, p.starts[m.id]!, own, ASOF)).toBe(false);
+    }
+  });
+
+  it('rejects an asset whose owner is not a member', () => {
+    const p: PlacementProblem = { members: [earner, parent], starts: { earner: start(30 * L), parent: start(3 * L) }, assets: [asset('x', 'ghost')], asOf: ASOF };
+    expect(() => solvePlacement(p)).toThrow(/ghost/);
+    expect(() => bucketCheck(p)).toThrow(/ghost/);
   });
 
   it('member without income is never a receiver', () => {
@@ -140,28 +173,20 @@ describe('solvePlacement', () => {
 
   it('matches brute force', () => {
     const rnd = prng(7);
-    let equal = 0, n = 0, worst = 0, excepted = 0;
+    let equal = 0, n = 0, worst = 0;
     for (let i = 0; i < 100; i++) {
       const p = randomFamily(rnd);
-      const { best, choice } = bruteForce(p);
+      const { best } = bruteForce(p);
       const r = solvePlacement(p);
       n++;
       // Taxes are rounded to the rupee per member, and slices scale amounts with Math.round, so allow ₹1 a member.
       if (r.planTax <= best + p.members.length * 100) equal++;
-      // Exception, issue #49 (https://github.com/Devansh217/family-tax-harvesting/issues/49): taxForYear's marginal relief above the 12 L line also cuts tax on special-rate gains, so
-      // a member just over the line can pay far less than one under it. The oracle finds plans that sit in that band;
-      // the solver must not chase a reading that is unconfirmed (an anti-goal), so such families skip the 0.5% bar.
-      // They still count towards the 95% equal bar, and at most 2 of the 100 may be excepted. Only a family that
-      // misses the bar is excepted (and counted): plans can sit in the band and still match.
-      const bar = Math.max(best * 1.005, best + p.members.length * 100);
-      if (r.planTax > bar && inReliefBand(p, choice)) { excepted++; continue; }
       const miss = best > 0 ? (r.planTax - best) / best : r.planTax > best + p.members.length * 100 ? Infinity : 0;
       worst = Math.max(worst, miss);
-      expect(r.planTax, `family ${i}`).toBeLessThanOrEqual(bar);
+      expect(r.planTax, `family ${i}`).toBeLessThanOrEqual(Math.max(best * 1.005, best + p.members.length * 100));
     }
     expect(equal / n).toBeGreaterThanOrEqual(0.95);
     expect(worst).toBeLessThanOrEqual(0.005);
-    expect(excepted).toBeLessThanOrEqual(2);
   });
 
   it('is deterministic', () => {
@@ -306,16 +331,24 @@ function bruteForce(p: PlacementProblem, rawOracle = false): { best: Paise; choi
     if (t === undefined) { t = tenYearTax(m, p.starts[m.id]!, parts.map(([a, q]) => sliceOf(a, q / 4)), p.asOf); cache.set(key, t); }
     return t;
   };
-  const familyTax = (ch: Array<Record<string, number>>) => {
+  // Holdings of member m under a choice (quarters per asset).
+  const partsOf = (m: Member, ch: Choice) => {
+    const parts: Array<[PlaceAsset, number]> = [];
+    p.assets.forEach((a, j) => { const q = ch[j]![m.id] ?? 0; if (q > 0) parts.push([a, q]); });
+    return parts;
+  };
+  const baseChoice: Choice = p.assets.map((a) => ({ [a.ownerId]: 4 }));
+  const baseBand = new Map(p.members.map((m) => [m.id, inBand(p, m, baseChoice)]));
+  const familyTax = (ch: Choice) => {
     let total = 0;
     for (const m of p.members) {
       if (p.starts[m.id] == null) continue;
-      const parts: Array<[PlaceAsset, number]> = [];
-      p.assets.forEach((a, j) => { const q = ch[j]![m.id] ?? 0; if (q > 0) parts.push([a, q]); });
-      total += taxOf(m, parts);
+      total += taxOf(m, partsOf(m, ch));
     }
     return total;
   };
+  // The solver's band guard (#49), so the oracle compares like with like: nobody newly in the marginal-relief band.
+  const guardOk = (ch: Choice) => p.members.every((m) => baseBand.get(m.id) || !inBand(p, m, ch));
   let best = Infinity, bestChoice: Choice = [];
   const choice: Choice = [];
   const walk = (i: number) => {
@@ -323,6 +356,7 @@ function bruteForce(p: PlacementProblem, rawOracle = false): { best: Paise; choi
       const gave = new Set<string>(), got = new Set<string>();
       p.assets.forEach((a, j) => { for (const [h, q] of Object.entries(choice[j]!)) if (q > 0 && h !== a.ownerId) { gave.add(a.ownerId); got.add(h); } });
       for (const g of gave) if (got.has(g)) return;
+      if (!guardOk(choice)) return;
       const total = familyTax(choice);
       // The plan drops any placement saving under MIN_SAVING_PER_YEAR on its own, so the oracle keeps the same rule.
       if (!rawOracle) {
@@ -344,19 +378,12 @@ function bruteForce(p: PlacementProblem, rawOracle = false): { best: Paise; choi
 
 type Choice = Array<Record<string, number>>;
 
-/**
- * Issue #49 (https://github.com/Devansh217/family-tax-harvesting/issues/49): does some member, in the final year of this plan, get marginal relief while holding special-rate gains?
- * That is the band where taxForYear's relief cuts capital-gains tax.
- */
-function inReliefBand(p: PlacementProblem, choice: Choice): boolean {
-  return p.members.some((m) => {
-    const s = p.starts[m.id];
-    if (s == null) return false;
-    const slices = p.assets.flatMap((a, j) => { const q = choice[j]?.[m.id] ?? 0; return q > 0 ? [sliceOf(a, q / 4)] : []; });
-    if (slices.length === 0) return false;
-    const { buckets: b, date } = finalYearBuckets(m, s, slices, p.asOf, p.years);
-    return b.equitySt + b.equityLt + b.otherLt > 0 && taxForYear(m, s.normal, b, rulesFor(date), date).marginalRelief > 0;
-  });
+/** Is member m in the marginal-relief band (#49) under this choice? Uses the engine's own helper. */
+function inBand(p: PlacementProblem, m: Member, choice: Choice): boolean {
+  const s = p.starts[m.id];
+  if (s == null) return false;
+  const slices = p.assets.flatMap((a, j) => { const q = choice[j]?.[m.id] ?? 0; return q > 0 ? [sliceOf(a, q / 4)] : []; });
+  return inReliefBand(m, s, slices, p.asOf, p.years);
 }
 
 function checkInvariants(p: PlacementProblem, r: PlacementResult) {
