@@ -250,8 +250,10 @@ for (const size of SIZES) {
         await expect(page.getByText('Based on data from 31 Mar 2026. Check you still hold these before acting.').first()).toBeVisible();
         await expect(page.getByText(/the tax-free room may be smaller/).first()).toBeVisible();
         await expect(page.getByText(/Olga's Zerodha: newest data from 31 Mar 2026/)).toBeVisible();
+        await expect(page.getByText("Olga's tax-free room: gains booked since 31 Mar 2026 aren't counted. Import this year's tax P&L.")).toBeVisible();
         await open(page, 'home');
         await expect(page.getByText('Based on data from 31 Mar 2026. Check you still hold these before acting.').first()).toBeVisible();
+        await expect(page.getByText(/^Leaves out (1 move that rests|\d+ moves that rest) on old data\. See the plan\.$/)).toBeVisible();
       });
 
       test('importing the same tradebook twice names the earlier file the second time', async ({ page }) => {

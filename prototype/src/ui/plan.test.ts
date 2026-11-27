@@ -174,4 +174,32 @@ describe('old-data marks (plan)', () => {
       text: "Asha's Zerodha: newest data from 31 Mar 2026, so its moves may be out of date. Import today's holdings file.",
     });
   });
+
+  it('planView laterSaving leaves out a marked gift and a marked switch, keeps unmarked ones', () => {
+    const gift = (id: string, extra: Partial<Move> = {}) =>
+      ({ id: `FY 2026-27|gift|${id}`, kind: 'gift', fromId: 'a', toId: 'p', gain: 1_000_00, saving: 100_00, taxAvoided: 100_00, noRoom: false, ...extra }) as unknown as Move;
+    const sw = (id: string, extra: Partial<Move> = {}) =>
+      ({ id: `FY 2026-27|switch_direct|${id}`, kind: 'switch_direct', memberId: 'a', gain: 0, taxFreeGain: 0, taxAvoided: 20_00, saving: 0, feeSavedPerYear: 5_00, noRoom: false, ...extra }) as unknown as Move;
+    const v = planView({ moves: [gift('g1'), gift('g2', { roomMayBeSmaller: '2026-03-31' }), sw('s1'), sw('s2', { oldData: '2026-03-31' })], rules: FY_2026_27 }, []);
+    expect(v.laterSaving).toBe(100_00 + 20_00);
+  });
+
+  it('planView nowTotal leaves out a marked harvest_loss', () => {
+    const loss = (id: string, extra: Partial<Move> = {}) =>
+      ({ id: `FY 2026-27|harvest_loss|${id}`, kind: 'harvest_loss', memberId: 'a', loss: 1_000_00, term: 'st', saving: 200_00, taxAvoided: 200_00, noRoom: false, ...extra }) as unknown as Move;
+    const v = planView({ moves: [loss('l1'), loss('l2', { oldData: '2026-03-31' })], rules: FY_2026_27 }, []);
+    expect(v.nowTotal).toBe(200_00);
+  });
+
+  it('planGaps adds one old_room line per member, after their old_data lines', () => {
+    const f = computeFamily({ members: [{ id: 'a', name: 'Asha', relation: 'self', age: 40, regime: 'new', income: [] }], securities: [{ isin: 'INE1', name: 'S', taxType: 'equity', listed: true, price: 100_00 }], txns: [{ id: 't', memberId: 'a', isin: 'INE1', date: '2025-01-01', side: 'buy', qty: 10_000, amount: 50_00, source: 'x', estimated: false }] }, '2026-11-22', FY_2026_27);
+    const gaps = planGaps({ ...f, oldAccounts: [{ memberId: 'a', account: 'Zerodha', newest: '2026-03-31' }], oldRoom: [{ memberId: 'a', since: '2026-03-31' }] }, []);
+    const keys = gaps.map((g) => g.key);
+    expect(keys.filter((k) => k === 'old_room')).toHaveLength(1);
+    expect(keys.indexOf('old_room')).toBe(keys.indexOf('old_data') + 1);
+    expect(gaps.find((g) => g.key === 'old_room')).toMatchObject({
+      memberId: 'a', href: '#import-a', action: 'Import',
+      text: "Asha's tax-free room: gains booked since 31 Mar 2026 aren't counted. Import this year's tax P&L.",
+    });
+  });
 });

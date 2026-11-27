@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { QTY_SCALE, type Txn } from './types';
 import type { HeldPosition } from './openingLots';
-import { OLD_DATA_DAYS, accountKey, isOld, newestEvidence } from './freshness';
+import { OLD_DATA_DAYS, accountKey, isOld, newestEvidence, newestRoomEvidence } from './freshness';
 
 const buy = (date: string, source: string, account: string): Txn => ({
   id: `${source}|${date}`, memberId: 'a', isin: 'INE000A01010', date, side: 'buy', qty: QTY_SCALE, amount: 100_00, source, account,
@@ -44,15 +44,18 @@ describe('newest evidence per account', () => {
     expect(isOld('2026-03-31', '2026-11-24')).toBe(true);
   });
 
-  it('fundStatements: false leaves a fund-CAS-only account undated', () => {
-    const m = newestEvidence({
-      txns: [
-        buy('2026-01-15', 'Mutual fund CAS (CAMS / KFintech)', 'Folio 123/45'), buy('2026-03-31', 'Mutual fund CAS (CAMS / KFintech)', 'Folio 123/45'),
-        buy('2026-05-01', 'Trade history (Zerodha)', 'Zerodha'),
-      ],
-    }, { fundStatements: false });
-    expect(m.has(accountKey('a', 'Folio 123/45'))).toBe(false);
-    expect(m.get(accountKey('a', 'Zerodha'))).toBe('2026-05-01');
+  it('room evidence leaves out holdings files: they date the units, not gains booked since', () => {
+    const state = {
+      txns: [buy('2026-03-31', 'Trade history (Zerodha)', 'Zerodha'), buy('2026-02-01', 'Mutual fund CAS (CAMS / KFintech)', 'Folio 123/45')],
+      positions: [held('2026-11-20'), held('2026-11-20', 'Angel One')],
+      brokerSummaries: [pnl('2026-04-01', '2026-06-30', 'Upstox')],
+    };
+    const room = newestRoomEvidence(state);
+    expect(room.get('a|zerodha')).toBe('2026-03-31');
+    expect(room.get(accountKey('a', 'Folio 123/45'))).toBe('2026-02-01');
+    expect(room.get('a|upstox')).toBe('2026-06-30');
+    expect(room.has('a|angel one')).toBe(false);
+    expect(newestEvidence(state).get('a|zerodha')).toBe('2026-11-20');
   });
 
   it('a combined CAS dates its folio accounts too', () => {

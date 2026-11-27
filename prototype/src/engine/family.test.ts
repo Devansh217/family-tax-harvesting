@@ -3,6 +3,7 @@ import { computeFamily, simulateSale } from './family';
 import { NSE_HOLIDAYS_2027, buybackDate } from './season';
 import { FY_2026_27 as R } from './rules';
 import { QTY_SCALE, type Member, type Security, type Txn } from './types';
+import type { HeldPosition } from './openingLots';
 
 const q = (n: number) => Math.round(n * QTY_SCALE);
 const rs = (n: number) => Math.round(n * 100);
@@ -704,14 +705,64 @@ describe('old data marks', () => {
     expect(fam.oldAccounts).toEqual([]);
   });
 
-  it('a fund-CAS-only account gets no marks', () => {
+  it('fund-statement trades count: an old fund-CAS-only folio marks its harvest', () => {
     const cas = (date: string): Txn => ({ ...buy('a', 'X', date, 250, 1000), source: 'Mutual fund CAS (CAMS / KFintech)', account: 'Folio 123/45' });
     const fam = computeFamily({
       members: [person('a', 'self')], securities: [sec('X', 2000)],
       txns: [cas('2023-01-01'), cas(OLD)],
     }, ASOF, R);
-    expect(fam.moves.length).toBeGreaterThan(0);
-    expect(fam.moves.every((m) => m.oldData === undefined && m.roomMayBeSmaller === undefined)).toBe(true);
+    const h = fam.moves.find((x) => x.kind === 'harvest_gain' && x.account === 'Folio 123/45')!;
+    expect(h).toBeDefined();
+    expect(h.oldData).toBe(OLD);
+    expect(h.roomMayBeSmaller).toBe(OLD);
+    expect(fam.oldAccounts).toEqual([{ memberId: 'a', account: 'Folio 123/45', newest: OLD }]);
+  });
+
+  it('a fresh holdings file clears oldData but not roomMayBeSmaller: it dates the units, not gains booked since', () => {
+    const pos = (isin: string, units: number): HeldPosition => ({ memberId: 'a', isin, account: 'Zerodha', qty: q(units), asOf: ASOF, source: 'Zerodha holdings', canTrim: true });
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities: [sec('X', 2000), sec('Y', 1000)],
+      txns: [tb('a', 'X', '2023-01-01', 500, 1000, 'Zerodha'), tb('a', 'Y', OLD, 10, 1000, 'Zerodha')],
+      positions: [pos('X', 500), pos('Y', 10)],
+    }, ASOF, R);
+    const h = fam.moves.find((x) => x.kind === 'harvest_gain' && x.isin === 'X')!;
+    expect(h).toBeDefined();
+    expect(h.oldData).toBeUndefined();
+    expect(h.roomMayBeSmaller).toBe(OLD);
     expect(fam.oldAccounts).toEqual([]);
+    expect(fam.oldRoom).toEqual([{ memberId: 'a', since: OLD }]);
+  });
+
+  it('a switch to direct outside the room on an old account gets oldData, never roomMayBeSmaller', () => {
+    const reg: Security = { isin: 'INFREG', name: 'Reg Fund - Regular Plan - Growth', taxType: 'equity', listed: false, category: 'Equity Scheme - Large Cap Fund', plan: 'regular', price: rs(180) };
+    const fill: Security = { isin: 'FILL', name: 'Fill', taxType: 'equity', listed: false };
+    const cas = (isin: string, date: string, units: number, priceRs: number): Txn => ({ ...buy('a', isin, date, units, priceRs), source: 'Mutual fund CAS (CAMS / KFintech)', account: 'Folio 9' });
+    // A big gain booked this year leaves no room, so the switch books none of its gain tax-free.
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities: [reg, fill],
+      txns: [cas('INFREG', '2023-01-01', 1000, 100), cas('FILL', '2020-01-01', 100, 100),
+        { id: 'sFILL', memberId: 'a', isin: 'FILL', date: '2026-05-01', side: 'sell', qty: q(100), amount: rs(100 * 5000), source: 'Mutual fund CAS (CAMS / KFintech)', account: 'Folio 9' }],
+    }, ASOF, R);
+    const sw = fam.moves.find((x) => x.kind === 'switch_direct')!;
+    expect(sw).toBeDefined();
+    expect(sw.kind === 'switch_direct' && sw.taxFreeGain).toBe(0);
+    expect(sw.oldData).toBe('2026-05-01');
+    expect(sw.roomMayBeSmaller).toBeUndefined();
+    expect(fam.oldRoom).toEqual([]);
+  });
+
+  it('a dated move with no room left on an old account gets no marks', () => {
+    const sold: Txn = { id: 's1', memberId: 'a', isin: 'X', date: '2026-06-01', side: 'sell', qty: q(125), amount: rs(125 * 2000), source: 'test' };
+    const id = `${R.label}|harvest_gain|a|X|Zerodha`;
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities: [sec('X', 2000)],
+      txns: [tb('a', 'X', '2023-01-01', 500, 1000, 'Zerodha'), tb('a', 'X', OLD, 1, 1000, 'Zerodha'), { ...sold, account: 'Zerodha' }],
+      datedMoves: [{ moveId: id, date: '2026-12-04' }],
+    }, ASOF, R);
+    const m = fam.moves.find((x) => x.id === id)!;
+    expect(m).toMatchObject({ noRoom: true });
+    expect(m.oldData).toBeUndefined();
+    expect(m.roomMayBeSmaller).toBeUndefined();
+    expect(fam.oldRoom).toEqual([]);
   });
 });

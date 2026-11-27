@@ -1,5 +1,5 @@
 import { isElssFund } from './categories';
-import { accountKey, isOld, newestEvidence } from './freshness';
+import { accountKey, isOld, newestEvidence, newestRoomEvidence } from './freshness';
 import { addMonths, daysBetween, isLongTerm, longTermFrom } from './dates';
 import { buildLedger, effectiveCost, lotKey, lotTerms, prorate, saleTerms } from './ledger';
 import { APPROX_MARGIN, countingPositions, effectiveTxnsWithNotes, isTradebook, normAccount, type CorporateActionNote, type HeldPosition, type TrimNote } from './openingLots';
@@ -160,7 +160,7 @@ interface MoveBase {
   approx?: boolean;
   /** The newest date of this move's account (the giver's, for a gift), set when that is 30+ days old: the units may have changed since. */
   oldData?: ISODate;
-  /** Set on a harvest, gift or in-room switch when the member whose room it uses has an old account; the oldest such date. */
+  /** Set on a harvest, gift or in-room switch when the member whose room it uses has an account whose room evidence (trades, fund statements, Tax P&Ls; not holdings files) is old; the oldest such date. */
   roomMayBeSmaller?: ISODate;
 }
 export type Move =
@@ -176,6 +176,9 @@ export type Move =
   });
 
 export const isLaterBenefit = (m: Move) => m.kind === 'harvest_gain' || m.kind === 'gift';
+
+/** A move resting on old data, or whose room may be smaller: shown, but left out of the headlines. */
+export const isMarked = (m: Move) => !!(m.oldData || m.roomMayBeSmaller);
 
 /** Gain a move makes tax-free: a harvest's or gift's whole gain, and the in-room part of a switch to direct. */
 export const taxFreeGainOf = (m: Move): Paise =>
@@ -213,6 +216,8 @@ export interface FamilyView {
   holdingsNotes: HoldingsNotes;
   /** Each account with newest data 30+ days old in which a member holds something. */
   oldAccounts: Array<{ memberId: string; account: string; newest: ISODate }>;
+  /** Each member whose room a move uses while that room rests on old data (`roomMayBeSmaller`), in move order. */
+  oldRoom: Array<{ memberId: string; since: ISODate }>;
   /** The saved positions that count (`countingPositions`): older holdings files of an account with a newer one left out. */
   positions: HeldPosition[];
   /** The date of the oldest tradebook trade, per `${memberId}|${normAccount(account)}`. */
@@ -818,14 +823,15 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   }
 
   // Old-data marks: only labels on the moves; sizes, ids and totals are untouched.
-  const evidence = newestEvidence(state, { fundStatements: false });
+  const evidence = newestEvidence(state);
+  const roomEvidence = newestRoomEvidence(state);
   const oldFor = (memberId: string, account?: string) => {
     const d = evidence.get(accountKey(memberId, account));
     return d && isOld(d, asOf) ? d : undefined;
   };
   const oldestOldOf = (memberId: string) => {
     let oldest: ISODate | undefined;
-    for (const [k, d] of evidence) if (k.startsWith(`${memberId}|`) && isOld(d, asOf) && (!oldest || d < oldest)) oldest = d;
+    for (const [k, d] of roomEvidence) if (k.startsWith(`${memberId}|`) && isOld(d, asOf) && (!oldest || d < oldest)) oldest = d;
     return oldest;
   };
   const marked: Move[] = moves.map((m) => {
@@ -849,12 +855,17 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
     oldAccounts.push(...mine.sort((a, b) => a.account.localeCompare(b.account)));
   }
   moves.splice(0, moves.length, ...marked);
+  const oldRoom: FamilyView['oldRoom'] = [];
+  for (const m of moves) {
+    const memberId = m.kind === 'gift' ? m.toId : m.memberId;
+    if (!m.noRoom && m.roomMayBeSmaller && !oldRoom.some((o) => o.memberId === memberId)) oldRoom.push({ memberId, since: m.roomMayBeSmaller });
+  }
 
   const sum = (f: (v: MemberView) => number) => views.reduce((a, v) => a + f(v), 0);
   const later = moves.filter(isLaterBenefit);
   const now = moves.filter((m) => !isLaterBenefit(m));
   return {
-    asOf, rules, members: views, moves, ledger, brokerAdjustments, holdingsNotes, oldAccounts, positions: countingPositions(state.positions ?? []), tradebookFrom, booked, plannedRealised, securities: secs,
+    asOf, rules, members: views, moves, ledger, brokerAdjustments, holdingsNotes, oldAccounts, oldRoom, positions: countingPositions(state.positions ?? []), tradebookFrom, booked, plannedRealised, securities: secs,
     totals: {
       freeRoom: sum((v) => v.plan.room.free),
       bonusFree: sum((v) => v.plan.bonus.free),
