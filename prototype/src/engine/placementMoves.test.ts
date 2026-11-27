@@ -246,4 +246,17 @@ describe('placement moves', () => {
     expect(a).toEqual([`${R.label}|place_sip|e>p|${hybrid.isin}|`]);
     expect(b).toEqual(a);
   });
+
+  it('a SIP move keeps its id whether or not the files still show the SIP', () => {
+    // The same confirmed SIP, once with four monthly buys in 'Folio 1' that make a guess, once with none.
+    const sipBuys = ['2026-08-05', '2026-09-05', '2026-10-05', '2026-11-05'].map((d) => buy('e', hybrid.isin, d, 100, 100, { account: 'Folio 1' }));
+    const state: FamilyState = {
+      members: [earner(), parent()], securities: [hybrid], txns: sipBuys, confirmedSips: [sipConfirmed('e', 10_000)],
+    };
+    const withGuess = run(state).view;
+    expect(withGuess.sipGuesses.map((g) => g.account)).toEqual(['Folio 1']);
+    const sipIds = (v: typeof withGuess) => v.moves.filter((m) => m.kind === 'place_sip').map((m) => m.id);
+    expect(sipIds(withGuess)).toEqual([`${R.label}|place_sip|e>p|${hybrid.isin}|`]);
+    expect(sipIds(run({ ...state, txns: [] }).view)).toEqual(sipIds(withGuess));
+  });
 });

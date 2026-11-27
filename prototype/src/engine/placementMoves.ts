@@ -180,7 +180,9 @@ function build(state: FamilyState, fam: FamilyView) {
     const id = `sip|${s.memberId}|${s.isin}`;
     const guess = sipGuesses.filter((g) => g.memberId === s.memberId && g.isin === s.isin).sort((a, b) => a.account.localeCompare(b.account))[0];
     assets.push({ id, ownerId: s.memberId, kind: 'sip', movable: rc != null, taxClass, annualReturn: nominalReturn(rc ?? FALLBACK[taxClass], 'base', rules), value: 0, gain: 0, yearlyAdd: s.monthly * 12 });
-    if (rc != null) info.set(id, { kind: 'sip', memberId: s.memberId, sec, account: guess?.account ?? '', name: guess?.name ?? sec.name, monthly: s.monthly });
+    // A SIP is per member and fund, whatever account the guess saw: a fixed '' keeps its move id stable when the guess
+    // comes and goes (GUARDRAILS §3).
+    if (rc != null) info.set(id, { kind: 'sip', memberId: s.memberId, sec, account: '', name: guess?.name ?? sec.name, monthly: s.monthly });
   }
 
   // This season's gifts set roles placement keeps: a season giver never receives here, a season receiver never gives (D11).
