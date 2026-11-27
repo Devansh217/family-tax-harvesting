@@ -71,18 +71,33 @@ describe('newest evidence per account', () => {
 });
 
 describe('a fund statement is dated by its period end', () => {
-  const fundBuy = buy('2025-06-01', 'Mutual fund CAS (CAMS / KFintech)', 'Folio 1234567/89');
-  const imports = [{ memberId: 'a', statementTo: '2026-11-15', accounts: ['Folio 1234567/89', 'Folio 7654321'] }];
+  const F = 'Folio 1234567/89';
+  const fundBuy = buy('2025-06-01', 'Mutual fund CAS (CAMS / KFintech)', F);
+  const st = (statementFrom: string, statementTo: string, accounts = [F, 'Folio 7654321']) => ({ memberId: 'a', statementFrom, statementTo, accounts });
+  const at = (m: Map<string, string>, folio = F) => m.get(accountKey('a', folio));
 
-  it('dates every folio it lists in both maps, not only by its newest transaction', () => {
-    for (const m of [newestEvidence({ txns: [fundBuy], imports }), newestRoomEvidence({ txns: [fundBuy], imports })]) {
-      expect(m.get(accountKey('a', 'Folio 1234567/89'))).toBe('2026-11-15');
-      expect(m.get(accountKey('a', 'Folio 7654321'))).toBe('2026-11-15');
+  it('a statement from before the first trade dates the folio in both maps', () => {
+    const imports = [st('2020-04-01', '2026-11-15')];
+    for (const m of [newestEvidence({ txns: [fundBuy], imports }), newestRoomEvidence({ txns: [fundBuy], imports })]) expect(at(m)).toBe('2026-11-15');
+  });
+
+  it('a folio with no trades in any file is not dated by a statement alone', () => {
+    expect(at(newestEvidence({ txns: [fundBuy], imports: [st('2020-04-01', '2026-11-15')] }), 'Folio 7654321')).toBeUndefined();
+  });
+
+  it('a statement that leaves a gap after the earlier evidence does not date the folio', () => {
+    for (const imports of [[st('2020-04-01', '2026-06-30'), st('2026-11-01', '2026-11-15')], [st('2026-11-01', '2026-11-15'), st('2020-04-01', '2026-06-30')]]) {
+      expect(at(newestRoomEvidence({ txns: [fundBuy], imports }))).toBe('2026-06-30');
     }
   });
 
+  it('back-to-back monthly statements carry the date forward, in any import order', () => {
+    const chain = [st('2020-04-01', '2026-09-30'), st('2026-10-01', '2026-10-31'), st('2026-11-01', '2026-11-30')];
+    expect(at(newestRoomEvidence({ txns: [fundBuy], imports: chain }))).toBe('2026-11-30');
+    expect(at(newestRoomEvidence({ txns: [fundBuy], imports: [...chain].reverse() }))).toBe('2026-11-30');
+  });
+
   it('an import saved before the period was read dates by its transactions as before', () => {
-    const m = newestEvidence({ txns: [fundBuy], imports: [{ memberId: 'a' }] });
-    expect(m.get(accountKey('a', 'Folio 1234567/89'))).toBe('2025-06-01');
+    expect(at(newestEvidence({ txns: [fundBuy], imports: [{ memberId: 'a' }] }))).toBe('2025-06-01');
   });
 });

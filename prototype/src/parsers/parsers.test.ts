@@ -104,6 +104,7 @@ describe('CAS PDFs (text lines)', () => {
       'Opening Unit Balance: 10.000',
       'Closing Unit Balance: 10.000  NAV on 13-Nov-2026: INR 10.0000',
     ]);
+    expect(r.statementFrom).toBe('2026-04-01');
     expect(r.statementTo).toBe('2026-11-15');
     expect(r.statementAccounts).toEqual(['Folio 1234567/89', 'Folio 7654321']);
   });
@@ -111,6 +112,8 @@ describe('CAS PDFs (text lines)', () => {
   it('reads the "statement for the period" wording, and leaves the date out when there is none', () => {
     expect(parseMutualFundCAS(['Statement for the period 01-Apr-2026 to 15-Nov-2026', ...mfLines]).statementTo).toBe('2026-11-15');
     expect(parseMutualFundCAS(mfLines).statementTo).toBeUndefined();
+    // A date range after the first folio line is a transaction row, not the period.
+    expect(parseMutualFundCAS([...mfLines, '10-Jan-2023 Switch In - From 01-Jan-2023 to 10-Jan-2023']).statementTo).toBeUndefined();
   });
 
   it('keeps plan, option and distributor from the scheme line', () => {

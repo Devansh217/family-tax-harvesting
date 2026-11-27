@@ -1,4 +1,4 @@
-import { daysBetween } from './dates';
+import { addDays, daysBetween } from './dates';
 import { countingSummaries } from './family';
 import { isTradebook, normAccount, type HeldPosition } from './openingLots';
 import type { ISODate, Txn } from './types';
@@ -17,7 +17,7 @@ type EvidenceState = {
   positions?: HeldPosition[];
   brokerSummaries?: Array<{ memberId: string; account: string; summary: { from: ISODate | null; to: ISODate | null } }>;
   /** Imported files; a fund statement's period end dates each folio it lists. */
-  imports?: Array<{ memberId: string; statementTo?: ISODate; accounts?: string[] }>;
+  imports?: Array<{ memberId: string; statementFrom?: ISODate; statementTo?: ISODate; accounts?: string[] }>;
 };
 
 /**
@@ -31,9 +31,42 @@ function newest(state: EvidenceState, holdings: boolean): Map<string, ISODate> {
   };
   for (const t of state.txns) if (isTradebook(t) || isFundStatement(t)) see(accountKey(t.memberId, t.account), t.date);
   if (holdings) for (const p of state.positions ?? []) see(accountKey(p.memberId, p.account), p.asOf);
-  // A fund statement lists every trade in its folios up to its period end, so a quiet folio is known to that day.
-  for (const i of state.imports ?? []) for (const a of i.statementTo ? i.accounts ?? [] : []) see(accountKey(i.memberId, a), i.statementTo);
+  for (const [k, d] of statementCover(state)) see(k, d);
   for (const b of countingSummaries(state.brokerSummaries ?? [])) see(accountKey(b.memberId, b.account), b.summary.to);
+  return out;
+}
+
+/**
+ * Per folio, the day fund statements are known to cover it without a gap. A statement lists every trade in its period
+ * only, so it counts when it starts on or before the folio's first trade, or the day after the cover so far ends:
+ * a month-only statement after a gap says nothing about the redemptions in the gap. Statements are taken in order of
+ * start, so the answer is the same whatever order the files came in. A folio with no trade in any file gets none.
+ */
+function statementCover(state: EvidenceState): Map<string, ISODate> {
+  const first = new Map<string, ISODate>();
+  for (const t of state.txns) {
+    const k = accountKey(t.memberId, t.account);
+    if (isFundStatement(t) && t.date < (first.get(k) ?? '9999')) first.set(k, t.date);
+  }
+  const periods = new Map<string, Array<{ from: ISODate; to: ISODate }>>();
+  for (const i of state.imports ?? []) {
+    if (!i.statementFrom || !i.statementTo) continue;
+    for (const a of i.accounts ?? []) {
+      const k = accountKey(i.memberId, a);
+      periods.set(k, [...(periods.get(k) ?? []), { from: i.statementFrom, to: i.statementTo }]);
+    }
+  }
+  const out = new Map<string, ISODate>();
+  for (const [k, ps] of periods) {
+    const f = first.get(k);
+    if (!f) continue;
+    let cover: ISODate | null = null;
+    for (const p of [...ps].sort((a, b) => a.from.localeCompare(b.from))) {
+      const joins = p.from <= f || (cover != null && p.from <= addDays(cover, 1));
+      if (joins && (!cover || p.to > cover)) cover = p.to;
+    }
+    if (cover) out.set(k, cover);
+  }
   return out;
 }
 

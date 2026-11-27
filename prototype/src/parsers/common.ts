@@ -130,8 +130,9 @@ export interface ParseResult {
   brokerSummary?: BrokerSummary;
   /** 31 Jan 2018 value per whole unit, keyed by ISIN, when the file states it. */
   fmv2018?: Record<string, Paise>;
-  /** A fund statement's period end: every transaction in its folios up to this day is in the file. */
+  /** A fund statement's period: every transaction in its folios from `statementFrom` to `statementTo` is in the file. */
+  statementFrom?: string;
   statementTo?: string;
-  /** The folios a fund statement lists, with or without transactions; set with `statementTo`. */
+  /** The folios a fund statement lists, with or without transactions; set with the period. */
   statementAccounts?: string[];
 }
