@@ -97,6 +97,13 @@ describe('a fund statement is dated by its period end', () => {
     expect(at(newestRoomEvidence({ txns: [augBuy], imports: [st('2026-04-01', '2026-11-15')] }))).toBe('2026-11-15');
   });
 
+  it('a chain may cross 1 April, and a statement ending in Jan–Mar starts from the April before', () => {
+    const oldBuy = buy('2025-02-01', 'Mutual fund CAS (CAMS / KFintech)', F);
+    expect(at(newestRoomEvidence({ txns: [oldBuy], imports: [st('2024-04-01', '2026-03-31'), st('2026-04-01', '2026-11-15')] }))).toBe('2026-11-15');
+    expect(at(newestRoomEvidence({ txns: [oldBuy], imports: [st('2024-04-01', '2025-02-15')] }))).toBe('2025-02-15');
+    expect(at(newestRoomEvidence({ txns: [oldBuy], imports: [st('2024-05-01', '2025-02-15')] }))).toBe('2025-02-01');
+  });
+
   it('back-to-back monthly statements carry the date forward, in any import order', () => {
     const chain = [st('2020-04-01', '2026-09-30'), st('2026-10-01', '2026-10-31'), st('2026-11-01', '2026-11-30')];
     expect(at(newestRoomEvidence({ txns: [fundBuy], imports: chain }))).toBe('2026-11-30');

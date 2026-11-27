@@ -36,6 +36,9 @@ function newest(state: EvidenceState, holdings: boolean): Map<string, ISODate> {
   return out;
 }
 
+/** 1 April of the Indian tax year `d` falls in. */
+const taxYearStart = (d: ISODate): ISODate => `${Number(d.slice(0, 4)) - (d.slice(5, 7) < '04' ? 1 : 0)}-04-01`;
+
 /**
  * Per folio, the day fund statements are known to cover it without a gap. A statement lists every trade in its period
  * only, so a chain starts with one that begins on or before both the folio's first trade in any file and 1 April of
@@ -44,9 +47,6 @@ function newest(state: EvidenceState, holdings: boolean): Map<string, ISODate> {
  * says nothing about the redemptions in the gap. Statements are taken in order of
  * start, so the answer is the same whatever order the files came in. A folio with no trade in any file gets none.
  */
-/** 1 April of the Indian tax year `d` falls in. */
-const taxYearStart = (d: ISODate): ISODate => `${Number(d.slice(0, 4)) - (d.slice(5, 7) < '04' ? 1 : 0)}-04-01`;
-
 function statementCover(state: EvidenceState): Map<string, ISODate> {
   const first = new Map<string, ISODate>();
   for (const t of state.txns) {
