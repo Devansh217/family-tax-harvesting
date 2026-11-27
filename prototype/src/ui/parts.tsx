@@ -37,7 +37,6 @@ export const Icon = {
   lock: <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>,
   arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
   back: <path d="M15 5l-7 7 7 7" />,
-  gift: <><rect x="3" y="8" width="18" height="13" rx="2" /><path d="M12 8v13M3 12h18M12 8c-2-4-6-4-6-1.5S10 8 12 8zm0 0c2-4 6-4 6-1.5S14 8 12 8z" /></>,
   down: <path d="M12 4v12m-5-5 5 5 5-5M5 20h14" />,
 };
 

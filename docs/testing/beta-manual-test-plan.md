@@ -33,7 +33,6 @@ Send this part to family testers as is.
 | A6 | On a move, **pick a date** | The buy-back step appears under it with its own date (next trading day for shares, next business day for funds). |
 | A7 | **Add to my calendar** | A calendar file downloads; opening it adds the dated steps plus 31 March. Titles name the person, action and fund, but no rupee amounts. |
 | A8 | A **switch to direct** card (if you hold regular plans) | Fee saved a year in rupees, tax now (often ₹0), and "check the exit load in your fund statement before selling". |
-| A9 | Removed: the Compare page is gone (#27). Check there is no **Compare** tab, and an old `#compare` link opens Home. | No Compare tab or link anywhere. |
 | A10 | **Member page → "Capital gains this year"** (then **Download CSV**) | Gains for this tax year in sections (equity long-term, short-term, other, slab), sales listed one by one, a CSV download, and a note that the new return forms aren't out yet. |
 | A11 | **Account**: turn on **Harvest season help** | The switch explains that our server reads your family on email days from 1 Feb to 31 Mar. You can turn it off any time. |
 | A12 | **Account → Who has looked at your data** | Usually "Nobody has opened your family". Any automatic season checks appear here later. |
@@ -69,6 +68,7 @@ Send this part to family testers as is.
 | C3 | **Start your own** and import real statements (signed out) | Same as A3–A10, nothing leaves the browser. |
 | C4 | Built site: `npm run build && npm run preview -- --port 4173`, open http://localhost:4173 | Same app with the page lock (Content Security Policy) on; no errors in the browser console; fonts look right. |
 | C5 | Tests: `npm test` and `npm run typecheck` | All pass. |
+| C6 | Open `#compare` (the Compare page was removed in #27; A9 is retired) | Home opens; no Compare tab or link anywhere. |
 
 ## Not testable yet
 
