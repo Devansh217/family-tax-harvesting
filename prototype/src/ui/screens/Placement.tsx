@@ -19,44 +19,70 @@ export function placementTitle(m: PlacementMove, nameOf: (id: string) => string)
     : `Gift ${to} ${units(m.qty)} ${unitWord(m.isin, m.qty)} of ${m.name}`;
 }
 
-/** One row per member and fund: guesses in several accounts of one fund add up, as a confirmed SIP is per member and fund. */
+/**
+ * One row per member and fund: guesses in several accounts of one fund add up, as a confirmed SIP is per member and
+ * fund. A SIP the family confirmed and still runs gets a row even when the files no longer show it, so it can be
+ * changed or stopped.
+ */
 interface SipRow { key: string; memberId: string; isin: string; name: string; guessed: Paise; confirmed: ConfirmedSip | undefined }
-function sipRows(guesses: SipGuess[], confirmed: ConfirmedSip[]): SipRow[] {
+function sipRows(guesses: SipGuess[], confirmed: ConfirmedSip[], fundName: (isin: string) => string): SipRow[] {
   const rows = new Map<string, SipRow>();
   for (const g of guesses) {
     const key = `${g.memberId}|${g.isin}`;
     const row = rows.get(key) ?? { key, memberId: g.memberId, isin: g.isin, name: g.name, guessed: 0, confirmed: undefined };
     rows.set(key, { ...row, guessed: row.guessed + g.monthly });
   }
+  const latest = new Map<string, ConfirmedSip>();
   for (const c of confirmed) {
-    const row = rows.get(`${c.memberId}|${c.isin}`);
-    if (row && (!row.confirmed || c.confirmedAt >= row.confirmed.confirmedAt)) row.confirmed = c;
+    const key = `${c.memberId}|${c.isin}`;
+    const prev = latest.get(key);
+    if (!prev || c.confirmedAt >= prev.confirmedAt) latest.set(key, c);
+  }
+  for (const [key, c] of latest) {
+    const row = rows.get(key);
+    if (row) row.confirmed = c;
+    else if (c.monthly > 0) rows.set(key, { key, memberId: c.memberId, isin: c.isin, name: fundName(c.isin), guessed: 0, confirmed: c });
   }
   return [...rows.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 /** The amount a row stands at: the family's latest answer, or the guess until they give one. */
 const amountOf = (r: SipRow) => r.confirmed?.monthly ?? r.guessed;
 
-/** "You invest about … a month. Right?" Yes confirms the guesses not yet confirmed; Change edits every row. */
-function SipPrompt({ guesses }: { guesses: SipGuess[] }) {
-  const { state, update, asOf, nameOf } = useApp();
-  const rows = sipRows(guesses, state.confirmedSips ?? []);
+const rupeesOk = (x: string, min: number) => x.trim() !== '' && Number.isFinite(Number(x)) && Number(x) >= min;
+
+/**
+ * Monthly investing (spec D1). While a guess is unconfirmed: "You invest about … a month. Right?" Yes confirms the
+ * guesses not yet confirmed; Change edits every row. Otherwise "Change monthly investing" (or "Add monthly investing"
+ * when there is none) opens the same editor, where a SIP the files don't show can be added in a fund the member holds.
+ */
+function SipEditor({ guesses, unconfirmed }: { guesses: SipGuess[]; unconfirmed: boolean }) {
+  const { state, fam, update, asOf, nameOf } = useApp();
+  const fundName = (isin: string) => fam.securities.get(isin)?.name ?? isin;
+  const rows = sipRows(guesses, state.confirmedSips ?? [], fundName);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, { rupees: string; stopped: boolean }>>({});
+  const [added, setAdded] = useState<Array<{ memberId: string; isin: string; rupees: string }>>([]);
   const sum = rows.reduce((a, r) => a + amountOf(r), 0);
   const confirm = (list: ConfirmedSip[]) => update((s) => ({ ...s, confirmedSips: [...(s.confirmedSips ?? []), ...list] }));
   const rowDraft = (r: SipRow) => draft[r.key] ?? { rupees: String(Math.round(amountOf(r) / 100)), stopped: amountOf(r) === 0 };
-  const valid = rows.every((r) => {
-    const d = rowDraft(r);
-    return d.stopped || (d.rupees.trim() !== '' && Number.isFinite(Number(d.rupees)) && Number(d.rupees) >= 0);
-  });
+  // Funds each member holds that have no row yet: where a SIP the files don't show can be added.
+  const taken = new Set([...rows.map((r) => r.key), ...added.map((a) => `${a.memberId}|${a.isin}`)]);
+  const fundsOf = (memberId: string, keep?: string) => [...new Set((fam.members.find((v) => v.member.id === memberId)?.holdings ?? [])
+    .filter((h) => h.isin.startsWith('INF') && !h.listed).map((h) => h.isin))]
+    .filter((isin) => isin === keep || !taken.has(`${memberId}|${isin}`))
+    .sort((a, b) => fundName(a).localeCompare(fundName(b)));
+  const canAdd = fam.members.filter((v) => fundsOf(v.member.id).length > 0).map((v) => v.member);
+  const valid = rows.every((r) => { const d = rowDraft(r); return d.stopped || rupeesOk(d.rupees, 0); })
+    && added.every((a) => a.memberId && a.isin && rupeesOk(a.rupees, 1));
+  const close = () => { setEditing(false); setDraft({}); setAdded([]); };
+  if (!unconfirmed && !editing && rows.length === 0 && canAdd.length === 0) return null;
   return (
-    <div className="sheet pad stack">
-      <p>{`You invest about ${inrShort(sum)} a month. Right?`}</p>
+    <div className={unconfirmed || editing ? 'sheet pad stack' : 'row'}>
+      {unconfirmed && <p>{`You invest about ${inrShort(sum)} a month. Right?`}</p>}
       {!editing && (
         <div className="row" style={{ gap: 8 }}>
-          <button className="btn" type="button" onClick={() => confirm(rows.filter((r) => !r.confirmed).map((r) => ({ memberId: r.memberId, isin: r.isin, monthly: r.guessed, confirmedAt: asOf })))}>Yes</button>
-          <button className="btn" type="button" onClick={() => setEditing(true)}>Change</button>
+          {unconfirmed && <button className="btn" type="button" onClick={() => confirm(rows.filter((r) => !r.confirmed).map((r) => ({ memberId: r.memberId, isin: r.isin, monthly: r.guessed, confirmedAt: asOf })))}>Yes</button>}
+          <button className="btn" type="button" onClick={() => setEditing(true)}>{unconfirmed ? 'Change' : rows.length > 0 ? 'Change monthly investing' : 'Add monthly investing'}</button>
         </div>
       )}
       {editing && (
@@ -64,26 +90,53 @@ function SipPrompt({ guesses }: { guesses: SipGuess[] }) {
           {rows.map((r) => {
             const d = rowDraft(r);
             const set = (next: Partial<typeof d>) => setDraft((x) => ({ ...x, [r.key]: { ...d, ...next } }));
+            const label = `${nameOf(r.memberId)} · ${r.name}`;
             return (
-              <div key={r.key} className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <span className="small grow">{`${nameOf(r.memberId)} · ${r.name}`}</span>
+              <div key={r.key} role="group" aria-label={label} className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <span className="small grow">{label}</span>
                 <label className="small">₹ a month <input type="number" min={0} value={d.rupees} disabled={d.stopped} onChange={(e) => set({ rupees: e.target.value })} style={{ width: 110 }} /></label>
                 <label className="small"><input type="checkbox" checked={d.stopped} onChange={(e) => set({ stopped: e.target.checked })} /> Stopped</label>
               </div>
             );
           })}
-          <p>
+          {added.map((a, k) => {
+            const set = (next: Partial<typeof a>) => setAdded((xs) => xs.map((x, j) => (j === k ? { ...x, ...next } : x)));
+            const funds = fundsOf(a.memberId, a.isin);
+            return (
+              <div key={k} role="group" aria-label="New SIP" className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <label className="small">Who <select value={a.memberId} onChange={(e) => set({ memberId: e.target.value, isin: fundsOf(e.target.value)[0] ?? '' })}>
+                  {fam.members.map((v) => v.member).filter((m) => m.id === a.memberId || fundsOf(m.id).length > 0).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select></label>
+                <label className="small" style={{ flexBasis: '100%', minWidth: 0 }}>Fund <select value={a.isin} onChange={(e) => set({ isin: e.target.value })} style={{ width: '100%' }}>
+                  {funds.map((isin) => <option key={isin} value={isin}>{fundName(isin)}</option>)}
+                </select></label>
+                <label className="small">₹ a month <input type="number" min={1} value={a.rupees} onChange={(e) => set({ rupees: e.target.value })} style={{ width: 110 }} /></label>
+                <button className="btn ghost" type="button" onClick={() => setAdded((xs) => xs.filter((_, j) => j !== k))}>Remove</button>
+              </div>
+            );
+          })}
+          {canAdd.length > 0 && (
+            <p><button
+              className="btn ghost" type="button"
+              onClick={() => { const m = canAdd[0]!; setAdded((xs) => [...xs, { memberId: m.id, isin: fundsOf(m.id)[0] ?? '', rupees: '' }]); }}
+            >Add a SIP</button></p>
+          )}
+          <div className="row" style={{ gap: 8 }}>
             <button
               className="btn" type="button" disabled={!valid}
               onClick={() => {
-                confirm(rows.map((r) => {
-                  const d = rowDraft(r);
-                  return { memberId: r.memberId, isin: r.isin, monthly: d.stopped ? 0 : Math.round(Number(d.rupees) * 100), confirmedAt: asOf };
-                }));
-                setEditing(false);
+                confirm([
+                  ...rows.map((r) => {
+                    const d = rowDraft(r);
+                    return { memberId: r.memberId, isin: r.isin, monthly: d.stopped ? 0 : Math.round(Number(d.rupees) * 100), confirmedAt: asOf };
+                  }),
+                  ...added.map((a) => ({ memberId: a.memberId, isin: a.isin, monthly: Math.round(Number(a.rupees) * 100), confirmedAt: asOf })),
+                ]);
+                close();
               }}
             >Save</button>
-          </p>
+            <button className="btn ghost" type="button" onClick={close}>Cancel</button>
+          </div>
         </>
       )}
     </div>
@@ -167,7 +220,7 @@ export function Placement() {
   return (
     <section className="stack" aria-labelledby="placement-h">
       <h2 id="placement-h">Holding in another name</h2>
-      {view.unconfirmed && <SipPrompt guesses={view.sipGuesses} />}
+      <SipEditor guesses={view.sipGuesses} unconfirmed={view.unconfirmed} />
       {moves.length > 0 && <div className="sheet">{moves.map((m) => <PlacementRow key={m.id} move={m} />)}</div>}
       {moves.length === 0 && !view.unconfirmed && view.missingIncome.length === 0 && (
         <p className="small muted">Your money is already in the lowest-tax names.</p>

@@ -341,6 +341,42 @@ for (const size of SIZES) {
         await expect(section.getByText('Your money is already in the lowest-tax names.')).toHaveCount(0);
       });
 
+      test('placement: stop a confirmed SIP the files no longer show', async ({ page }) => {
+        // The fixture's confirmed ₹20,000 SIP has no buys behind it, so no guess shows it; it can still be stopped.
+        const base = JSON.parse(readFileSync(new URL('./fixtures/placement-family.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+        await restore(page, base);
+        await open(page, 'plan');
+        const section = placementSection(page);
+        const sipMove = section.locator('.move-title').filter({ hasText: /SIP in Test Bond Fund$/ });
+        await expect(sipMove).toBeVisible();
+        await section.getByRole('button', { name: 'Change monthly investing' }).click();
+        const row = section.getByRole('group', { name: 'Gita · Test Bond Fund' });
+        await expect(row.getByRole('spinbutton')).toHaveValue('20000');
+        await row.getByLabel('Stopped').check();
+        await section.getByRole('button', { name: 'Save', exact: true }).click();
+        await expect(sipMove).toHaveCount(0);
+        await expect(section.getByText('Your money is already in the lowest-tax names.')).toBeVisible();
+      });
+
+      test('placement: add a SIP the files don\'t show', async ({ page }) => {
+        // Gita holds 1,000 units of the bond fund from an old buy and has no SIP confirmed or guessed.
+        const base = JSON.parse(readFileSync(new URL('./fixtures/placement-family.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+        const held = { id: 'old', memberId: 'g', isin: 'INF0TESTD001', date: '2024-01-10', side: 'buy', qty: 1_000_000, amount: 9_000_00, source: 'Fund statement', account: 'Folio A' };
+        await restore(page, { ...base, confirmedSips: [], txns: [held] });
+        await open(page, 'plan');
+        const section = placementSection(page);
+        await section.getByRole('button', { name: 'Add monthly investing' }).click();
+        await section.getByRole('button', { name: 'Add a SIP' }).click();
+        const row = section.getByRole('group', { name: 'New SIP' });
+        await expect(row.getByLabel('Who')).toHaveValue('g');
+        await expect(row.getByLabel('Fund')).toHaveValue('INF0TESTD001');
+        await row.getByLabel('₹ a month').fill('16000');
+        await expectNoSideScroll(page);
+        await section.getByRole('button', { name: 'Save', exact: true }).click();
+        await expect(section.locator('.move-title').filter({ hasText: /^Gift Pushpa .* once a year · Pushpa runs the .* SIP in Test Bond Fund$/ })).toBeVisible();
+        await expect(section.getByRole('button', { name: 'Change monthly investing' })).toBeVisible();
+      });
+
       test('importing the same tradebook twice names the earlier file the second time', async ({ page }) => {
         await startOwnFamilyImport(page);
         // The family table's first row opens that member's checklist.
