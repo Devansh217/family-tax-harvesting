@@ -5,6 +5,7 @@ import { datedRecord, statusRecord } from '../../engine/records';
 import { dateLabel, inr, inrShort, units } from '../format';
 import { Avatar, Disclaimer, Svg, Icon } from '../parts';
 import { SampleBanner } from './Home';
+import { Placement, placementTitle } from './Placement';
 import { NSE_HOLIDAYS_2027, lastSafeDay } from '../../engine/season';
 import { buildIcs } from '../calendar';
 import { brokerOf } from '../warnings';
@@ -77,9 +78,8 @@ function describe(m: Move, nameOf: (id: string) => string, bonusOf: (id: string)
     case 'wait':
       return { who: m.memberId, title: `Hold ${m.name} until ${dateLabel(m.until, false)}`, sub: `${nameOf(m.memberId)} · turns long-term in ${m.days} days${where}` };
     case 'place_sip':
-      return { who: m.toId, title: `Gift ${nameOf(m.toId)} ${inrShort(m.yearlyGift)} once a year · ${nameOf(m.toId)} runs the ${inrShort(m.monthly)} SIP in ${m.name}`, sub: `${nameOf(m.fromId)} to ${nameOf(m.toId)}${where}` };
     case 'place_holding':
-      return { who: m.toId, title: `Gift ${nameOf(m.toId)} ${u} ${unitWord} of ${m.name}`, sub: `${nameOf(m.fromId)} to ${nameOf(m.toId)}${where}` };
+      return { who: m.toId, title: placementTitle(m, nameOf), sub: `${nameOf(m.fromId)} to ${nameOf(m.toId)}${where}` };
   }
 }
 
@@ -252,7 +252,8 @@ export function Plan() {
           </div>
         </section>
       )}
-      <p className="tiny muted">Harvesting never places trades. Costs are estimates for a discount broker: securities transaction tax, stamp duty, exchange charges and the depository fee. Gift moves assume shares in a demat account; mutual fund units are not suggested for gifting.</p>
+      <Placement />
+      <p className="tiny muted">Harvesting never places trades. Costs are estimates for a discount broker: securities transaction tax, stamp duty, exchange charges and the depository fee. “Gift, then sell” moves assume shares in a demat account; mutual fund units are not suggested for them.</p>
       <Disclaimer />
     </>
   );

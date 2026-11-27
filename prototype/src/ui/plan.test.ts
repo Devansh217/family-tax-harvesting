@@ -4,7 +4,7 @@ import { FY_2026_27 } from '../engine/rules';
 import type { Member, Security, Txn } from '../engine/types';
 import type { Move } from '../engine/family';
 import { statusRecord } from '../engine/records';
-import { cushionNudge, datePickerBounds, dateVerb, importHref, importMemberOf, planGaps, planView } from './plan';
+import { cushionNudge, datePickerBounds, dateVerb, importHref, importMemberOf, nameList, planGaps, planView, sleepOnIt } from './plan';
 
 describe('date picker (m2, m4)', () => {
   it('max is the last safe day, or the end of the tax year when the holiday list is not out; min is today', () => {
@@ -189,6 +189,29 @@ describe('old-data marks (plan)', () => {
       ({ id: `FY 2026-27|harvest_loss|${id}`, kind: 'harvest_loss', memberId: 'a', loss: 1_000_00, term: 'st', saving: 200_00, taxAvoided: 200_00, noRoom: false, ...extra }) as unknown as Move;
     const v = planView({ moves: [loss('l1'), loss('l2', { oldData: '2026-03-31' })], rules: FY_2026_27 }, []);
     expect(v.nowTotal).toBe(200_00);
+  });
+
+  it('planView keeps a done placement move out of Done this season and the counts', () => {
+    const place = { id: 'FY 2026-27|place_sip|a>p|INF1|', kind: 'place_sip', fromId: 'a', toId: 'p', isin: 'INF1', account: '', qty: 0, value: 1_20_000_00, monthly: 10_000_00, yearlyGift: 1_20_000_00, savingPerYear: 20_000_00, saving10y: 2_00_000_00, saving: 20_000_00, taxAvoided: 20_000_00, costs: 0, reasons: [] } as unknown as Move;
+    const v = planView({ moves: [], rules: FY_2026_27 }, [statusRecord(place, 'done', '2026-11-25T00:00:00Z')]);
+    expect(v.done).toEqual([]);
+    expect(v.doneCount).toBe(0);
+    expect(v.liveCount).toBe(0);
+  });
+
+  it('sleepOnIt asks first only for a placement gift over ₹5 L', () => {
+    const sip = (value: number) => ({ kind: 'place_sip', value }) as unknown as Move;
+    const holding = (value: number) => ({ kind: 'place_holding', value }) as unknown as Move;
+    expect(sleepOnIt(sip(5_00_000_00))).toBe(false);
+    expect(sleepOnIt(sip(5_00_000_01))).toBe(true);
+    expect(sleepOnIt(holding(6_00_000_00))).toBe(true);
+    expect(sleepOnIt({ kind: 'gift', value: 9_00_000_00 } as unknown as Move)).toBe(false);
+  });
+
+  it('nameList joins names in plain English', () => {
+    expect(nameList(['Hari'])).toBe('Hari');
+    expect(nameList(['Hari', 'Kabir'])).toBe('Hari and Kabir');
+    expect(nameList(['Hari', 'Kabir', 'Meera'])).toBe('Hari, Kabir and Meera');
   });
 
   it('planGaps adds one old_room line per member, after their old_data lines', () => {

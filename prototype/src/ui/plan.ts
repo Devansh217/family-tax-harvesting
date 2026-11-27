@@ -13,12 +13,20 @@ export const dateVerb = (kind: Move['kind']) => (kind === 'gift' ? 'Gift and sel
 /** Tax cut this year by a move (losses and waits); harvests, gifts and switches pay off later or in fees. */
 const nowSavingOf = (m: Move) => (m.kind === 'harvest_loss' || m.kind === 'wait' ? m.saving : 0);
 
+/** A placement gift worth more than this asks the family to sleep on it before marking it done (spec 2026-11-24 §5.4). */
+export const SLEEP_ON_IT_ABOVE: Paise = 5_00_000_00;
+export const sleepOnIt = (m: Move) => isPlacement(m) && m.value > SLEEP_ON_IT_ABOVE;
+
+/** "Hari", "Hari and Kabir", "Hari, Kabir and Meera". */
+export const nameList = (names: string[]) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
+
 /**
  * The Plan screen's lists and headline. Done moves (marked, or seen in a statement) leave the open lists for "Done this
  * season", built from their records, so they stay counted after the next import sells the units and the move is gone.
  */
 export function planView(fam: Pick<FamilyView, 'moves' | 'rules'>, records: RecommendationRecord[]) {
-  const done = doneThisSeason(records, fam.rules).map((d) => ({
+  // Placement moves have their own section ("Holding in another name"), so they stay out of these lists and counts.
+  const done = doneThisSeason(records, fam.rules).filter((d) => !isPlacement(d.move)).map((d) => ({
     ...d, label: d.detected ? 'Done, seen in your statement' : 'Marked done',
   }));
   const doneIds = new Set(done.map((d) => d.move.id));

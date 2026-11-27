@@ -103,7 +103,8 @@ function Main({ initial }: { initial: AppState }) {
     [state, securities, asOf, market, live],
   );
 
-  // Record each move the first time it is shown (append-only), for real families only. Not before the funds file has
+  // Record each move the first time it is shown (append-only), for real families only. Placement moves are recorded
+  // by the Plan's placement section, so the solver runs only while the Plan is open. Not before the funds file has
   // settled: until then a fund's category (ELSS lock, direct twin) is unknown and the moves may be wrong.
   useEffect(() => {
     if (!live || !marketSettled) return;
@@ -124,7 +125,7 @@ function Main({ initial }: { initial: AppState }) {
   useEffect(() => { if (cloud.session) void isAdmin().then(setAdmin); else { setAdmin(false); setViewed(null); } }, [cloud.session]);
 
   const own: Ctx = {
-    state, fam, famPrev, market, cloud, asOf, toast, viewing: null,
+    state, fam, famPrev, market, marketSettled, cloud, asOf, toast, viewing: null,
     // Every change to the members re-runs auto-linking, so links follow "Relation to you" wherever members are edited.
     update: (fn) => setState((s) => { const n = fn(s); return n.members === s.members ? n : { ...n, members: autoLink(n.members) }; }),
     go: (r) => { location.hash = r; },

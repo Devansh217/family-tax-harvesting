@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 
 // Smoke tests on the sample (Mehta) family: every new browser context starts with an empty IndexedDB, signed out,
@@ -44,6 +45,16 @@ const h1 = (page: Page, name: string) => page.getByRole('heading', { level: 1, n
 
 /** Plan's "Done this season" list. */
 const doneSection = (page: Page) => page.locator('section').filter({ has: page.getByRole('heading', { level: 2, name: 'Done this season' }) });
+
+/** Plan's "Holding in another name" section. */
+const placementSection = (page: Page) => page.locator('section').filter({ has: page.getByRole('heading', { level: 2, name: 'Holding in another name' }) });
+
+/** Restores a made-up family from a backup built in the test. */
+async function restore(page: Page, state: unknown) {
+  await open(page, 'family');
+  await page.locator('input[type="file"]').setInputFiles({ name: 'family.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(state)) });
+  await expect(page.getByText('Backup restored')).toBeVisible();
+}
 
 /** Leaves the sample for an own family and opens the Import screen's family table. */
 async function startOwnFamilyImport(page: Page) {
@@ -254,6 +265,64 @@ for (const size of SIZES) {
         await open(page, 'home');
         await expect(page.getByText('Based on data from 31 Mar 2026. Check you still hold these before acting.').first()).toBeVisible();
         await expect(page.getByText(/^Leaves out (1 move that rests|\d+ moves that rest) on old data\. See the plan\.$/)).toBeVisible();
+      });
+
+      test('placement section shows a gift to a parent', async ({ page }) => {
+        // Synthetic family: Gita (high income) runs a confirmed SIP in a debt fund; Pushpa (parent) has a low income;
+        // Hari is Gita's spouse, so money given to him is clubbed back.
+        await open(page, 'family');
+        await page.locator('input[type="file"]').setInputFiles(new URL('./fixtures/placement-family.json', import.meta.url).pathname);
+        await expect(page.getByText('Backup restored')).toBeVisible();
+        await open(page, 'plan');
+        const section = placementSection(page);
+        await expect(section).toBeVisible();
+        await expect(section.locator('.move-title').filter({ hasText: 'Gift Pushpa ₹1.92 L once a year · Pushpa runs the ₹16,000 SIP in Test Bond Fund' })).toBeVisible();
+        await expect(section.getByText('less tax a year')).toBeVisible();
+        await expect(section.getByText('Not suggested for Hari: money you give them is still taxed as yours.')).toBeVisible();
+        await section.getByText('Why?').click();
+        await expect(section.getByText(/over 10 years, at assumed average returns$/)).toBeVisible();
+        await expectNoSideScroll(page);
+      });
+
+      test('placement: confirm a guessed SIP, and sleep on a big gift', async ({ page }) => {
+        // The same synthetic family, with no SIP confirmed: three monthly buys of ₹25,000 in the last three months, and
+        // an older ₹12 L buy whose units are worth about ₹15 L, so gifting them asks first.
+        const base = JSON.parse(readFileSync(new URL('./fixtures/placement-family.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+        const now = new Date();
+        const sip = [3, 2, 1].map((k, i) => ({
+          id: `sip${i}`, memberId: 'g', isin: 'INF0TESTD001', date: new Date(Date.UTC(now.getFullYear(), now.getMonth() - k, 5)).toISOString().slice(0, 10),
+          side: 'buy', qty: 2_500_000, amount: 25_000_00, source: 'Fund statement', account: 'Folio A',
+        }));
+        const big = { id: 'big', memberId: 'g', isin: 'INF0TESTD001', date: '2024-01-10', side: 'buy', qty: 1_500_000_000, amount: 12_00_000_00, source: 'Fund statement', account: 'Folio A' };
+        await restore(page, { ...base, confirmedSips: [], txns: [...sip, big] });
+        await open(page, 'plan');
+        const section = placementSection(page);
+        await expect(section.getByText('You invest about ₹25,000 a month. Right?')).toBeVisible();
+        await section.getByRole('button', { name: 'Yes', exact: true }).click();
+        await expect(section.getByText(/^You invest about/)).toHaveCount(0);
+        await expect(section.locator('.move-title').filter({ hasText: /^Gift Pushpa .* once a year · Pushpa runs the .* SIP in Test Bond Fund$/ })).toBeVisible();
+
+        const gift = section.getByRole('button', { name: /^Mark done: Gift Pushpa [\d,.]+ units of Test Bond Fund$/ });
+        await gift.click();
+        await expect(section.getByText(/^This is ₹[\d,]+ that becomes Pushpa's for good\. Sleep on it\?$/)).toBeVisible();
+        await section.getByRole('button', { name: 'Not yet' }).click();
+        await expect(gift).toHaveAttribute('aria-pressed', 'false');
+        await gift.click();
+        await section.getByRole('button', { name: 'Mark as done', exact: true }).click();
+        await expect(section.getByRole('button', { name: /^Mark not done: Gift Pushpa / })).toHaveAttribute('aria-pressed', 'true');
+        // Placement moves stay out of the season's lists.
+        await expect(doneSection(page)).toHaveCount(0);
+        await expectNoSideScroll(page);
+      });
+
+      test('placement asks for a missing income', async ({ page }) => {
+        // Pushpa with no income entered: no move to her, a link to add it instead.
+        const base = JSON.parse(readFileSync(new URL('./fixtures/placement-family.json', import.meta.url), 'utf8')) as { members: Array<Record<string, unknown>> };
+        await restore(page, { ...base, members: base.members.map((m) => (m.id === 'p' ? { ...m, income: undefined } : m)) });
+        await open(page, 'plan');
+        const section = placementSection(page);
+        await expect(section.getByRole('link', { name: "Add Pushpa's income to see what moving money to them could save." })).toHaveAttribute('href', '#member-p');
+        await expect(section.getByText('Your money is already in the lowest-tax names.')).toHaveCount(0);
       });
 
       test('importing the same tradebook twice names the earlier file the second time', async ({ page }) => {
