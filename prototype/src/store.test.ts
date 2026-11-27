@@ -442,3 +442,36 @@ describe('an import that adds nothing', () => {
     expect(run(h1, holdings)[1]).toBe(true);
   });
 });
+
+describe('a fund statement’s period end', () => {
+  const cas = (statementTo?: string, statementFrom = '2020-04-01') => ({
+    format: 'Mutual fund CAS (CAMS / KFintech)', warnings: [], skipped: 0, prices: [], statementFrom, statementTo, statementAccounts: ['Folio 1/2'],
+    txns: [{ isin: 'INF879O01027', name: 'PPFAS', date: '2025-06-01', side: 'buy' as const, qty: 10_0000, amount: 1_000_00, account: 'Folio 1/2' }],
+  });
+
+  it('is kept on the import record, and a newer statement with no new trades is not "nothing new"', () => {
+    const s1 = applyImport(withMember(), 'a', 'oct.pdf', cas('2026-10-15'), {});
+    expect(s1.imports[0]).toMatchObject({ statementFrom: '2020-04-01', statementTo: '2026-10-15', accounts: ['Folio 1/2'] });
+    const s2 = applyImport(s1, 'a', 'nov.pdf', cas('2026-11-15'), {});
+    expect(importAddedNothing(s1, s2)).toBe(false);
+    expect(importAddedNothing(s2, applyImport(s2, 'a', 'nov (2).pdf', cas('2026-11-15'), {}))).toBe(true);
+    // A statement with a gap before it moves no date, so it is still nothing new.
+    expect(importAddedNothing(s1, applyImport(s1, 'a', 'gap.pdf', cas('2026-11-15', '2026-11-01'), {}))).toBe(true);
+  });
+
+  it('a statement with no period end, or one past today, adds no date to the record', () => {
+    for (const r of [cas(), cas('2999-12-31')]) {
+      const s = applyImport(withMember(), 'a', 'x.pdf', r, {});
+      expect(s.imports[0]).not.toHaveProperty('statementTo');
+      expect(s.imports[0]).not.toHaveProperty('accounts');
+    }
+  });
+
+  it('a backup with a malformed period is loaded without it', () => {
+    const rec = { id: 'i', memberId: 'a', fileName: 'x', format: 'f', at: '', txns: 0, prices: 0, warnings: [] };
+    const bad = parseBackup(JSON.stringify({ ...withMember(), imports: [{ ...rec, statementFrom: '2020-04-01', statementTo: '2026-11-15', accounts: 5 }, { ...rec, id: 'j', statementFrom: 1, statementTo: '2999-12-31', accounts: ['Folio 1/2'] }] }))!;
+    for (const i of bad.imports) for (const k of ['statementFrom', 'statementTo', 'accounts']) expect(i).not.toHaveProperty(k);
+    const good = parseBackup(JSON.stringify({ ...withMember(), imports: [{ ...rec, statementFrom: '2020-04-01', statementTo: '2026-11-15', accounts: ['Folio 1/2'] }] }))!;
+    expect(good.imports[0]).toMatchObject({ statementTo: '2026-11-15', accounts: ['Folio 1/2'] });
+  });
+});

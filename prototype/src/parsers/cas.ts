@@ -44,6 +44,10 @@ function schemeName(line: string): string {
     .trim();
 }
 
+const CAS_DAY = String.raw`(\d{1,2}[-\s][A-Za-z]{3}[-\s]\d{4}|\d{2}[-/]\d{2}[-/]\d{4})`;
+/** The period a fund statement covers: "01-Apr-2026 To 15-Nov-2026" (CAMS) or "Statement for the period … to …". */
+const STATEMENT_PERIOD = new RegExp(`${CAS_DAY}\\s+to\\s+${CAS_DAY}`, 'i');
+
 /** Mutual fund transactions from a CAMS or KFintech detailed CAS, one line of text per PDF row. */
 export function parseMutualFundCAS(lines: string[]): ParseResult {
   const txns: ParsedTxn[] = [];
@@ -52,6 +56,9 @@ export function parseMutualFundCAS(lines: string[]): ParseResult {
   let skipped = 0;
   let cur: { isin: string; name: string; units: number; closing: number | null; cost: number | null; folio?: string; details: ReturnType<typeof schemeDetails> } | null = null;
   let folio: string | undefined;
+  let statementFrom: string | undefined;
+  let statementTo: string | undefined;
+  const folios: string[] = [];
 
   const closeScheme = () => {
     if (cur && cur.closing != null && Math.abs(cur.closing - cur.units) > 0.002) {
@@ -62,7 +69,16 @@ export function parseMutualFundCAS(lines: string[]): ParseResult {
   for (const raw of lines) {
     const line = raw.replace(/\s+/g, ' ').trim();
     const f = line.match(/Folio\s*No\s*:?\s*([0-9A-Z]+(?:\s*\/\s*[0-9A-Z]+)?)/i);
-    if (f) folio = `Folio ${f[1]!.replace(/\s+/g, '')}`;
+    if (f) {
+      folio = `Folio ${f[1]!.replace(/\s+/g, '')}`;
+      if (!folios.includes(folio)) folios.push(folio);
+    }
+    // The period is in the header, before the first folio; a date range further down is a transaction row.
+    const period = statementTo || folio ? null : line.match(STATEMENT_PERIOD);
+    if (period) {
+      statementFrom = parseDate(period[1]) ?? undefined;
+      statementTo = statementFrom ? parseDate(period[2]) ?? undefined : undefined;
+    }
     const isin = findIsin(line);
     if (isin && /ISIN/i.test(line) && isin.startsWith('INF')) {
       closeScheme();
@@ -99,7 +115,10 @@ export function parseMutualFundCAS(lines: string[]): ParseResult {
   }
   closeScheme();
   if (txns.length === 0) warnings.push('No mutual fund transactions found. Use the "Detailed" CAS from CAMS or KFintech, covering all years since the first purchase.');
-  return { format: 'Mutual fund CAS (CAMS / KFintech)', txns, prices: dedupePrices(prices), warnings, skipped };
+  return {
+    format: 'Mutual fund CAS (CAMS / KFintech)', txns, prices: dedupePrices(prices), warnings, skipped,
+    ...(statementFrom && statementTo ? { statementFrom, statementTo, statementAccounts: folios } : {}),
+  };
 }
 
 const DEMAT_ROW = /(IN[EF][A-Z0-9]{9})\s+(.+?)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+\.\d+)\s+([\d,]+\.\d+)\s*$/;

@@ -4,6 +4,8 @@ import type { DatedMove, PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
 import type { RecommendationRecord } from './engine/records';
 import { normAccount, TRIMMING_HOLDINGS_SOURCES } from './engine/openingLots';
+import { accountKey, newestEvidence } from './engine/freshness';
+import { todayISO } from './engine/dates';
 import { FY_2026_27 } from './engine/rules';
 import type { ISODate, Member, Paise, Qty, Security, TaxType, TermAnswer, Txn } from './engine/types';
 import type { BrokerSummary, ParsedPrice, ParseResult } from './parsers';
@@ -17,6 +19,10 @@ export interface ImportRecord {
   txns: number;
   prices: number;
   warnings: string[];
+  /** A fund statement's period, which dates its folios (`accounts`) for the Plan's old-data marks (freshness.ts). */
+  statementFrom?: ISODate;
+  statementTo?: ISODate;
+  accounts?: string[];
 }
 
 /** Units a statement says a member holds, to check the trade history against. */
@@ -110,6 +116,7 @@ export function normalizeState(s: AppState | null | undefined): AppState | null 
   const done = Object.fromEntries(Object.entries(s.done ?? {}).map(([k, v]) => [k.startsWith('FY ') ? k : `${TICK_YEAR}|${k}`, v]));
   return {
     ...s,
+    imports: (s.imports ?? []).map(cleanImport),
     members: autoLink((s.members as LegacyMember[]).map(migrateMember)),
     securities: ((s.securities ?? []) as LegacySecurity[]).map(migrateSecurity),
     plannedSales: s.plannedSales ?? [], needSoon: s.needSoon ?? {}, history: s.history ?? [], done, positions: s.positions ?? [],
@@ -305,14 +312,37 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
 
   s.imports.push({
     id: importId, memberId, fileName, format: r.format, at: new Date().toISOString(), txns: added, prices: r.prices.length, warnings: r.warnings,
+    ...(validPeriod(r.statementFrom, r.statementTo) ? { statementFrom: r.statementFrom, statementTo: r.statementTo, accounts: r.statementAccounts ?? [] } : {}),
   });
   return s;
 }
 
-/** True when `after` (from `applyImport`) holds the same transactions and positions as `before`: the file was already in. */
+/** A period of real dates, start before end, ending no later than today: a future end would clear every mark. */
+function validPeriod(from: unknown, to: unknown): boolean {
+  const iso = (d: unknown): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+  return iso(from) && iso(to) && from <= to && to <= todayISO();
+}
+
+/** An import record from a saved copy or backup, keeping its statement period only when it is well formed. */
+function cleanImport(i: ImportRecord): ImportRecord {
+  const { statementFrom, statementTo, accounts, ...rest } = i;
+  const ok = validPeriod(statementFrom, statementTo) && Array.isArray(accounts) && accounts.every((a) => typeof a === 'string');
+  return ok ? { ...rest, statementFrom, statementTo, accounts } : rest;
+}
+
+/**
+ * True when `after` (from `applyImport`) holds the same transactions and positions as `before` and its fund statement,
+ * if any, moves no folio's date: the file was already in.
+ */
 export function importAddedNothing(before: AppState, after: AppState): boolean {
   const strip = (ps: AppState['positions']) => JSON.stringify(ps.map(({ importId: _i, ...p }) => JSON.stringify(p)).sort());
-  return after.txns.length === before.txns.length && strip(after.positions) === strip(before.positions);
+  const last = after.imports[after.imports.length - 1];
+  let reachesFurther = false;
+  if (last?.statementTo) {
+    const [was, now] = [newestEvidence(before), newestEvidence(after)];
+    reachesFurther = (last.accounts ?? []).some((a) => (now.get(accountKey(last.memberId, a)) ?? '') > (was.get(accountKey(last.memberId, a)) ?? ''));
+  }
+  return !reachesFurther && after.txns.length === before.txns.length && strip(after.positions) === strip(before.positions);
 }
 
 export function removeImport(state: AppState, importId: string): AppState {

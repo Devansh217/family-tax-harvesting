@@ -69,3 +69,48 @@ describe('newest evidence per account', () => {
     expect(isOld('2026-10-15', '2026-11-14')).toBe(true);
   });
 });
+
+describe('a fund statement is dated by its period end', () => {
+  const F = 'Folio 1234567/89';
+  const fundBuy = buy('2025-06-01', 'Mutual fund CAS (CAMS / KFintech)', F);
+  const st = (statementFrom: string, statementTo: string, accounts = [F, 'Folio 7654321']) => ({ memberId: 'a', statementFrom, statementTo, accounts });
+  const at = (m: Map<string, string>, folio = F) => m.get(accountKey('a', folio));
+
+  it('a statement from before the first trade dates the folio in both maps', () => {
+    const imports = [st('2020-04-01', '2026-11-15')];
+    for (const m of [newestEvidence({ txns: [fundBuy], imports }), newestRoomEvidence({ txns: [fundBuy], imports })]) expect(at(m)).toBe('2026-11-15');
+  });
+
+  it('a folio with no trades in any file is not dated by a statement alone', () => {
+    expect(at(newestEvidence({ txns: [fundBuy], imports: [st('2020-04-01', '2026-11-15')] }), 'Folio 7654321')).toBeUndefined();
+  });
+
+  it('a statement that leaves a gap after the earlier evidence does not date the folio', () => {
+    for (const imports of [[st('2020-04-01', '2026-06-30'), st('2026-11-01', '2026-11-15')], [st('2026-11-01', '2026-11-15'), st('2020-04-01', '2026-06-30')]]) {
+      expect(at(newestRoomEvidence({ txns: [fundBuy], imports }))).toBe('2026-06-30');
+    }
+  });
+
+  it('a statement that starts after 1 April of the year it reaches does not date the folio: an earlier sale may be in no file', () => {
+    const augBuy = buy('2026-08-01', 'Mutual fund CAS (CAMS / KFintech)', F);
+    expect(at(newestRoomEvidence({ txns: [augBuy], imports: [st('2026-07-01', '2026-11-15')] }))).toBe('2026-08-01');
+    expect(at(newestRoomEvidence({ txns: [augBuy], imports: [st('2026-04-01', '2026-11-15')] }))).toBe('2026-11-15');
+  });
+
+  it('a chain may cross 1 April, and a statement ending in Jan–Mar starts from the April before', () => {
+    const oldBuy = buy('2025-02-01', 'Mutual fund CAS (CAMS / KFintech)', F);
+    expect(at(newestRoomEvidence({ txns: [oldBuy], imports: [st('2024-04-01', '2026-03-31'), st('2026-04-01', '2026-11-15')] }))).toBe('2026-11-15');
+    expect(at(newestRoomEvidence({ txns: [oldBuy], imports: [st('2024-04-01', '2025-02-15')] }))).toBe('2025-02-15');
+    expect(at(newestRoomEvidence({ txns: [oldBuy], imports: [st('2024-05-01', '2025-02-15')] }))).toBe('2025-02-01');
+  });
+
+  it('back-to-back monthly statements carry the date forward, in any import order', () => {
+    const chain = [st('2020-04-01', '2026-09-30'), st('2026-10-01', '2026-10-31'), st('2026-11-01', '2026-11-30')];
+    expect(at(newestRoomEvidence({ txns: [fundBuy], imports: chain }))).toBe('2026-11-30');
+    expect(at(newestRoomEvidence({ txns: [fundBuy], imports: [...chain].reverse() }))).toBe('2026-11-30');
+  });
+
+  it('an import saved before the period was read dates by its transactions as before', () => {
+    expect(at(newestEvidence({ txns: [fundBuy], imports: [{ memberId: 'a' }] }))).toBe('2025-06-01');
+  });
+});

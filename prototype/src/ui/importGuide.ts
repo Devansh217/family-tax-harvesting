@@ -334,8 +334,9 @@ function sectionGuide(state: GuideState, fam: FamilyView, memberId: string, acct
   const drafts = STEPS[acct.broker]({ state, fam, memberId, acct, today, file, lots, trades, keys, notes });
 
   const newest = accountKeys.map((k) => evidenceDate(state, memberId, k)).reduce<ISODate | null>((a, d) => (d && (!a || d > a) ? d : a), null);
-  // A fund CAS dates its evidence by the newest transaction, which a buy-and-hold investor never moves: refreshing it
-  // can't clear the line, so the Mutual funds section never goes stale here (the Plan's marks still use the date).
+  // A fund CAS dates its folios by its period end, but one saved before that was read dates by its newest transaction,
+  // which a buy-and-hold investor never moves: so the Mutual funds section never goes stale here (the Plan's marks
+  // still use the date).
   // Where the holdings file can't move the date (Angel One shares only), today's trade history is asked instead: a
   // suggestion, as a buy-and-hold member's newer download has no new trades and can't clear the line.
   const h = drafts.find((d) => d.kind === 'holdings');
