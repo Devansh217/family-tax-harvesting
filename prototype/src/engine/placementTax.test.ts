@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { tenYearTax, PLACEMENT_YEARS, type Slice } from './placementTax';
+import { finalYearIncome, tenYearTax, PLACEMENT_YEARS, type Slice } from './placementTax';
 import type { Member } from './types';
 
 const L = 1_00_000_00;
@@ -100,5 +100,15 @@ describe('tenYearTax', () => {
     const start = { normal: 20 * L, year1: none };
     expect(tenYearTax(member(), start, [plain], ASOF, 1)).toBe(35_750_00);
     expect(tenYearTax(member(), start, [cushioned], ASOF, 1)).toBe(40_950_00);
+  });
+});
+
+describe('finalYearIncome', () => {
+  // Normal 3 L plus the year-10 gain of a 10 L slab fund at 6%: 10 L * 1.06^10, rounded each year, is 17,90,847.70,
+  // so the gain is 7,90,847.70 and the income 10,90,847.70.
+  it('adds every gain sold in the last year to normal income', () => {
+    const s = slice({ taxClass: 'slab', annualReturn: 0.06, value: 10 * L });
+    expect(finalYearIncome(member(), { normal: 3 * L, year1: none }, [s], ASOF)).toBe(10_90_847_70);
+    expect(finalYearIncome(member(), { normal: 3 * L, year1: none }, [], ASOF)).toBe(3 * L);
   });
 });

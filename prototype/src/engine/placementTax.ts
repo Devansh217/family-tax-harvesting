@@ -1,5 +1,5 @@
 import { addMonths } from './dates';
-import { rulesFor } from './rules';
+import { rulesFor, type TaxRules } from './rules';
 import { freeEquityLtRoom, taxForYear, type GainBuckets } from './tax';
 import type { ISODate, Member, Paise } from './types';
 
@@ -38,23 +38,41 @@ interface State {
 }
 
 /**
- * The extra tax over `years` tax years from holding these slices, with equity gains harvested each year inside the
- * year's tax-free room and everything left sold in the last year.
- *
- * Each year before the last, in order: young gain from last year becomes harvestable; every slice grows by its
- * return on the value at the start of the year plus that year's add (year 1's add earns nothing that year); then
- * equity gain is harvested up to `freeEquityLtRoom`, shared across slices by their gain. Harvesting is free by
- * construction (the room is the most that leaves the tax unchanged), so those years cost the same with or without
- * the slices. In the last year nothing is harvested: all remaining gain is sold, so the one `taxForYear` call
- * applies the exemption and basic-exemption room once, alongside any other gains sold that year. The result is that
- * year's tax with the sale minus without it, which equals summing every year's tax with and without the slices.
- *
- * Simplifications: equity gain still under a year old at the final sale is taxed as long-term too; a holding's
- * starting gain is treated as long-term and harvestable from year 1; negative gains are clamped to 0 with no set-off
- * between slices.
+ * Speed: the placement solver calls `tenYearTax` thousands of times for the same members. Everything here that
+ * doesn't depend on the slices (each year's date and rules, each year's free room, the final year's tax without the
+ * slices) is remembered per member and start object. Members and starts are treated as immutable, as everywhere in
+ * the engine: a changed member is a new object and gets fresh values.
  */
-export function tenYearTax(member: Member, start: ProjectionStart, slices: Slice[], asOf: ISODate, years: number = PLACEMENT_YEARS): Paise {
-  if (slices.length === 0 || years < 1) return 0;
+const memo = new WeakMap<Member, WeakMap<ProjectionStart, Map<string, Paise>>>();
+function memoOf(member: Member, start: ProjectionStart): Map<string, Paise> {
+  let byStart = memo.get(member);
+  if (!byStart) { byStart = new WeakMap(); memo.set(member, byStart); }
+  let m = byStart.get(start);
+  if (!m) { m = new Map(); byStart.set(start, m); }
+  return m;
+}
+const dateMemo = new Map<ISODate, ISODate[]>();
+/** The date `y - 1` years after `asOf`. */
+function yearDate(asOf: ISODate, y: number): ISODate {
+  let ds = dateMemo.get(asOf);
+  if (!ds) { ds = []; dateMemo.set(asOf, ds); }
+  return (ds[y] ??= addMonths(asOf, 12 * (y - 1)));
+}
+const rulesMemo = new Map<ISODate, TaxRules>();
+const rulesOn = (date: ISODate) => { let r = rulesMemo.get(date); if (!r) { r = rulesFor(date); rulesMemo.set(date, r); } return r; };
+
+function roomFor(member: Member, start: ProjectionStart, y: number, date: ISODate): Paise {
+  const m = memoOf(member, start), key = y === 1 ? `r1|${date}` : `r|${date}`;
+  let room = m.get(key);
+  if (room === undefined) {
+    room = freeEquityLtRoom(member, start.normal, y === 1 ? start.year1 : ZERO, rulesOn(date), date);
+    m.set(key, room);
+  }
+  return room;
+}
+
+/** The gains sold in the last year, after yearly harvesting (see tenYearTax). */
+function finalSale(member: Member, start: ProjectionStart, slices: Slice[], asOf: ISODate, years: number): GainBuckets {
   const st: State[] = slices.map((s) => ({ s, value: s.value, gain: Math.max(0, s.gain), young: 0 }));
   const equity = st.filter((x) => x.s.taxClass === 'equity');
   let sale: GainBuckets = ZERO;
@@ -67,13 +85,12 @@ export function tenYearTax(member: Member, start: ProjectionStart, slices: Slice
       x.gain += grown; x.young += addGrown;
       x.value += x.s.yearlyAdd + grown + addGrown;
     }
-    const date = addMonths(asOf, 12 * (y - 1));
-    const buckets = y === 1 ? start.year1 : ZERO;
+    const date = yearDate(asOf, y);
 
     let harvestable = 0;
     for (const x of equity) harvestable += Math.max(0, x.gain);
     if (y < years && harvestable > 0) {
-      const room = freeEquityLtRoom(member, start.normal, buckets, rulesFor(date), date);
+      const room = roomFor(member, start, y, date);
       let left = Math.min(harvestable, room), pool = harvestable;
       for (const x of equity) {
         const g = Math.max(0, x.gain);
@@ -93,12 +110,60 @@ export function tenYearTax(member: Member, start: ProjectionStart, slices: Slice
     }
   }
 
-  const date = addMonths(asOf, 12 * (years - 1));
-  const r = rulesFor(date);
+  return sale;
+}
+
+/**
+ * The extra tax over `years` tax years from holding these slices, with equity gains harvested each year inside the
+ * year's tax-free room and everything left sold in the last year.
+ *
+ * Each year before the last, in order: young gain from last year becomes harvestable; every slice grows by its
+ * return on the value at the start of the year plus that year's add (year 1's add earns nothing that year); then
+ * equity gain is harvested up to `freeEquityLtRoom`, shared across slices by their gain. Harvesting is free by
+ * construction (the room is the most that leaves the tax unchanged), so those years cost the same with or without
+ * the slices. In the last year nothing is harvested: all remaining gain is sold, so the one `taxForYear` call
+ * applies the exemption and basic-exemption room once, alongside any other gains sold that year. The result is that
+ * year's tax with the sale minus without it, which equals summing every year's tax with and without the slices.
+ *
+ * Simplifications: equity gain still under a year old at the final sale is taxed as long-term too; a holding's
+ * starting gain is treated as long-term and harvestable from year 1; negative gains are clamped to 0 with no set-off
+ * between slices.
+ */
+export function tenYearTax(member: Member, start: ProjectionStart, slices: Slice[], asOf: ISODate, years: number = PLACEMENT_YEARS): Paise {
+  if (slices.length === 0 || years < 1) return 0;
+  const sale = finalSale(member, start, slices, asOf, years);
+  const date = yearDate(asOf, years);
+  const r = rulesOn(date);
   const base = years === 1 ? start.year1 : ZERO;
   const withSale: GainBuckets = {
     equitySt: base.equitySt + sale.equitySt, equityLt: base.equityLt + sale.equityLt,
     otherLt: base.otherLt + sale.otherLt, slab: base.slab + sale.slab,
   };
-  return Math.max(0, taxForYear(member, start.normal, withSale, r, date).tax - taxForYear(member, start.normal, base, r, date).tax);
+  const m = memoOf(member, start), key = `b${years === 1 ? 1 : ''}|${date}`;
+  let without = m.get(key);
+  if (without === undefined) { without = taxForYear(member, start.normal, base, r, date).tax; m.set(key, without); }
+  return Math.max(0, taxForYear(member, start.normal, withSale, r, date).tax - without);
+}
+
+/**
+ * The gain buckets of the last year with the final sale (and this year's booked gains when the horizon is one year),
+ * and that year's date: what `tenYearTax` hands `taxForYear`. Exported for tests that inspect the final year.
+ */
+export function finalYearBuckets(member: Member, start: ProjectionStart, slices: Slice[], asOf: ISODate, years: number = PLACEMENT_YEARS): { buckets: GainBuckets; date: ISODate } {
+  const sale = slices.length === 0 || years < 1 ? ZERO : finalSale(member, start, slices, asOf, years);
+  const base = years === 1 ? start.year1 : ZERO;
+  const buckets: GainBuckets = {
+    equitySt: base.equitySt + sale.equitySt, equityLt: base.equityLt + sale.equityLt,
+    otherLt: base.otherLt + sale.otherLt, slab: base.slab + sale.slab,
+  };
+  return { buckets, date: yearDate(asOf, Math.max(1, years)) };
+}
+
+/**
+ * Total income in the last year (normal income plus every gain sold that year, and this year's booked gains when the
+ * horizon is one year): what the rebate test at the ₹12 L line looks at.
+ */
+export function finalYearIncome(member: Member, start: ProjectionStart, slices: Slice[], asOf: ISODate, years: number = PLACEMENT_YEARS): Paise {
+  const { buckets: b } = finalYearBuckets(member, start, slices, asOf, years);
+  return start.normal + b.equitySt + b.equityLt + b.otherLt + b.slab;
 }
