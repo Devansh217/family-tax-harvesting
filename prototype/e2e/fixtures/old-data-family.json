@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "isSample": false,
+  "ackGuidance": true,
+  "members": [
+    {
+      "id": "o",
+      "name": "Olga",
+      "relation": "self",
+      "age": 40,
+      "regime": "new",
+      "income": [
+        {
+          "kind": "other",
+          "amount": 200000000,
+          "from": "manual"
+        }
+      ]
+    }
+  ],
+  "securities": [
+    {
+      "isin": "INE0TESTA001",
+      "name": "Test Share A",
+      "taxType": "equity",
+      "listed": true,
+      "taxTypeSource": "share",
+      "price": 30000
+    },
+    {
+      "isin": "INE0TESTB001",
+      "name": "Test Share B",
+      "taxType": "equity",
+      "listed": true,
+      "taxTypeSource": "share",
+      "price": 10000
+    }
+  ],
+  "txns": [
+    {
+      "id": "a-buy",
+      "importId": "i1",
+      "memberId": "o",
+      "isin": "INE0TESTA001",
+      "date": "2025-01-10",
+      "side": "buy",
+      "qty": 500000,
+      "amount": 500000,
+      "source": "Trade history (Zerodha)",
+      "account": "Zerodha"
+    },
+    {
+      "id": "b-buy",
+      "importId": "i1",
+      "memberId": "o",
+      "isin": "INE0TESTB001",
+      "date": "2026-03-31",
+      "side": "buy",
+      "qty": 100000,
+      "amount": 10000,
+      "source": "Trade history (Zerodha)",
+      "account": "Zerodha"
+    }
+  ],
+  "positions": [],
+  "imports": [
+    {
+      "id": "i1",
+      "memberId": "o",
+      "fileName": "tradebook.csv",
+      "format": "Trade history",
+      "txns": 2,
+      "prices": 0,
+      "warnings": [],
+      "at": "2026-04-01T10:00:00.000Z"
+    }
+  ],
+  "done": {},
+  "plannedSales": [],
+  "needSoon": {},
+  "history": [],
+  "brokerSummaries": [],
+  "taxTypeOverrides": {},
+  "recommendations": [],
+  "datedMoves": [],
+  "termAnswers": [],
+  "alerts": {
+    "seasonHelp": false,
+    "chosen": true
+  }
+}

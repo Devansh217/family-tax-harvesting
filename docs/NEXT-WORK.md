@@ -24,8 +24,8 @@ Moved there on 25 Nov 2026. Each item from this file became one issue. The issue
 ## Founder's priority (25 Nov 2026)
 
 1. [#24](https://github.com/Devansh217/family-tax-harvesting/issues/24) B1 guided import (done, PR #21 merged 27 Nov)
-2. [#25](https://github.com/Devansh217/family-tax-harvesting/issues/25) C1 old-data marks (building, PR #20)
-3. [#26](https://github.com/Devansh217/family-tax-harvesting/issues/26) A1 holding in another name (blocked by C1)
+2. [#25](https://github.com/Devansh217/family-tax-harvesting/issues/25) C1 old-data marks (done, PR #20)
+3. [#26](https://github.com/Devansh217/family-tax-harvesting/issues/26) A1 holding in another name (can start)
 4. [#27](https://github.com/Devansh217/family-tax-harvesting/issues/27) E2 remove the Compare page
 5. [#28](https://github.com/Devansh217/family-tax-harvesting/issues/28) B2 generic Tax P&L reader
 6. [#29](https://github.com/Devansh217/family-tax-harvesting/issues/29) B3 Angel holdings (blocked by B2)

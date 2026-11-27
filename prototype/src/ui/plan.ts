@@ -1,8 +1,8 @@
-import { countingSummaries, pnlGroups, taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
+import { countingSummaries, isLaterBenefit, isMarked, pnlGroups, taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
 import { doneThisSeason, type RecommendationRecord } from '../engine/records';
 import { APPROX_MARGIN, normAccount, TRIMMING_HOLDINGS_SOURCES } from '../engine/openingLots';
 import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
-import { possessive } from './format';
+import { dateLabel, possessive } from './format';
 import { currentPnls, hasYearPnl, preBuybackPnls, type ImportLike } from './warnings';
 
 /** Days a move can be put on: from today to the last safe day, or to the end of the tax year when that is not known. */
@@ -24,11 +24,15 @@ export function planView(fam: Pick<FamilyView, 'moves' | 'rules'>, records: Reco
   const doneIds = new Set(done.map((d) => d.move.id));
   const open = fam.moves.filter((m) => !doneIds.has(m.id));
   const sum = (ms: Move[], f: (m: Move) => number) => ms.reduce((a, m) => a + f(m), 0);
+  // A move on old data, or one whose room may be smaller, is shown but left out of the headline until it is fresh.
+  const counted = open.filter((m) => !isMarked(m));
+  const laterOf = (m: Move) => (isLaterBenefit(m) ? m.saving : m.kind === 'switch_direct' ? m.taxAvoided : 0);
   const doneMoves = done.map((d) => d.move).filter((m) => !m.noRoom);
   const gainDone = sum(doneMoves, taxFreeGainOf);
   const nowDone = sum(doneMoves, nowSavingOf);
   return {
-    open, done, gainDone, gainTotal: gainDone + sum(open, taxFreeGainOf), nowDone, nowTotal: nowDone + sum(open, nowSavingOf),
+    open, done, gainDone, gainTotal: gainDone + sum(counted, taxFreeGainOf), nowDone, nowTotal: nowDone + sum(counted, nowSavingOf),
+    laterSaving: sum(counted, laterOf),
     doneCount: doneMoves.length, liveCount: doneMoves.length + open.filter((m) => !m.noRoom).length,
   };
 }
@@ -39,7 +43,7 @@ export const importMemberOf = (route: string) => (route.startsWith('import-') ? 
 
 export interface PlanGap {
   memberId: string;
-  key: 'no_holdings' | 'shares_no_dates' | 'funds_no_dates' | 'funds_to_check' | 'holdings_no_date' | 'buyback_pnl' | 'pnl_again' | 'pnl_overlap';
+  key: 'no_holdings' | 'shares_no_dates' | 'funds_no_dates' | 'funds_to_check' | 'holdings_no_date' | 'buyback_pnl' | 'pnl_again' | 'pnl_overlap' | 'old_data' | 'old_room';
   text: string;
   /** Where to fix it. */
   href: string;
@@ -80,7 +84,7 @@ export const sharesNoDatesGap = (memberId: string, name: string, shares: Paise):
  * buy dates get no moves; funds with an unknown tax type get none either.
  */
 export function planGaps(
-  fam: Pick<FamilyView, 'members'> & Partial<Pick<FamilyView, 'securities' | 'holdingsNotes' | 'rules'>>, positions: HeldPositionLike[], brokerSummaries: SummaryLike[] = [],
+  fam: Pick<FamilyView, 'members'> & Partial<Pick<FamilyView, 'securities' | 'holdingsNotes' | 'rules' | 'oldAccounts' | 'oldRoom'>>, positions: HeldPositionLike[], brokerSummaries: SummaryLike[] = [],
   imports: ImportLike[] = [],
 ): PlanGap[] {
   const out: PlanGap[] = [];
@@ -173,6 +177,22 @@ export function planGaps(
       out.push({
         memberId: id, key: 'funds_to_check', href: `#member-${id}`, action: 'Pick',
         text: `${name}: ${check} ${check === 1 ? 'fund needs' : 'funds need'} a tax type before they get moves.`,
+      });
+    }
+    // Accounts whose newest data is old: their moves are marked and left out of the headline.
+    for (const o of fam.oldAccounts ?? []) {
+      if (o.memberId !== id) continue;
+      out.push({
+        memberId: id, key: 'old_data', href: importHref(id), action: 'Import',
+        text: `${possessive(name)} ${o.account}: newest data from ${dateLabel(o.newest)}, so its moves may be out of date. Import today's holdings file.`,
+      });
+    }
+    // A member whose room a move uses while that room rests on old data: gains booked since may be missing.
+    for (const o of fam.oldRoom ?? []) {
+      if (o.memberId !== id) continue;
+      out.push({
+        memberId: id, key: 'old_room', href: importHref(id), action: 'Import',
+        text: `${possessive(name)} tax-free room: gains booked since ${dateLabel(o.since)} aren't counted. Import this year's tax P&L.`,
       });
     }
   }
