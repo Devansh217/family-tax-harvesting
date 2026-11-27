@@ -13,7 +13,6 @@ const SCREENS: Array<{ route: string; heading: string }> = [
   { route: 'home', heading: 'Mehta family' },
   { route: 'plan', heading: 'Plan' },
   { route: 'simulate', heading: 'Simulate a sale' },
-  { route: 'compare', heading: 'What it brings home' },
   { route: 'family', heading: 'Family' },
   { route: 'import', heading: 'Import statements' },
   { route: 'about', heading: 'About and privacy' },
@@ -157,20 +156,11 @@ for (const size of SIZES) {
         await expectNoSideScroll(page);
       });
 
-      test('pick a fund category on Compare', async ({ page }) => {
+      test('Compare is gone: no nav item, and an old #compare link opens Home', async ({ page }) => {
         await open(page, 'compare');
-        const what = page.getByRole('group', { name: 'What to compare' }).first();
-        await what.getByRole('button', { name: 'Fund category' }).click();
-        const cat = page.locator('#pa-cat');
-        await expect(cat).toBeVisible();
-        // Pick a different category from the one shown, by its option text.
-        const options = await cat.locator('option').allTextContents();
-        const current = await cat.locator('option:checked').textContent();
-        const other = options.find((o) => o !== current)!;
-        await cat.selectOption({ label: other });
-        await expect(cat.locator('option:checked')).toHaveText(other);
-        await expect(page.getByRole('region', { name: 'Result' })).toBeVisible();
-        await expectNoSideScroll(page);
+        await expect(h1(page, 'Mehta family')).toBeVisible();
+        await expect(page.locator('nav a[href="#compare"]')).toHaveCount(0);
+        await expect(page.getByRole('link', { name: 'Compare', exact: true })).toHaveCount(0);
       });
 
       test('Before you start: Show details, then I understand', async ({ page }) => {

@@ -2,6 +2,8 @@
 
 **The backlog lives in GitHub issues:** https://github.com/Devansh217/family-tax-harvesting/issues
 
+**Handoff board:** the pinned issue [#50](https://github.com/Devansh217/family-tax-harvesting/issues/50) shows what is in flight right now and what waits on the founder (rules: `docs/HANDOFF.md`).
+
 **Board:** https://github.com/users/Devansh217/projects/1. Every issue has a **Status** (Blocked, Can start, In progress, Done) and a **Priority** number (1–14 is the founder's order below; 15+ are not yet placed). Sort by Priority and take the first "Can start" item.
 
 Moved there on 25 Nov 2026. Each item from this file became one issue. The issue holds the full detail and a "Picking this up" guide, so any session or agent can take it up without reading this file. This file keeps only the conventions and the map from the old item IDs (B2, F3 and so on, still used in designs and plans) to issue numbers.

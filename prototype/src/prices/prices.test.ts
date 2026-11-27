@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mergePriceFiles, parseAmfiFunds, parseAmfiNav, parseBhavcopy, parseShareNames } from './parse';
-import { securitiesForCompare, withFunds } from '../ui/market';
+import { withFunds } from '../ui/market';
 
 const HEAD = 'TradDt,BizDt,Sgmt,Src,FinInstrmTp,FinInstrmId,ISIN,TckrSymb,SctySrs,XpryDt,FininstrmActlXpryDt,StrkPric,OptnTp,FinInstrmNm,OpnPric,HghPric,LwPric,ClsPric,LastPric,PrvsClsgPric,UndrlygPric,SttlmPric,OpnIntrst,ChngInOpnIntrst,TtlTradgVol,TtlTrfVal,TtlNbOfTxsExctd,SsnId,NewBrdLotQty,Rmks,Rsvd1,Rsvd2,Rsvd3,Rsvd4';
 const row = (isin: string, sym: string, close: string, src = 'NSE') =>
@@ -72,15 +72,6 @@ describe('price files', () => {
     expect(out[0]).toMatchObject({ taxType: 'slab', taxTypeSource: 'amfi', category: 'Debt Scheme - Liquid Fund' });
     expect(out[1]).toMatchObject({ taxType: 'slab', taxTypeSource: 'user' });
     expect(out[2]).toEqual(secs[2]);
-  });
-
-  it('review: Compare sees classified holdings and funds the family does not hold', () => {
-    const file = { date: '2026-11-13', funds: { INF9: { n: 'Liquid X', c: 'Debt Scheme - Liquid Fund' } } };
-    const held = [{ isin: 'INF2', name: 'Flexi', taxType: 'equity' as const, listed: false, taxTypeSource: 'amfi' as const }];
-    const out = securitiesForCompare(held, file, 'INF9');
-    expect(out).toHaveLength(2);
-    expect(out[1]).toMatchObject({ isin: 'INF9', taxType: 'slab', category: 'Debt Scheme - Liquid Fund' });
-    expect(securitiesForCompare(held, file, 'INF2')).toEqual(held);
   });
 });
 
