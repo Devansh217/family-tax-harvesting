@@ -1,5 +1,5 @@
 import { addMonths } from '../engine/dates';
-import { countingSummaries, type FamilyView } from '../engine/family';
+import { countingSummaries, giverOf, isPlacement, type FamilyView } from '../engine/family';
 import { accountKey, isOld, newestEvidence } from '../engine/freshness';
 import { APPROX_MARGIN, decidingFiles, isTradebook, normAccount, TRIMMING_HOLDINGS_SOURCES, type DecidingFile } from '../engine/openingLots';
 import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
@@ -508,7 +508,7 @@ export function memberGuide(state: GuideState, fam: FamilyView, memberId: string
 function cushionOf(fam: FamilyView, memberId: string, refs: AccountRef[]): MemberGuide['cushion'] {
   const sums = new Map<string, Paise>();
   for (const m of fam.moves) {
-    if (!m.approx || m.noRoom || (m.kind === 'gift' ? m.fromId : m.memberId) !== memberId) continue;
+    if (!m.approx || m.noRoom || isPlacement(m) || giverOf(m) !== memberId) continue;
     const gain = m.kind === 'harvest_loss' ? m.loss : m.gain;
     const k = normAccount(m.account);
     sums.set(k, (sums.get(k) ?? 0) + Math.abs(gain) * APPROX_MARGIN);

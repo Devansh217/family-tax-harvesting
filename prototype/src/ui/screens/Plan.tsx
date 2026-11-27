@@ -76,6 +76,10 @@ function describe(m: Move, nameOf: (id: string) => string, bonusOf: (id: string)
     }
     case 'wait':
       return { who: m.memberId, title: `Hold ${m.name} until ${dateLabel(m.until, false)}`, sub: `${nameOf(m.memberId)} · turns long-term in ${m.days} days${where}` };
+    case 'place_sip':
+      return { who: m.toId, title: `Gift ${nameOf(m.toId)} ${inrShort(m.yearlyGift)} once a year · ${nameOf(m.toId)} runs the ${inrShort(m.monthly)} SIP in ${m.name}`, sub: `${nameOf(m.fromId)} to ${nameOf(m.toId)}${where}` };
+    case 'place_holding':
+      return { who: m.toId, title: `Gift ${nameOf(m.toId)} ${u} ${unitWord} of ${m.name}`, sub: `${nameOf(m.fromId)} to ${nameOf(m.toId)}${where}` };
   }
 }
 
@@ -231,7 +235,7 @@ export function Plan() {
               <div key={move.id} className="move done">
                 <div className="grow stack" style={{ gap: 4 }}>
                   <p className="move-title">{describe(move, nameOf, () => 0).title}</p>
-                  <p className="small muted">{move.kind === 'gift' ? `${nameOf(move.fromId)} to ${nameOf(move.toId)}` : nameOf(move.memberId)}</p>
+                  <p className="small muted">{'fromId' in move ? `${nameOf(move.fromId)} to ${nameOf(move.toId)}` : nameOf(move.memberId)}</p>
                   <p className="tiny"><span className="chip room">{label}</span></p>
                 </div>
                 {!detected && (

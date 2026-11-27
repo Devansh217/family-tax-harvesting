@@ -10,7 +10,7 @@ export type MoveDraft = Move extends infer M ? (M extends Move ? Omit<M, 'id'> :
  * records survive a recompute, and a changed quantity is still the same move.
  */
 export function moveId(m: MoveDraft, r: TaxRules): string {
-  const who = m.kind === 'gift' ? `gift|${m.fromId}>${m.toId}` : `${m.kind}|${m.memberId}`;
+  const who = m.kind === 'gift' || m.kind === 'place_sip' || m.kind === 'place_holding' ? `${m.kind}|${m.fromId}>${m.toId}` : `${m.kind}|${m.memberId}`;
   return `${r.label}|${who}|${m.isin}|${m.account}`;
 }
 

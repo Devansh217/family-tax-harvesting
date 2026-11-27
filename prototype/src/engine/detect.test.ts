@@ -50,6 +50,13 @@ describe('detectDone', () => {
     expect(run([gift()], [txn({ memberId: 'a' })])).toEqual([]);
     expect(run([gift()], [txn({ memberId: 'b' })])).toHaveLength(1);
   });
+  it('placement moves are never auto-detected as done', () => {
+    // A gift of units or SIP money books no sale, so no statement row can confirm it.
+    const placeHolding = { ...base, id: 'ph1', kind: 'place_holding', fromId: 'a', toId: 'b', isin: 'INF1', qty: 100, savingPerYear: 1, saving10y: 10 } as Move;
+    const placeSip = { ...base, id: 'ps1', kind: 'place_sip', fromId: 'a', toId: 'b', isin: 'INF1', qty: 0, monthly: 1, yearlyGift: 12, savingPerYear: 1, saving10y: 10 } as Move;
+    const sales = [txn({ memberId: 'a' }), txn({ memberId: 'b' }), txn({ memberId: 'a', side: 'buy' }), txn({ memberId: 'b', side: 'buy' })];
+    expect(run([placeHolding, placeSip], sales)).toEqual([]);
+  });
   it('switch with toIsin needs the buy too', () => {
     const m = sw({ toIsin: 'INF2' });
     expect(run([m], [txn()])).toEqual([]);

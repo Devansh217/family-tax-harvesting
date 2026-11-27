@@ -1,4 +1,4 @@
-import { countingSummaries, isLaterBenefit, isMarked, pnlGroups, taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
+import { countingSummaries, giverOf, isLaterBenefit, isMarked, isPlacement, pnlGroups, taxFreeGainOf, type FamilyView, type Move } from '../engine/family';
 import { doneThisSeason, type RecommendationRecord } from '../engine/records';
 import { APPROX_MARGIN, normAccount, TRIMMING_HOLDINGS_SOURCES } from '../engine/openingLots';
 import { QTY_SCALE, type ISODate, type Paise } from '../engine/types';
@@ -215,11 +215,12 @@ function yearBefore(date: ISODate): string {
  * none. Null for an exact move or when the room is under ₹1,000 (rounded to ₹100).
  */
 export function cushionNudge(move: Move, fam: Pick<FamilyView, 'tradebookFrom'>): { fy: string | null; rupees: Paise } | null {
-  if (!move.approx || move.noRoom) return null;
+  // A placement uses no room this season, so it leaves none spare.
+  if (!move.approx || move.noRoom || isPlacement(move)) return null;
   const gain = move.kind === 'harvest_loss' ? move.loss : move.gain;
   const rupees = Math.round((Math.abs(gain) * APPROX_MARGIN) / 10_000) * 10_000;
   if (rupees < NUDGE_MIN) return null;
-  const memberId = move.kind === 'gift' ? move.fromId : move.memberId;
+  const memberId = giverOf(move);
   const oldest = fam.tradebookFrom[`${memberId}|${normAccount(move.account)}`];
   return { fy: oldest ? yearBefore(oldest) : null, rupees };
 }

@@ -1,4 +1,4 @@
-import { pnlGroups } from '../../engine/family';
+import { giverOf, pnlGroups, receiverOf } from '../../engine/family';
 import { incomeTotal } from '../../engine/rules';
 import { useMemo, useState } from 'react';
 import { longTermFrom } from '../../engine/dates';
@@ -108,7 +108,7 @@ export function MemberScreen({ id }: { id: string }) {
   const bonusShown = Math.max(0, plan.bonus.free - Math.max(0, plannedShown - plan.room.free));
   const mySales = state.plannedSales.filter((p) => p.memberId === id);
   const toggleNeed = (isin: string) => update((s) => ({ ...s, needSoon: { ...s.needSoon, [`${id}|${isin}`]: !s.needSoon[`${id}|${isin}`] } }));
-  const myMoves = fam.moves.filter((m) => (m.kind === 'gift' ? m.toId === id || m.fromId === id : m.memberId === id));
+  const myMoves = fam.moves.filter((m) => giverOf(m) === id || receiverOf(m) === id);
   const myWarnings = fam.ledger.warnings.filter((w) => w.memberId === id);
   const nameOf = (isin: string) => fam.securities.get(isin)?.name ?? isin;
   const oversold = visibleOversells(myWarnings, fam.rules, pnlCoverage(state.brokerSummaries, fam.rules));

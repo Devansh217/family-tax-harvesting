@@ -18,6 +18,8 @@ const near = (units: number, size: number) => size > 0 && Math.abs(units - size)
 function expected(m: Move): { seller: string; buy?: { memberId: string; isin: string } } | null {
   switch (m.kind) {
     case 'wait': return null;
+    // A gift of units or of SIP money books no sale: nothing in a statement confirms it, so it is marked by hand.
+    case 'place_sip': case 'place_holding': return null;
     case 'gift': return { seller: m.toId };
     case 'switch_direct': return { seller: m.memberId, buy: m.toIsin ? { memberId: m.memberId, isin: m.toIsin } : undefined };
     default: return { seller: m.memberId };
