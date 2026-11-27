@@ -160,7 +160,7 @@ interface MoveBase {
   approx?: boolean;
   /** The newest date of this move's account (the giver's, for a gift), set when that is 30+ days old: the units may have changed since. */
   oldData?: ISODate;
-  /** Set on a harvest, gift or in-room switch when the member whose room it uses has an account whose room evidence (trades, fund statements, Tax P&Ls; not holdings files) is old; the oldest such date. */
+  /** Set on a harvest, gift or in-room switch when the member whose room it uses has an old account, dated by its trades, fund statements and Tax P&Ls (its holdings file only when it has none of those); the oldest such date. */
   roomMayBeSmaller?: ISODate;
 }
 export type Move =
@@ -831,7 +831,12 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
   };
   const oldestOldOf = (memberId: string) => {
     let oldest: ISODate | undefined;
-    for (const [k, d] of roomEvidence) if (k.startsWith(`${memberId}|`) && isOld(d, asOf) && (!oldest || d < oldest)) oldest = d;
+    // An account's room date: its room evidence, or its holdings date when it has none (a holdings file never clears it).
+    for (const [k, held] of evidence) {
+      if (!k.startsWith(`${memberId}|`)) continue;
+      const d = roomEvidence.get(k) ?? held;
+      if (isOld(d, asOf) && (!oldest || d < oldest)) oldest = d;
+    }
     return oldest;
   };
   const marked: Move[] = moves.map((m) => {

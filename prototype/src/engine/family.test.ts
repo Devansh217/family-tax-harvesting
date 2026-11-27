@@ -765,4 +765,18 @@ describe('old data marks', () => {
     expect(m.roomMayBeSmaller).toBeUndefined();
     expect(fam.oldRoom).toEqual([]);
   });
+
+  it('fresh tradebook account plus old holdings-only account: the room is marked from the holdings date', () => {
+    const pos: HeldPosition = { memberId: 'a', isin: 'Y', account: 'Zerodha', qty: q(10), asOf: OLD, source: 'Zerodha holdings', canTrim: true };
+    const fam = computeFamily({
+      members: [person('a', 'self')], securities: [sec('X', 2000), sec('Y', 1000)],
+      txns: [tb('a', 'X', '2023-01-01', 500, 1000, 'Angel One'), tb('a', 'X', '2026-11-20', 1, 1000, 'Angel One')],
+      positions: [pos],
+    }, '2026-11-25', R);
+    const h = fam.moves.find((x) => x.kind === 'harvest_gain' && x.account === 'Angel One')!;
+    expect(h).toBeDefined();
+    expect(h.oldData).toBeUndefined();
+    expect(h.roomMayBeSmaller).toBe(OLD);
+    expect(fam.oldRoom).toEqual([{ memberId: 'a', since: OLD }]);
+  });
 });
