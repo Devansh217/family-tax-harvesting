@@ -50,6 +50,35 @@ describe('placement starts', () => {
     expect(freeEquityLtRoom(problem.members.find((m) => m.id === 'p')!, start.normal, start.year1, R, ASOF)).toBe(rs(3));
   });
 
+  it('assets are what each member holds after this season\'s moves', () => {
+    // Same family as above: the earner harvests 1,250 shares and gifts 4,250 to the parent. Of the 10,000 shares the
+    // earner keeps 5,750 (₹63,25,000 at ₹1,100): the 1,250 sold and bought back have no gain left, the other 4,500 keep
+    // ₹100 each (₹4,50,000). The parent holds the 4,250 gifted shares (₹46,75,000), their gain gone with the parent's
+    // own sale and buyback, and cannot place them again.
+    const state: FamilyState = {
+      members: [earner(), parent(1_00_000)], securities: [shareX],
+      txns: [buy('e', shareX.isin, '2023-01-01', 10_000, 1_000)],
+    };
+    const { fam, problem } = run(state);
+    expect(fam.moves.filter((m) => !m.noRoom).map((m) => [m.kind, m.qty])).toEqual([['harvest_gain', q(1_250)], ['gift', q(4_250)]]);
+    const mine = problem.assets.filter((a) => a.ownerId === 'e');
+    expect(mine).toEqual([expect.objectContaining({ movable: true, value: rs(63_25_000), gain: rs(4_50_000) })]);
+    const theirs = problem.assets.filter((a) => a.ownerId === 'p');
+    expect(theirs).toEqual([expect.objectContaining({ movable: false, taxClass: 'equity', value: rs(46_75_000), gain: 0 })]);
+  });
+
+  it('planned sales leave the giver\'s assets', () => {
+    // A planned sale of 3,000 of the earner's 10,000 shares: those units are gone before any move or placement.
+    const state: FamilyState = {
+      members: [earner(), parent(5_00_000)], securities: [shareX],
+      txns: [buy('e', shareX.isin, '2023-01-01', 10_000, 1_000)], plannedSales: [{ id: 'ps1', memberId: 'e', isin: shareX.isin, qty: q(3_000) }],
+    };
+    const { fam, problem } = run(state);
+    const sold = fam.moves.filter((m) => !m.noRoom).reduce((a, m) => a + (m.kind === 'gift' ? m.qty : 0), 0);
+    const held = problem.assets.filter((a) => a.ownerId === 'e').reduce((a, x) => a + x.value, 0);
+    expect(held).toBe(Math.round((shareX.price! * (q(7_000) - sold)) / QTY_SCALE));
+  });
+
   it('year 1 counts the cushion of an approx season gift', () => {
     // Earner holds 2,272 shares from a holdings file (approx lot) at ₹100 average cost, now ₹200: ₹100 a share. Each
     // ₹100 of gain uses ₹110 of room. Own harvest: ⌊1,25,000 / 110⌋ = 1,136 shares. Gift to the parent (₹5 L on

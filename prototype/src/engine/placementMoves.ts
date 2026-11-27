@@ -50,6 +50,64 @@ const roomGain = (l: HoldingLot) => {
   return l.approx ? Math.round(g * (g > 0 ? 1 + APPROX_MARGIN : 1 - APPROX_MARGIN)) : g;
 };
 
+/** Part of a lot: cost, value and gain pro rata. */
+const cut = (l: HoldingLot, qty: Qty): HoldingLot => {
+  if (qty === l.qty) return l;
+  const k = qty / l.qty, scale = (p: Paise | null) => (p == null ? null : Math.round(p * k));
+  return { ...l, qty, cost: Math.round(l.cost * k), value: scale(l.value), gain: scale(l.gain) };
+};
+/** Takes `qty` units from the front of `lots` (mutates it) and returns them. */
+function takeFront(lots: HoldingLot[], qty: Qty): HoldingLot[] {
+  const out: HoldingLot[] = [];
+  let left = qty;
+  while (left > 0 && lots.length) {
+    const l = lots[0]!;
+    const take = Math.min(l.qty, left);
+    out.push(cut(l, take));
+    if (take === l.qty) lots.shift(); else lots[0] = cut(l, l.qty - take);
+    left -= take;
+  }
+  return out;
+}
+/** A lot sold and bought back today: its gain is booked, so none is left; its cost is now known. */
+const rebought = (l: HoldingLot, asOf: ISODate): HoldingLot => {
+  const { approx: _approx, ...rest } = l;
+  return { ...rest, cost: l.value ?? l.cost, gain: l.value == null ? null : 0, date: asOf, certain: true };
+};
+
+/**
+ * Each member's lots after this season: planned sales gone, then every move in the order computeFamily sized it,
+ * each from the front of the account's queue past the units earlier moves used (as `usedQty` skips them there).
+ * A harvest, a loss harvest or a switch now sells and buys back, so its units stay with no gain left; a gift's units
+ * leave the giver and land with the receiver, who sells and buys them back the same way.
+ */
+function afterSeason(fam: FamilyView) {
+  const key = (memberId: string, isin: string, account: string) => `${memberId}|${isin}|${account}`;
+  const pending = new Map<string, HoldingLot[]>();
+  const kept = new Map<string, HoldingLot[]>();
+  const gifted: Array<{ fromId: string; toId: string; isin: string; account: string; lots: HoldingLot[] }> = [];
+  for (const v of fam.members) for (const h of v.holdings) for (const l of h.lots) {
+    const k = key(v.member.id, h.isin, l.account);
+    pending.set(k, [...(pending.get(k) ?? []), l]);
+  }
+  for (const r of fam.plannedRealised) takeFront(pending.get(key(r.memberId, r.isin, r.account ?? '')) ?? [], r.qty);
+  for (const m of fam.moves) {
+    if (m.noRoom || m.qty <= 0) continue;
+    const from = 'fromId' in m ? m.fromId : m.memberId;
+    const front = pending.get(key(from, m.isin, m.account)) ?? [];
+    if (m.kind === 'gift') gifted.push({ fromId: m.fromId, toId: m.toId, isin: m.isin, account: m.account, lots: takeFront(front, m.qty).map((l) => rebought(l, fam.asOf)) });
+    else if (m.kind === 'harvest_gain' || m.kind === 'harvest_loss' || (m.kind === 'switch_direct' && m.when === 'now')) {
+      const k = key(from, m.isin, m.account);
+      kept.set(k, [...(kept.get(k) ?? []), ...takeFront(front, m.qty).map((l) => rebought(l, fam.asOf))]);
+    }
+  }
+  const lotsOf = (memberId: string, isin: string, account: string) => {
+    const k = key(memberId, isin, account);
+    return [...(pending.get(k) ?? []), ...(kept.get(k) ?? [])];
+  };
+  return { lotsOf, gifted };
+}
+
 function build(state: FamilyState, fam: FamilyView) {
   const { asOf, rules } = fam;
   const members = fam.members.map((v) => v.member);
@@ -65,6 +123,7 @@ function build(state: FamilyState, fam: FamilyView) {
   const assets: PlaceAsset[] = [];
   const info = new Map<string, AssetInfo>();
   const needSoon = (memberId: string, isin: string) => !!state.needSoon?.[`${memberId}|${isin}`];
+  const season = afterSeason(fam);
   for (const v of fam.members) {
     for (const h of v.holdings) {
       const sec = fam.securities.get(h.isin);
@@ -74,7 +133,7 @@ function build(state: FamilyState, fam: FamilyView) {
       const annualReturn = nominalReturn(rc ?? FALLBACK[taxClass], 'base', rules);
       const canMove = rc != null && v.member.type !== 'huf' && !needSoon(v.member.id, h.isin);
       for (const account of [...new Set(h.lots.map((l) => l.account))].sort()) {
-        const lots = h.lots.filter((l) => l.account === account);
+        const lots = season.lotsOf(v.member.id, h.isin, account);
         // Known lots only: never an estimated lot or an ELSS lot still locked (GUARDRAILS §1).
         const ok = (l: HoldingLot) => l.certain && !(l.lockedUntil && l.lockedUntil > asOf);
         const parts: Array<[string, HoldingLot[], boolean]> = [
@@ -89,6 +148,21 @@ function build(state: FamilyState, fam: FamilyView) {
         }
       }
     }
+  }
+
+  // Units a season gift moves: the receiver's now, to count in their tax, but not placed again.
+  const gifts = new Map<string, { ownerId: string; sec: Security; value: Paise; gain: Paise }>();
+  for (const g of season.gifted) {
+    const sec = fam.securities.get(g.isin);
+    if (!sec || !taxClassOf(sec)) continue;
+    const id = `gifted|${g.toId}|${g.isin}|${g.account}|${g.fromId}`;
+    const was = gifts.get(id) ?? { ownerId: g.toId, sec, value: 0, gain: 0 };
+    gifts.set(id, { ...was, value: was.value + g.lots.reduce((a, l) => a + (l.value ?? 0), 0), gain: was.gain + g.lots.reduce((a, l) => a + roomGain(l), 0) });
+  }
+  for (const [id, g] of [...gifts].sort(([a], [b]) => a.localeCompare(b))) {
+    const taxClass = taxClassOf(g.sec)!;
+    if (g.value <= 0) continue;
+    assets.push({ id, ownerId: g.ownerId, kind: 'holding', movable: false, taxClass, annualReturn: nominalReturn(returnClassOf(g.sec) ?? FALLBACK[taxClass], 'base', rules), value: g.value, gain: g.gain, yearlyAdd: 0 });
   }
 
   const sipGuesses = guessSips(state.txns, state.securities, asOf);
