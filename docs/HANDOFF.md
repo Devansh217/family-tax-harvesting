@@ -11,7 +11,7 @@ Many sessions work on this repo, often at the same time and with no shared memor
 | The rules for handing off (this page) | `docs/HANDOFF.md` |
 | Rules every change keeps | `docs/GUARDRAILS.md` |
 
-The board never replaces an issue. Detail about one item goes in that item's issue or PR, and the board links to it.
+Issue #50 is not backlog. It has no epic or status label and is not on the project board, so don't pick it up as work. The board never replaces an issue. Detail about one item goes in that item's issue or PR, and the board links to it.
 
 We keep the board in an issue, not a file, for two reasons. `main` is protected, so a file would need a PR for every update. And two sessions editing one file at once would clash.
 
@@ -21,6 +21,7 @@ We keep the board in an issue, not a file, for two reasons. `main` is protected,
 2. If you are carrying on work that is **In flight**, start from its row and its PR. Don't start that work over.
 3. If you are starting something new, take an item from **Free to start**, or the first "Can start" issue in the founder's order. Then follow that issue's "Picking this up" steps.
 4. Add or update your row under **In flight**: the issue, the branch and PR, the state, the next step and today's date.
+5. The board row doesn't replace the issue's own status. Still set the issue's status in all three places `docs/NEXT-WORK.md` names (the native Status, the `status: …` label and the project card).
 
 ## Ending a session (or stopping part-way)
 
