@@ -137,7 +137,7 @@ function PlacementRow({ move }: { move: PlacementMove }) {
         </details>
       </div>
       <span className="stack" style={{ gap: 0, alignItems: 'flex-end', flex: 'none' }}>
-        <span className={`fig ${done ? 'good' : ''}`} style={{ fontSize: 14 }}>{inr(move.savingPerYear)}</span>
+        <span className={`fig ${done ? 'good' : ''}`} style={{ fontSize: 14 }}>{`about ${inr(move.savingPerYear)}`}</span>
         <span className="tiny muted">less tax a year</span>
       </span>
     </div>

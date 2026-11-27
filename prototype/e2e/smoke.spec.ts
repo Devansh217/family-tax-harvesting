@@ -277,6 +277,7 @@ for (const size of SIZES) {
         const section = placementSection(page);
         await expect(section).toBeVisible();
         await expect(section.locator('.move-title').filter({ hasText: 'Gift Pushpa ₹1.92 L once a year · Pushpa runs the ₹16,000 SIP in Test Bond Fund' })).toBeVisible();
+        await expect(section.getByText(/^about ₹[\d,]+$/)).toBeVisible();
         await expect(section.getByText('less tax a year')).toBeVisible();
         await expect(section.getByText('Not suggested for Hari: money you give them is still taxed as yours.')).toBeVisible();
         await section.getByText('Why?').click();
