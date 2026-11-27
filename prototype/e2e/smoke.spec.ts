@@ -331,6 +331,13 @@ for (const size of SIZES) {
         const section = placementSection(page);
         await expect(section.getByRole('link', { name: "Add Pushpa's income to see what moving money to them could save." })).toHaveAttribute('href', '#member-p');
         await expect(section.getByText('Your money is already in the lowest-tax names.')).toHaveCount(0);
+
+        // Gita, who runs the SIP, with no income entered: she is asked for hers, and the money is not called placed.
+        await restore(page, { ...base, members: base.members.map((m) => (m.id === 'g' ? { ...m, income: undefined } : m)) });
+        await open(page, 'plan');
+        await expect(section.getByRole('link', { name: "Add Gita's income to see what moving their money could save." })).toHaveAttribute('href', '#member-g');
+        await expect(section.locator('.move-title')).toHaveCount(0);
+        await expect(section.getByText('Your money is already in the lowest-tax names.')).toHaveCount(0);
       });
 
       test('importing the same tradebook twice names the earlier file the second time', async ({ page }) => {

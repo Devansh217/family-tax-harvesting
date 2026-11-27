@@ -234,7 +234,24 @@ describe('placement moves', () => {
     };
     const { view } = run(state);
     expect(view.missingIncome).toEqual(['p']);
+    expect(view.missingGiverIncome).toEqual([]);
     expect(view.moves).toEqual([]);
+  });
+
+  it('a giver without income is asked for it, not told the money is already placed', () => {
+    // The earner runs a confirmed SIP but has no income entered: their tax is unknown, so nothing is placed and the
+    // section asks for their income. The parent has income, so is not asked.
+    const state: FamilyState = {
+      members: [person('e', 'self', null), parent()], securities: [hybrid], txns: [], confirmedSips: [sipConfirmed()],
+    };
+    const { view } = run(state);
+    expect(view.moves).toEqual([]);
+    expect(view.missingIncome).toEqual(['e']);
+    expect(view.missingGiverIncome).toEqual(['e']);
+    // With neither income entered, both are asked; only the earner as a giver.
+    const both = run({ ...state, members: [person('e', 'self', null), parent(null)] }).view;
+    expect(both.missingIncome).toEqual(['e', 'p']);
+    expect(both.missingGiverIncome).toEqual(['e']);
   });
 
   it('moveId is stable across computes', () => {

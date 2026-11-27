@@ -25,8 +25,10 @@ export interface PlacementView {
   unconfirmed: boolean;
   /** Member ids no giver can give to unclubbed: every giver who is their relative would be clubbed (spouse, minor child, son's wife, own HUF). Sorted. */
   clubbedLeftOut: string[];
-  /** Member ids that would be allowed receivers but have no income entered. Sorted. */
+  /** Member ids with no income entered who could give or receive: placement leaves them out until it is added. Sorted. */
   missingIncome: string[];
+  /** Of `missingIncome`, those with money they could give. Sorted. */
+  missingGiverIncome: string[];
 }
 
 type AssetInfo =
@@ -192,17 +194,20 @@ function build(state: FamilyState, fam: FamilyView) {
   const problem: PlacementProblem = { members, starts, assets, asOf, fixedGivers, fixedReceivers };
   const unconfirmed = sipGuesses.some((g) => !confirmed.some((c) => c.memberId === g.memberId && c.isin === g.isin));
 
-  // Who would give: individuals with income entered and something they could place.
-  const givers = members.filter((g) => g.type !== 'huf' && starts[g.id] != null && assets.some((a) => a.movable && a.ownerId === g.id));
+  // Who could give: individuals with something they could place. Those with no income entered can't yet (their tax is
+  // unknown), so they are asked for it, as is any member they or another giver could give to.
+  const mayGive = members.filter((g) => g.type !== 'huf' && assets.some((a) => a.movable && a.ownerId === g.id));
   // Clubbed: some giver is a relative, and every such giver's gift would be clubbed back, so no one can give unclubbed.
-  const clubbedBy = new Set<string>(), unclubbed = new Set<string>(), missing = new Set<string>();
-  for (const g of givers) for (const m of members) {
+  const clubbedBy = new Set<string>(), unclubbed = new Set<string>(), missing = new Set<string>(), missingGiver = new Set<string>();
+  for (const g of mayGive) for (const m of members) {
     if (m.id === g.id) continue;
-    if (isRelative(g, m, members) && m.resident !== false) (clubbing(g, m, members, asOf) !== null ? clubbedBy : unclubbed).add(m.id);
-    if (canGift(g, m, members, asOf) && starts[m.id] == null) missing.add(m.id);
+    const gives = canGift(g, m, members, asOf);
+    if (gives && starts[g.id] == null) { missing.add(g.id); missingGiver.add(g.id); }
+    if (gives && starts[m.id] == null) missing.add(m.id);
+    if (starts[g.id] != null && isRelative(g, m, members) && m.resident !== false) (clubbing(g, m, members, asOf) !== null ? clubbedBy : unclubbed).add(m.id);
   }
   const clubbed = [...clubbedBy].filter((id) => !unclubbed.has(id));
-  return { problem, info, sipGuesses, unconfirmed, clubbedLeftOut: clubbed.sort(), missingIncome: [...missing].sort() };
+  return { problem, info, sipGuesses, unconfirmed, clubbedLeftOut: clubbed.sort(), missingIncome: [...missing].sort(), missingGiverIncome: [...missingGiver].sort() };
 }
 
 /** The placement problem `computePlacement` solves: starts after this season, assets, members. Exported for tests. */
@@ -210,7 +215,7 @@ export const placementProblem = (state: FamilyState, fam: FamilyView): Placement
 
 /** Placement moves for the family, after this season's moves (spec 2026-11-24 §5.3 step 5). */
 export function computePlacement(state: FamilyState, fam: FamilyView): PlacementView {
-  const { problem, info, sipGuesses, unconfirmed, clubbedLeftOut, missingIncome } = build(state, fam);
+  const { problem, info, sipGuesses, unconfirmed, clubbedLeftOut, missingIncome, missingGiverIncome } = build(state, fam);
   const { asOf, rules } = fam;
   const result = problem.assets.some((a) => a.movable) ? solvePlacement(problem) : { placements: [] as Placement[] };
   const years = problem.years ?? PLACEMENT_YEARS;
@@ -306,5 +311,5 @@ export function computePlacement(state: FamilyState, fam: FamilyView): Placement
     return { ...m, id: moveId(m, rules), ...(oldData ? { oldData } : {}), ...(roomMayBeSmaller ? { roomMayBeSmaller } : {}) };
   });
   moves.sort((a, b) => b.saving - a.saving || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return { moves, sipGuesses, unconfirmed, clubbedLeftOut, missingIncome };
+  return { moves, sipGuesses, unconfirmed, clubbedLeftOut, missingIncome, missingGiverIncome };
 }

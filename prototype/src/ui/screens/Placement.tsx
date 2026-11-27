@@ -176,7 +176,9 @@ export function Placement() {
         <p className="small muted" style={{ maxWidth: '72ch' }}>{`Not suggested for ${nameList(view.clubbedLeftOut.map(nameOf))}: money you give them is still taxed as yours.`}</p>
       )}
       {view.missingIncome.map((id) => (
-        <p key={id} className="small"><a href={`#member-${id}`}>{`Add ${nameOf(id)}'s income to see what moving money to them could save.`}</a></p>
+        <p key={id} className="small"><a href={`#member-${id}`}>{view.missingGiverIncome.includes(id)
+          ? `Add ${nameOf(id)}'s income to see what moving their money could save.`
+          : `Add ${nameOf(id)}'s income to see what moving money to them could save.`}</a></p>
       ))}
     </section>
   );
