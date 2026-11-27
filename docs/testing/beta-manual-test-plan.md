@@ -55,7 +55,7 @@ Send this part to family testers as is.
 | B5 | As that family (their window), **Account → Who has looked at your data** | Your read is listed with the time and your reason. |
 | B6 | In read-only view, try **Family → export/backup** | Known gap (deferred from review): export still works in read-only view. Note it, don't share the file. |
 | B7 | **Admin → Season numbers** | Empty until the first Sunday run in February. |
-| B8 | Your own family: do A2–A15 as a family member | As in Part A. |
+| B8 | Your own family: do A2–A15 (A9 is retired) as a family member | As in Part A. |
 
 ## Part C: on your laptop (local app)
 
@@ -65,7 +65,7 @@ Send this part to family testers as is.
 |---|---|---|
 | C1 | Signed out, first open | "Before you start" note, then the sample family. |
 | C2 | Sample family: Plan, Member, Simulate | Moves and figures as on the live site; useful for trying screens without real data. |
-| C3 | **Start your own** and import real statements (signed out) | Same as A3–A10, nothing leaves the browser. |
+| C3 | **Start your own** and import real statements (signed out) | Same as A3–A10 (A9 is retired), nothing leaves the browser. |
 | C4 | Built site: `npm run build && npm run preview -- --port 4173`, open http://localhost:4173 | Same app with the page lock (Content Security Policy) on; no errors in the browser console; fonts look right. |
 | C5 | Tests: `npm test` and `npm run typecheck` | All pass. |
 | C6 | Open `#compare` (the Compare page was removed in #27; A9 is retired) | Home opens; no Compare tab or link anywhere. |
