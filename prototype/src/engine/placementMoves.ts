@@ -23,7 +23,7 @@ export interface PlacementView {
   sipGuesses: SipGuess[];
   /** A guessed SIP the family has not confirmed (or changed, or stopped) yet. */
   unconfirmed: boolean;
-  /** Member ids a giver's money would go to but for clubbing (spouse, minor child, son's wife, own HUF). Sorted. */
+  /** Member ids no giver can give to unclubbed: every giver who is their relative would be clubbed (spouse, minor child, son's wife, own HUF). Sorted. */
   clubbedLeftOut: string[];
   /** Member ids that would be allowed receivers but have no income entered. Sorted. */
   missingIncome: string[];
@@ -183,13 +183,15 @@ function build(state: FamilyState, fam: FamilyView) {
 
   // Who would give: individuals with income entered and something they could place.
   const givers = members.filter((g) => g.type !== 'huf' && starts[g.id] != null && assets.some((a) => a.movable && a.ownerId === g.id));
-  const clubbed = new Set<string>(), missing = new Set<string>();
+  // Clubbed: some giver is a relative, and every such giver's gift would be clubbed back, so no one can give unclubbed.
+  const clubbedBy = new Set<string>(), unclubbed = new Set<string>(), missing = new Set<string>();
   for (const g of givers) for (const m of members) {
     if (m.id === g.id) continue;
-    if (isRelative(g, m, members) && m.resident !== false && clubbing(g, m, members, asOf) !== null) clubbed.add(m.id);
-    else if (canGift(g, m, members, asOf) && starts[m.id] == null) missing.add(m.id);
+    if (isRelative(g, m, members) && m.resident !== false) (clubbing(g, m, members, asOf) !== null ? clubbedBy : unclubbed).add(m.id);
+    if (canGift(g, m, members, asOf) && starts[m.id] == null) missing.add(m.id);
   }
-  return { problem, info, sipGuesses, unconfirmed, clubbedLeftOut: [...clubbed].sort(), missingIncome: [...missing].sort() };
+  const clubbed = [...clubbedBy].filter((id) => !unclubbed.has(id));
+  return { problem, info, sipGuesses, unconfirmed, clubbedLeftOut: clubbed.sort(), missingIncome: [...missing].sort() };
 }
 
 /** The placement problem `computePlacement` solves: starts after this season, assets, members. Exported for tests. */

@@ -22,6 +22,12 @@ export function units(q: Qty): string {
   return Number.isInteger(n) ? n.toLocaleString('en-IN') : n.toLocaleString('en-IN', { maximumFractionDigits: 3 });
 }
 
+/** "share" or "shares" for a listed share, "unit" or "units" for a fund (ISIN starting INF), by the quantity. */
+export const unitWord = (isin: string, q: Qty): string => {
+  const noun = isin.startsWith('INF') ? 'unit' : 'share';
+  return q === QTY_SCALE ? noun : `${noun}s`;
+};
+
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export function dateLabel(d: ISODate, withYear = true): string {
   const [y, m, day] = d.split('-').map(Number) as [number, number, number];

@@ -5,7 +5,7 @@ import { newShownRecords, statusRecord } from '../../engine/records';
 import type { ConfirmedSip, SipGuess } from '../../engine/sips';
 import type { Paise } from '../../engine/types';
 import { useApp } from '../app-context';
-import { dateLabel, inr, inrShort, units } from '../format';
+import { dateLabel, inr, inrShort, units, unitWord } from '../format';
 import { Avatar, Svg, Icon } from '../parts';
 import { nameList, sleepOnIt } from '../plan';
 
@@ -16,7 +16,7 @@ export function placementTitle(m: PlacementMove, nameOf: (id: string) => string)
   const to = nameOf(m.toId);
   return m.kind === 'place_sip'
     ? `Gift ${to} ${inrShort(m.yearlyGift)} once a year · ${to} runs the ${inrShort(m.monthly)} SIP in ${m.name}`
-    : `Gift ${to} ${units(m.qty)} units of ${m.name}`;
+    : `Gift ${to} ${units(m.qty)} ${unitWord(m.isin, m.qty)} of ${m.name}`;
 }
 
 /** One row per member and fund: guesses in several accounts of one fund add up, as a confirmed SIP is per member and fund. */

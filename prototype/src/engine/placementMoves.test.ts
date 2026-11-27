@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { computeFamily, isMarked, type FamilyState, type Move } from './family';
 import { computePlacement, placementProblem } from './placementMoves';
+import { autoLink } from './links';
+import { sampleState } from '../sample';
 import { FY_2026_27 as R } from './rules';
 import { freeEquityLtRoom } from './tax';
 import { QTY_SCALE, type Member, type Security, type Txn } from './types';
@@ -183,6 +185,15 @@ describe('placement moves', () => {
     const to = (m: Move) => (m.kind === 'place_sip' || m.kind === 'place_holding' ? m.toId : '');
     expect(view.moves.some((m) => to(m) === 's' || to(m) === 'h')).toBe(false);
     expect(view.moves.some((m) => to(m) === 'p')).toBe(true);
+  });
+
+  it('a member is listed as clubbed only when no giver can give to them unclubbed', () => {
+    // Sample family: Arjun and Meera can both receive from Ramesh or Sunita (gifts to a grown child are not clubbed);
+    // Ramesh and Sunita can receive from Arjun; Meera's only relatives (husband, parents-in-law) are all clubbed.
+    const s = sampleState();
+    const state = { ...s, members: autoLink(s.members) };
+    const view = computePlacement(state, computeFamily(state, '2026-11-28', R));
+    expect(view.clubbedLeftOut).toEqual(['m']);
   });
 
   it('member without income is never a receiver', () => {

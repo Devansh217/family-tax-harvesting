@@ -284,6 +284,14 @@ for (const size of SIZES) {
         await expectNoSideScroll(page);
       });
 
+      test('placement on the sample: shares for a share, units for a fund, one clubbed name', async ({ page }) => {
+        await open(page, 'plan');
+        const section = placementSection(page);
+        await expect(section.locator('.move-title').filter({ hasText: 'Gift Kabir 300 shares of ITC' })).toBeVisible();
+        await expect(section.locator('.move-title').filter({ hasText: /^Gift Kabir [\d,.]+ units of Nifty 50 index fund \(sample\)$/ })).toBeVisible();
+        await expect(section.getByText('Not suggested for Meera: money you give them is still taxed as yours.')).toBeVisible();
+      });
+
       test('placement: confirm a guessed SIP, and sleep on a big gift', async ({ page }) => {
         // The same synthetic family, with no SIP confirmed: three monthly buys of ₹25,000 in the last three months, and
         // an older ₹12 L buy whose units are worth about ₹15 L, so gifting them asks first.

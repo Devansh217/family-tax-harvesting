@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { isLaterBenefit, taxFreeGainOf, type Move } from '../../engine/family';
 import { useApp } from '../app-context';
 import { datedRecord, statusRecord } from '../../engine/records';
-import { dateLabel, inr, inrShort, units } from '../format';
+import { dateLabel, inr, inrShort, units, unitWord } from '../format';
 import { Avatar, Disclaimer, Svg, Icon } from '../parts';
 import { SampleBanner } from './Home';
 import { Placement, placementTitle } from './Placement';
@@ -58,22 +58,21 @@ function DatePicker({ move }: { move: Move }) {
 
 function describe(m: Move, nameOf: (id: string) => string, bonusOf: (id: string) => number) {
   const u = units(m.qty);
-  const noun = m.isin.startsWith('INF') ? 'unit' : 'share';
-  const unitWord = m.qty === 10_000 ? noun : `${noun}s`;
+  const word = unitWord(m.isin, m.qty);
   const where = m.account ? ` · ${m.account}` : '';
   switch (m.kind) {
     case 'harvest_gain':
-      return { who: m.memberId, title: `Sell and buy back ${u} ${unitWord} of ${m.name}`, sub: `${nameOf(m.memberId)}${where}` };
+      return { who: m.memberId, title: `Sell and buy back ${u} ${word} of ${m.name}`, sub: `${nameOf(m.memberId)}${where}` };
     case 'gift':
       return {
         who: m.toId, title: `${nameOf(m.fromId)} gifts ${u} ${m.name} shares worth ${inrShort(m.value)} to ${nameOf(m.toId)}`,
         sub: `${nameOf(m.toId)} then sells and buys back${bonusOf(m.toId) > 0 ? ', using bonus room' : ''}${where}`,
       };
     case 'harvest_loss':
-      return { who: m.memberId, title: `Sell ${u} ${unitWord} of ${m.name} at a loss`, sub: `${nameOf(m.memberId)} · offsets ${inr(m.loss)} of ${m.term === 'st' ? 'short' : 'long'}-term gains${where}` };
+      return { who: m.memberId, title: `Sell ${u} ${word} of ${m.name} at a loss`, sub: `${nameOf(m.memberId)} · offsets ${inr(m.loss)} of ${m.term === 'st' ? 'short' : 'long'}-term gains${where}` };
     case 'switch_direct': {
       const when = m.when === 'now' ? 'now' : m.when === 'wait' && m.until ? `wait until ${dateLabel(m.until, false)}` : 'next tax year';
-      return { who: m.memberId, title: `Switch ${u} ${unitWord} of ${m.name} to the direct plan`, sub: `${nameOf(m.memberId)} · ${when}${where}` };
+      return { who: m.memberId, title: `Switch ${u} ${word} of ${m.name} to the direct plan`, sub: `${nameOf(m.memberId)} · ${when}${where}` };
     }
     case 'wait':
       return { who: m.memberId, title: `Hold ${m.name} until ${dateLabel(m.until, false)}`, sub: `${nameOf(m.memberId)} · turns long-term in ${m.days} days${where}` };
