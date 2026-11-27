@@ -41,14 +41,17 @@ interface State {
  * The extra tax over `years` tax years from holding these slices, with equity gains harvested each year inside the
  * year's tax-free room and everything left sold in the last year.
  *
- * Each year, in order: young gain from last year becomes harvestable; every slice grows by its return on the value at
- * the start of the year plus that year's add (year 1's add earns nothing that year); then equity gain is harvested up
- * to `freeEquityLtRoom`, shared across slices by their gain. Harvesting is free by construction (the room is the most
- * that leaves the tax unchanged), so a year before the last costs the same with or without the slices. Only the last
- * year, where the rest is sold, can add tax, and the result is that year's tax with the sale minus without it. That
- * is the same as summing every year's tax with and without the slices, without the calls that cancel.
+ * Each year before the last, in order: young gain from last year becomes harvestable; every slice grows by its
+ * return on the value at the start of the year plus that year's add (year 1's add earns nothing that year); then
+ * equity gain is harvested up to `freeEquityLtRoom`, shared across slices by their gain. Harvesting is free by
+ * construction (the room is the most that leaves the tax unchanged), so those years cost the same with or without
+ * the slices. In the last year nothing is harvested: all remaining gain is sold, so the one `taxForYear` call
+ * applies the exemption and basic-exemption room once, alongside any other gains sold that year. The result is that
+ * year's tax with the sale minus without it, which equals summing every year's tax with and without the slices.
  *
- * Simplification: at the final sale, equity gain still under a year old is taxed as long-term too.
+ * Simplifications: equity gain still under a year old at the final sale is taxed as long-term too; a holding's
+ * starting gain is treated as long-term and harvestable from year 1; negative gains are clamped to 0 with no set-off
+ * between slices.
  */
 export function tenYearTax(member: Member, start: ProjectionStart, slices: Slice[], asOf: ISODate, years: number = PLACEMENT_YEARS): Paise {
   if (slices.length === 0 || years < 1) return 0;
@@ -69,7 +72,7 @@ export function tenYearTax(member: Member, start: ProjectionStart, slices: Slice
 
     let harvestable = 0;
     for (const x of equity) harvestable += Math.max(0, x.gain);
-    if (harvestable > 0) {
+    if (y < years && harvestable > 0) {
       const room = freeEquityLtRoom(member, start.normal, buckets, rulesFor(date), date);
       let left = Math.min(harvestable, room), pool = harvestable;
       for (const x of equity) {
@@ -90,8 +93,8 @@ export function tenYearTax(member: Member, start: ProjectionStart, slices: Slice
     }
   }
 
-  const r = rulesFor(addMonths(asOf, 12 * (years - 1)));
   const date = addMonths(asOf, 12 * (years - 1));
+  const r = rulesFor(date);
   const base = years === 1 ? start.year1 : ZERO;
   const withSale: GainBuckets = {
     equitySt: base.equitySt + sale.equitySt, equityLt: base.equityLt + sale.equityLt,

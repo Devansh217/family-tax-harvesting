@@ -63,4 +63,42 @@ describe('tenYearTax', () => {
     const s = slice({ value: 0, annualReturn: 1, yearlyAdd: 10 * L });
     expect(tenYearTax(member(), { normal: 20 * L, year1: none }, [s], ASOF, 1)).toBe(0);
   });
+
+  // Final year sells everything, so the exemption applies once: normal 20 L, 2 L equity gain, 0% return.
+  // (2 L - 1.25 L) * 12.5% = 9,375; with 4% cess 9,750.
+  it('equity sold in the final year is taxed above the exemption (A)', () => {
+    const s = slice({ annualReturn: 0, value: 5 * L, gain: 2 * L });
+    expect(tenYearTax(member(), { normal: 20 * L, year1: none }, [s], ASOF, 1)).toBe(9_750_00);
+  });
+
+  // Normal 2 L, equity gain 3.25 L, slab gain 9 L, one year. Slab income 11 L, total 14.25 L. Exemption 1.25 L
+  // leaves 2 L equity: 25,000. Slab tax on 11 L: 4-8 L at 5% = 20,000 plus 8-11 L at 10% = 30,000 = 50,000.
+  // No basic gap, and the rebate is gone (total over 12 L; marginal relief 0 since 75,000 > 2.25 L excess).
+  // 75,000 * 1.04 = 78,000.
+  it('equity and slab sold together share the exemption and lose the rebate (B)', () => {
+    const eq = slice({ annualReturn: 0, value: 5 * L, gain: 3_25_000_00 });
+    const sl = slice({ assetId: 'b', taxClass: 'slab', annualReturn: 0, value: 10 * L, gain: 9 * L });
+    expect(tenYearTax(member(), { normal: 2 * L, year1: none }, [eq, sl], ASOF, 1)).toBe(78_000_00);
+  });
+
+  // Low-income parent: the slab fund alone is nil (see above); adding equity that grows past the yearly room
+  // makes the total cross 12 L, so the tax must be above nil.
+  it('low-income parent with equity plus slab fund pays more than the slab fund alone (C)', () => {
+    const eq = slice({ annualReturn: 0.12, value: 10 * L });
+    const sl = slice({ assetId: 'b', taxClass: 'slab', annualReturn: 0.07, value: 10 * L });
+    const start = { normal: 2 * L, year1: none };
+    const alone = tenYearTax(member(), start, [sl], ASOF);
+    expect(alone).toBe(0);
+    expect(tenYearTax(member(), start, [eq, sl], ASOF)).toBeGreaterThan(alone);
+  });
+
+  // Equity cushioning above the exemption, normal 20 L, 0% return, one year:
+  // plain 4 L: (4 L - 1.25 L) * 12.5% * 1.04 = 35,750; cushioned 4.4 L: 3.15 L * 12.5% * 1.04 = 40,950.
+  it('cushioned equity gain counts in full above the exemption', () => {
+    const plain = slice({ annualReturn: 0, value: 10 * L, gain: 4 * L });
+    const cushioned = { ...plain, gain: Math.round(4 * L * 1.1) };
+    const start = { normal: 20 * L, year1: none };
+    expect(tenYearTax(member(), start, [plain], ASOF, 1)).toBe(35_750_00);
+    expect(tenYearTax(member(), start, [cushioned], ASOF, 1)).toBe(40_950_00);
+  });
 });
