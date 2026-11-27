@@ -69,3 +69,20 @@ describe('newest evidence per account', () => {
     expect(isOld('2026-10-15', '2026-11-14')).toBe(true);
   });
 });
+
+describe('a fund statement is dated by its period end', () => {
+  const fundBuy = buy('2025-06-01', 'Mutual fund CAS (CAMS / KFintech)', 'Folio 1234567/89');
+  const imports = [{ memberId: 'a', statementTo: '2026-11-15', accounts: ['Folio 1234567/89', 'Folio 7654321'] }];
+
+  it('dates every folio it lists in both maps, not only by its newest transaction', () => {
+    for (const m of [newestEvidence({ txns: [fundBuy], imports }), newestRoomEvidence({ txns: [fundBuy], imports })]) {
+      expect(m.get(accountKey('a', 'Folio 1234567/89'))).toBe('2026-11-15');
+      expect(m.get(accountKey('a', 'Folio 7654321'))).toBe('2026-11-15');
+    }
+  });
+
+  it('an import saved before the period was read dates by its transactions as before', () => {
+    const m = newestEvidence({ txns: [fundBuy], imports: [{ memberId: 'a' }] });
+    expect(m.get(accountKey('a', 'Folio 1234567/89'))).toBe('2025-06-01');
+  });
+});

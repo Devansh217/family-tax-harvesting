@@ -32,6 +32,8 @@ export interface FamilyState {
   funds?: FundsMap;
   /** Units holdings files say each member holds: fill in lots bought before the trade history (openingLots.ts). */
   positions?: HeldPosition[];
+  /** Imported files; a fund statement's period end dates its folios for the old-data marks (freshness.ts). */
+  imports?: Array<{ memberId: string; statementTo?: ISODate; accounts?: string[] }>;
   /** Moves the family picked a day for. They are sized first, in date order, and hold their room. */
   datedMoves?: DatedMove[];
   /** The family's records. A dated move that is done (marked or seen in a statement) is retired: no longer sized first. */

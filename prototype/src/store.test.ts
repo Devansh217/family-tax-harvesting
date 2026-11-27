@@ -442,3 +442,25 @@ describe('an import that adds nothing', () => {
     expect(run(h1, holdings)[1]).toBe(true);
   });
 });
+
+describe('a fund statement’s period end', () => {
+  const cas = (statementTo?: string) => ({
+    format: 'Mutual fund CAS (CAMS / KFintech)', warnings: [], skipped: 0, prices: [], statementTo, statementAccounts: ['Folio 1/2'],
+    txns: [{ isin: 'INF879O01027', name: 'PPFAS', date: '2025-06-01', side: 'buy' as const, qty: 10_0000, amount: 1_000_00, account: 'Folio 1/2' }],
+  });
+
+  it('is kept on the import record, and a newer statement with no new trades is not "nothing new"', () => {
+    const s1 = applyImport(withMember(), 'a', 'oct.pdf', cas('2026-10-15'), {});
+    expect(s1.imports[0]).toMatchObject({ statementTo: '2026-10-15', accounts: ['Folio 1/2'] });
+    const s2 = applyImport(s1, 'a', 'nov.pdf', cas('2026-11-15'), {});
+    expect(importAddedNothing(s1, s2)).toBe(false);
+    expect(importAddedNothing(s2, applyImport(s2, 'a', 'nov (2).pdf', cas('2026-11-15'), {}))).toBe(true);
+  });
+
+  it('a statement with no period end adds no date to the record', () => {
+    const s = applyImport(withMember(), 'a', 'x.pdf', cas(), {});
+    expect(s.imports[0]).not.toHaveProperty('statementTo');
+    expect(s.imports[0]).not.toHaveProperty('accounts');
+  });
+});
+

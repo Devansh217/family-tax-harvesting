@@ -16,9 +16,14 @@ type EvidenceState = {
   txns: Txn[];
   positions?: HeldPosition[];
   brokerSummaries?: Array<{ memberId: string; account: string; summary: { from: ISODate | null; to: ISODate | null } }>;
+  /** Imported files; a fund statement's period end dates each folio it lists. */
+  imports?: Array<{ memberId: string; statementTo?: ISODate; accounts?: string[] }>;
 };
 
-/** Per account, the newest of: the last tradebook or fund-statement trade, the end of a counting Tax P&L, and (when `holdings`) a holdings file's date. */
+/**
+ * Per account, the newest of: the last tradebook or fund-statement trade, a fund statement's period end, the end of a
+ * counting Tax P&L, and (when `holdings`) a holdings file's date.
+ */
 function newest(state: EvidenceState, holdings: boolean): Map<string, ISODate> {
   const out = new Map<string, ISODate>();
   const see = (k: string, d: ISODate | null | undefined) => {
@@ -26,13 +31,15 @@ function newest(state: EvidenceState, holdings: boolean): Map<string, ISODate> {
   };
   for (const t of state.txns) if (isTradebook(t) || isFundStatement(t)) see(accountKey(t.memberId, t.account), t.date);
   if (holdings) for (const p of state.positions ?? []) see(accountKey(p.memberId, p.account), p.asOf);
+  // A fund statement lists every trade in its folios up to its period end, so a quiet folio is known to that day.
+  for (const i of state.imports ?? []) for (const a of i.statementTo ? i.accounts ?? [] : []) see(accountKey(i.memberId, a), i.statementTo);
   for (const b of countingSummaries(state.brokerSummaries ?? [])) see(accountKey(b.memberId, b.account), b.summary.to);
   return out;
 }
 
 /**
  * Per member and account, the newest date any evidence reaches: the latest of a holdings file's date, the last
- * tradebook or fund-statement trade, and the end of a Tax P&L that counts. Undated files and P&Ls with no end add
+ * tradebook or fund-statement trade, a fund statement's period end, and the end of a Tax P&L that counts. Undated files and P&Ls with no end add
  * nothing; an account with no dated evidence has no entry. Dates the units held (a move's `oldData`).
  */
 export const newestEvidence = (state: EvidenceState): Map<string, ISODate> => newest(state, true);

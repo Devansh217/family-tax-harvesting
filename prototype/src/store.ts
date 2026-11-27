@@ -4,6 +4,7 @@ import type { DatedMove, PlannedSale } from './engine/family';
 import type { Snapshot } from './ui/market';
 import type { RecommendationRecord } from './engine/records';
 import { normAccount, TRIMMING_HOLDINGS_SOURCES } from './engine/openingLots';
+import { accountKey, newestEvidence } from './engine/freshness';
 import { FY_2026_27 } from './engine/rules';
 import type { ISODate, Member, Paise, Qty, Security, TaxType, TermAnswer, Txn } from './engine/types';
 import type { BrokerSummary, ParsedPrice, ParseResult } from './parsers';
@@ -17,6 +18,9 @@ export interface ImportRecord {
   txns: number;
   prices: number;
   warnings: string[];
+  /** A fund statement's period end, which dates its folios (`accounts`) for the Plan's old-data marks. */
+  statementTo?: ISODate;
+  accounts?: string[];
 }
 
 /** Units a statement says a member holds, to check the trade history against. */
@@ -305,14 +309,21 @@ export function applyImport(state: AppState, memberId: string, fileName: string,
 
   s.imports.push({
     id: importId, memberId, fileName, format: r.format, at: new Date().toISOString(), txns: added, prices: r.prices.length, warnings: r.warnings,
+    ...(r.statementTo ? { statementTo: r.statementTo, accounts: r.statementAccounts ?? [] } : {}),
   });
   return s;
 }
 
-/** True when `after` (from `applyImport`) holds the same transactions and positions as `before`: the file was already in. */
+/**
+ * True when `after` (from `applyImport`) holds the same transactions and positions as `before` and its fund statement,
+ * if any, reaches no further than what was already in: the file was already in.
+ */
 export function importAddedNothing(before: AppState, after: AppState): boolean {
   const strip = (ps: AppState['positions']) => JSON.stringify(ps.map(({ importId: _i, ...p }) => JSON.stringify(p)).sort());
-  return after.txns.length === before.txns.length && strip(after.positions) === strip(before.positions);
+  const last = after.imports[after.imports.length - 1];
+  const known = last?.statementTo ? newestEvidence(before) : null;
+  const reachesFurther = !!known && (last!.accounts ?? []).some((a) => last!.statementTo! > (known.get(accountKey(last!.memberId, a)) ?? ''));
+  return !reachesFurther && after.txns.length === before.txns.length && strip(after.positions) === strip(before.positions);
 }
 
 export function removeImport(state: AppState, importId: string): AppState {
