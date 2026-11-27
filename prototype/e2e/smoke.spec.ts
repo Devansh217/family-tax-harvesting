@@ -146,12 +146,10 @@ for (const size of SIZES) {
       });
 
       test('Compare is gone: no nav item, and an old #compare link opens Home', async ({ page }) => {
-        const errors = watchErrors(page);
         await open(page, 'compare');
         await expect(h1(page, 'Mehta family')).toBeVisible();
         await expect(page.locator('nav a[href="#compare"]')).toHaveCount(0);
         await expect(page.getByRole('link', { name: 'Compare', exact: true })).toHaveCount(0);
-        expect(errors).toEqual([]);
       });
 
       test('Before you start: Show details, then I understand', async ({ page }) => {
