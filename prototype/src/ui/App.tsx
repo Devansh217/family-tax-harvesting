@@ -23,9 +23,8 @@ import { About, Footer } from './screens/About';
 import { Account, ChooseCopy } from './screens/Account';
 import { useCloud } from './useCloud';
 
-// Screens most visits never open load on first use: Admin (founder only), Import (statement readers), Compare, Simulate.
+// Screens most visits never open load on first use: Admin (founder only), Import (statement readers), Simulate.
 const Admin = lazy(importOrReload(() => import('./screens/Admin').then((m) => ({ default: m.Admin }))));
-const Compare = lazy(importOrReload(() => import('./screens/Compare').then((m) => ({ default: m.Compare }))));
 const Simulate = lazy(importOrReload(() => import('./screens/Simulate').then((m) => ({ default: m.Simulate }))));
 const Import = lazy(importOrReload(() => import('./screens/Import').then((m) => ({ default: m.Import }))));
 
@@ -33,7 +32,6 @@ const TABS = [
   { route: 'home', label: 'Home', icon: Icon.home },
   { route: 'plan', label: 'Plan', icon: Icon.plan },
   { route: 'simulate', label: 'Simulate', icon: Icon.sim },
-  { route: 'compare', label: 'Compare', icon: Icon.gift },
   { route: 'family', label: 'Family', icon: Icon.family },
   { route: 'import', label: 'Import', icon: Icon.upload },
 ];
@@ -140,7 +138,6 @@ function Main({ initial }: { initial: AppState }) {
   if (route.startsWith('member-')) screen = <MemberScreen id={route.slice(7)} />;
   else if (route === 'plan') screen = <Plan />;
   else if (route === 'simulate') screen = <Simulate />;
-  else if (route === 'compare') screen = <Compare />;
   else if (route === 'setup') screen = <Setup />;
   else if (route === 'admin') screen = <Admin onView={(s, name) => { setViewed({ state: s, name }); location.hash = 'home'; }} />;
   else if (route === 'family') screen = <Family />;

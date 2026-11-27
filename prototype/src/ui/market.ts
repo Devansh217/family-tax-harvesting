@@ -1,7 +1,6 @@
 import type { FamilyView } from '../engine/family';
-import { classifyFund } from '../engine/categories';
 import { withFunds, withPrices } from '../engine/market';
-import type { ISODate, Paise, Security } from '../engine/types';
+import type { ISODate, Paise } from '../engine/types';
 import type { FundsFile, PriceFile } from '../prices/parse';
 
 // Kept here for the screens that already import them from this file.
@@ -30,17 +29,6 @@ export async function loadMarket(): Promise<Market> {
   const f = await fetchJson<FundsFile>('./prices/funds.json');
   const funds = f && typeof f.date === 'string' && f.funds && typeof f.funds === 'object' ? f : null;
   return { latest, previous, funds };
-}
-
-/**
- * Securities for the Compare screen: the family's holdings as already classified, plus the picked fund from AMFI's
- * list when the family doesn't hold it, classified from its category.
- */
-export function securitiesForCompare(held: Security[], file: FundsFile | null, isin: string): Security[] {
-  const f = file?.funds[isin];
-  if (!isin || held.some((s) => s.isin === isin) || !f) return held;
-  const cl = classifyFund(f.c, f.n);
-  return [...held, { isin, name: f.n, taxType: cl.taxType, listed: cl.listed, category: f.c, taxTypeSource: 'amfi' }];
 }
 
 /** One row of the daily history kept in the browser. */
