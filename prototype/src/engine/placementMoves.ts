@@ -178,7 +178,11 @@ function build(state: FamilyState, fam: FamilyView) {
     if (rc != null) info.set(id, { kind: 'sip', memberId: s.memberId, sec, account: guess?.account ?? '', name: guess?.name ?? sec.name, monthly: s.monthly });
   }
 
-  const problem: PlacementProblem = { members, starts, assets, asOf };
+  // This season's gifts set roles placement keeps: a season giver never receives here, a season receiver never gives (D11).
+  const seasonGifts = fam.moves.filter((m): m is Extract<Move, { kind: 'gift' }> => m.kind === 'gift' && !m.noRoom && m.qty > 0);
+  const fixedGivers = [...new Set(seasonGifts.map((m) => m.fromId))].sort();
+  const fixedReceivers = [...new Set(seasonGifts.map((m) => m.toId))].sort();
+  const problem: PlacementProblem = { members, starts, assets, asOf, fixedGivers, fixedReceivers };
   const unconfirmed = sipGuesses.some((g) => !confirmed.some((c) => c.memberId === g.memberId && c.isin === g.isin));
 
   // Who would give: individuals with income entered and something they could place.

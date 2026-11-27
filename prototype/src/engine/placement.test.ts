@@ -122,6 +122,23 @@ describe('solvePlacement', () => {
     for (const id of from) expect(to.has(id)).toBe(false);
   });
 
+  // Season roles hold (D11): the same family as above, where placement alone sends the slab fund to the parent.
+  it('keeps this season\'s roles: a season receiver never gives, a season giver never receives', () => {
+    const base: PlacementProblem = {
+      members: [earner, parent], starts: { earner: start(30 * L), parent: start(3 * L) },
+      assets: [asset('debt', 'earner', { annualReturn: 0.06 })], asOf: ASOF,
+    };
+    expect(solvePlacement(base).placements.map((x) => [x.fromId, x.toId])).toEqual([['earner', 'parent']]);
+    // The parent already gave to the earner this season: the earner can't give back.
+    const swapped = { ...base, fixedGivers: ['parent'], fixedReceivers: ['earner'] };
+    expect(solvePlacement(swapped).placements).toEqual([]);
+    expect(bucketCheck(swapped).placements).toEqual([]);
+    // A member on both sides this season sits out; the others still place. Here the earner gives to a sibling.
+    const sib = member('sib', { relation: 'sibling' });
+    const both = { ...base, members: [earner, parent, sib], starts: { ...base.starts, sib: start(3 * L) }, fixedGivers: ['parent'], fixedReceivers: ['parent'] };
+    expect(solvePlacement(both).placements.map((x) => [x.fromId, x.toId])).toEqual([['earner', 'sib']]);
+  });
+
   // The parent (normal 6 L, so no unused basic exemption) holds 15 L of unmovable equity at 10%: its gain is at
   // least 1.5 L a year, more than the 1.25 L room. Equity moved to them is taxed at 12.5% at the final sale, the
   // same rate the earner pays on it, so moving saves nothing (any rupee of rounding is dropped by the 1,000 rule).

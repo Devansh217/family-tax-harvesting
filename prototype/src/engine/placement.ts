@@ -33,6 +33,10 @@ export interface PlacementProblem {
   asOf: ISODate;
   /** Horizon in tax years; `PLACEMENT_YEARS` when absent. */
   years?: number;
+  /** Members who already give this season (a season gift): they may only give here too (D11). */
+  fixedGivers?: string[];
+  /** Members who already receive this season (a season gift): they may only receive here too (D11). */
+  fixedReceivers?: string[];
 }
 
 export interface Placement {
@@ -107,6 +111,9 @@ interface Ctx {
   lines: Map<number, Paise>;
   /** When set, only these members may give and only the others may receive (the role search below). */
   allow: boolean[] | null;
+  /** Roles this season's gifts already set: a season giver counts as having given, a season receiver as having received. */
+  fixedGave: boolean[];
+  fixedGot: boolean[];
 }
 
 const byId = <T extends { id: string }>(xs: T[]) => [...xs].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -127,7 +134,9 @@ function build(p: PlacementProblem): Ctx {
     return members.flatMap((m, j) => (j !== owner[i] && starts[j] != null && canGift(g, m, p.members, p.asOf) ? [j] : []));
   });
   const amt = assets.map((_, i) => members.map((_, j) => (j === owner[i] ? base[i]! : 0)));
-  const c: Ctx = { p, years: p.years ?? PLACEMENT_YEARS, members, starts, assets, base, owner, receivers, amt, cache: members.map(() => new Map()), baseBand: [], lines: new Map(), allow: null };
+  const fixedGave = members.map((m) => !!p.fixedGivers?.includes(m.id));
+  const fixedGot = members.map((m) => !!p.fixedReceivers?.includes(m.id));
+  const c: Ctx = { p, years: p.years ?? PLACEMENT_YEARS, members, starts, assets, base, owner, receivers, amt, cache: members.map(() => new Map()), baseBand: [], lines: new Map(), allow: null, fixedGave, fixedGot };
   c.baseBand = members.map((_, m) => detailOf(c, m).band);
   return c;
 }
@@ -169,15 +178,20 @@ const realTax = (c: Ctx) => c.members.reduce((sum, _, m) => sum + detailOf(c, m)
 
 const familyTax = (c: Ctx) => c.members.reduce((sum, _, m) => sum + taxOf(c, m), 0);
 
-/** Who has given (an own asset partly held by someone else) and who has received. */
+/** Who has given (an own asset partly held by someone else, or a season gift) and who has received. */
 function roles(c: Ctx) {
-  const gave = c.members.map(() => false), got = c.members.map(() => false);
-  c.amt.forEach((row, i) => row.forEach((x, m) => { if (x > 0 && m !== c.owner[i]) { gave[c.owner[i]!] = true; got[m] = true; } }));
-  return { gave, got };
+  const pGave = c.members.map(() => false), pGot = c.members.map(() => false);
+  c.amt.forEach((row, i) => row.forEach((x, m) => { if (x > 0 && m !== c.owner[i]) { pGave[c.owner[i]!] = true; pGot[m] = true; } }));
+  return { gave: pGave.map((g, m) => g || c.fixedGave[m]!), got: pGot.map((g, m) => g || c.fixedGot[m]!), pGave, pGot };
 }
+/**
+ * The role lock (D11): nobody both gives and receives, counting this season's gifts. A member the season already has
+ * on both sides takes no part in placement at all. The role search's `allow` applies to placement's own gifts.
+ */
 function lockOk(c: Ctx): boolean {
-  const { gave, got } = roles(c);
-  return gave.every((g, m) => !(g && got[m]) && (!c.allow || ((!g || c.allow[m]!) && (!got[m] || !c.allow[m]))));
+  const { gave, got, pGave, pGot } = roles(c);
+  return c.members.every((_, m) => (c.fixedGave[m] && c.fixedGot[m] ? !pGave[m] && !pGot[m] : !(gave[m] && got[m]))
+    && (!c.allow || ((!pGave[m] || c.allow[m]!) && (!pGot[m] || !c.allow[m]))));
 }
 
 /** Change in family tax from moving `x` of asset i from member f to member t (negative = saves). */
@@ -356,8 +370,9 @@ function improve(c: Ctx, pairs = false) {
  */
 function roleSearch(start: Ctx): Ctx {
   const n = start.members.length;
-  const canGive = start.members.map((_, m) => start.assets.some((_, i) => start.owner[i] === m && start.receivers[i]!.length > 0));
-  const canGet = start.members.map((_, m) => start.receivers.some((rs) => rs.includes(m)));
+  // A season giver never receives and a season receiver never gives, so neither side is theirs to flip.
+  const canGive = start.members.map((_, m) => !start.fixedGot[m] && start.assets.some((_, i) => start.owner[i] === m && start.receivers[i]!.length > 0));
+  const canGet = start.members.map((_, m) => !start.fixedGave[m] && start.receivers.some((rs) => rs.includes(m)));
   let best = start, bestTax = familyTax(start);
   for (let round = 0; round < ROLE_ROUNDS; round++) {
     const { gave } = roles(best);

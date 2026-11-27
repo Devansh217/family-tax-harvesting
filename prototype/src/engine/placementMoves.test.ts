@@ -127,6 +127,21 @@ describe('placement moves', () => {
     expect(m.reasons.join(' ')).toMatch(/check with your CA/);
   });
 
+  it('no placement runs against this season\'s gifts', () => {
+    // The earner (₹3 L) holds 10,000 shares bought at ₹1,000, now ₹1,100. They harvest their own room (2,250 shares:
+    // ₹1,25,000 plus ₹1,00,000 of unused basic exemption) and gift 1,250 shares into the parent's ₹1,25,000 room.
+    // The parent (₹30 L) holds 10,000 units of a conservative hybrid fund, ₹12 L at ₹120. In the earner's name that fund
+    // would save about ₹29,317 a year, but the parent receives this season, so they can't also give (D11): no move.
+    const state: FamilyState = {
+      members: [person('e', 'self', 3_00_000), person('p', 'parent', 30_00_000)], securities: [shareX, hybrid],
+      txns: [buy('e', shareX.isin, '2023-01-01', 10_000, 1_000), buy('p', hybrid.isin, '2023-01-01', 10_000, 100)],
+    };
+    const { fam, view, problem } = run(state);
+    expect(fam.moves.filter((m) => !m.noRoom).map((m) => [m.kind, m.qty])).toEqual([['harvest_gain', q(2_250)], ['gift', q(1_250)]]);
+    expect(problem).toMatchObject({ fixedGivers: ['e'], fixedReceivers: ['p'] });
+    expect(view.moves.filter((m) => m.kind === 'place_sip' || m.kind === 'place_holding').map((m) => m.id)).toEqual([]);
+  });
+
   it('SIP placement', () => {
     // ₹10,000 a month into a conservative hybrid (slab-taxed, 7.80% a year assumed): ₹1,20,000 a year, the spec's D2
     // example. Earner ₹30 L pays 30% plus cess on its gain at year 10. The parent at ₹3 L ends year 10 under the ₹12 L
