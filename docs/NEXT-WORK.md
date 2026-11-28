@@ -34,13 +34,13 @@ Moved there on 25 Nov 2026. Each item from this file became one issue. The issue
 7. [#30](https://github.com/Devansh217/family-tax-harvesting/issues/30) B4 direct vs regular
 8. [#31](https://github.com/Devansh217/family-tax-harvesting/issues/31) B5 gifts within the family
 9. [#32](https://github.com/Devansh217/family-tax-harvesting/issues/32) C2 missed long-term holding
-10. [#33](https://github.com/Devansh217/family-tax-harvesting/issues/33) C3 wording fix: guessed fund lots (narrowed 28 Nov; the rest is done or moved to E3 and D1)
+10. [#33](https://github.com/Devansh217/family-tax-harvesting/issues/33) C3 wording fixes: guessed fund lots, intraday label (narrowed 28 Nov; the rest is done or moved to E3 and D1)
 11. [#34](https://github.com/Devansh217/family-tax-harvesting/issues/34) E1 less text everywhere
 12. [#35](https://github.com/Devansh217/family-tax-harvesting/issues/35) E3 rework Simulate (blocked by E1)
 13. [#36](https://github.com/Devansh217/family-tax-harvesting/issues/36) E4 transfer animations (closed 28 Nov, not planned; reopen after the beta)
 14. [#37](https://github.com/Devansh217/family-tax-harvesting/issues/37) F5 scrub public figures
 
-Not yet placed by the founder: [#38](https://github.com/Devansh217/family-tax-harvesting/issues/38) G1 split `engine/family.ts` (between engine features only), [#39](https://github.com/Devansh217/family-tax-harvesting/issues/39) B6 test the CAMS / KFintech reader on a real statement, [#40](https://github.com/Devansh217/family-tax-harvesting/issues/40) D1, [#41](https://github.com/Devansh217/family-tax-harvesting/issues/41) F1, [#42](https://github.com/Devansh217/family-tax-harvesting/issues/42) F2 (now also holds the C1d marginal-relief question), [#43](https://github.com/Devansh217/family-tax-harvesting/issues/43) F3 (can start), [#44](https://github.com/Devansh217/family-tax-harvesting/issues/44) F4 (blocked: after the beta), [#48](https://github.com/Devansh217/family-tax-harvesting/issues/48) C1c, [#49](https://github.com/Devansh217/family-tax-harvesting/issues/49) C1d, [#53](https://github.com/Devansh217/family-tax-harvesting/issues/53) A2, [#55](https://github.com/Devansh217/family-tax-harvesting/issues/55) planner.ts cleanup, [#57](https://github.com/Devansh217/family-tax-harvesting/issues/57) B7 dividends and carried-forward losses from a Tax P&L (B8 merged in), [#60](https://github.com/Devansh217/family-tax-harvesting/issues/60) B9 ET Money capital gains report (.xls), [#62](https://github.com/Devansh217/family-tax-harvesting/issues/62) G2 same sale from two sources (B10 and B11 merged in; blocked by B2).
+Not yet placed by the founder: [#38](https://github.com/Devansh217/family-tax-harvesting/issues/38) G1 split `engine/family.ts` (between engine features only), [#39](https://github.com/Devansh217/family-tax-harvesting/issues/39) B6 test the CAMS / KFintech reader on a real statement, [#40](https://github.com/Devansh217/family-tax-harvesting/issues/40) D1 (design merged in PR #59; build open), [#41](https://github.com/Devansh217/family-tax-harvesting/issues/41) F1, [#42](https://github.com/Devansh217/family-tax-harvesting/issues/42) F2 (now also holds the C1d marginal-relief question), [#43](https://github.com/Devansh217/family-tax-harvesting/issues/43) F3 (can start), [#44](https://github.com/Devansh217/family-tax-harvesting/issues/44) F4 (blocked: after the beta), [#48](https://github.com/Devansh217/family-tax-harvesting/issues/48) C1c, [#49](https://github.com/Devansh217/family-tax-harvesting/issues/49) C1d, [#53](https://github.com/Devansh217/family-tax-harvesting/issues/53) A2, [#55](https://github.com/Devansh217/family-tax-harvesting/issues/55) planner.ts cleanup, [#57](https://github.com/Devansh217/family-tax-harvesting/issues/57) B7 dividends and carried-forward losses from a Tax P&L (B8 merged in), [#60](https://github.com/Devansh217/family-tax-harvesting/issues/60) B9 ET Money capital gains report (.xls), [#62](https://github.com/Devansh217/family-tax-harvesting/issues/62) G2 same sale from two sources (B10 and B11 merged in; blocked by B2).
 
 **Board tidy (28 Nov 2026):** B8 #58 merged into #57; B10 #61 and B11 #63 merged into #62; E4 #36 closed; C3 #33 and B6 #39 narrowed to what is left.
 
@@ -70,7 +70,7 @@ Full detail, anonymised: `docs/fresh-run-notes.md`.
 | 3 | Shares that left an account stayed "held" | Done (PR #18) |
 | 4 | Dozens of "Sold N more units than the history shows" lines | Done (PR #18) |
 | 5 | Holdings card says "N transactions" for guessed fund lots | #33 C3 |
-| 6 | "1 lot have"; intraday label differs | Done (found fixed on 28 Nov) |
+| 6 | "1 lot have"; intraday label differs | "1 lot have" done; intraday label in #33 C3 |
 | 7 | Family gifts not recognised | #31 B5 |
 | 8 | Simulate shows "−₹X gain" for a loss | #35 E3 |
 | 9 | Holdings decide what's held, Tax P&L what's booked | Done (PR #18) |
