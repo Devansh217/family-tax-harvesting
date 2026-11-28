@@ -1,9 +1,11 @@
 import { isDematCAS, isMutualFundCAS, parseDematCAS, parseMutualFundCAS } from './cas';
 import { parseCSV, type ParseResult } from './common';
+import { soldLotsFromTable } from './soldLots';
 import { detectKind, findHeaderRow, guessMapping, parseTable, type Mapping } from './table';
 
 export * from './common';
-export { FIELDS, FIELD_LABELS, detectKind, guessMapping, parseTable, type Field, type Mapping } from './table';
+export { FIELDS, FIELD_LABELS, PNL_FIELDS, detectKind, fieldsFor, guessMapping, normHeader, parseTable, type Field, type Mapping, type TableKind } from './table';
+export { cellText, readSoldLots, soldLotsFromTable, type CellSheet, type SoldLotsPreview, type SoldLotsRead } from './soldLots';
 export { extractLines, PdfPasswordError, type PdfJsLike } from './pdfText';
 export { isAngelFundHoldings, isAngelTrades, parseAngelFundHoldings, parseAngelTrades } from './angel';
 export { isEncryptedOffice, resolveNames } from './names';
@@ -35,6 +37,7 @@ export function previewRows(raw: unknown[][]): TablePreview {
 
 export function parseTablePreview(p: TablePreview, mapping: Mapping, fileName: string): ParseResult {
   const kind = detectKind(mapping);
+  if (kind === 'pnl') return soldLotsFromTable(p.rows, p.headerIdx, mapping, fileName);
   const label = kind === 'trades' ? 'Trade history' : kind === 'holdings' ? 'Holdings' : 'Table';
   return parseTable(p.rows, p.headerIdx, mapping, `${label} · ${fileName}`);
 }

@@ -4,48 +4,85 @@ import {
 } from './common';
 
 /** Columns a trade or holdings file can have. Each maps to the header index in the file, or -1. */
-export const FIELDS = ['date', 'symbol', 'isin', 'side', 'qty', 'price', 'amount', 'avgCost', 'ltp', 'segment'] as const;
+export const TABLE_FIELDS = ['date', 'symbol', 'isin', 'side', 'qty', 'price', 'amount', 'avgCost', 'ltp', 'segment'] as const;
+/** Extra columns of a report of sold lots (a Tax P&L or a capital gains statement). */
+export const PNL_FIELDS = ['buyDate', 'sellDate', 'buyValue', 'sellValue', 'charges', 'gain', 'gainLt', 'fmv2018'] as const;
+export const FIELDS = [...TABLE_FIELDS, ...PNL_FIELDS] as const;
 export type Field = (typeof FIELDS)[number];
 export type Mapping = Record<Field, number>;
+export type TableKind = 'pnl' | 'trades' | 'holdings' | 'unknown';
 
 export const FIELD_LABELS: Record<Field, string> = {
   date: 'Trade date', symbol: 'Name or symbol', isin: 'ISIN', side: 'Buy or sell', qty: 'Quantity', price: 'Price',
   amount: 'Amount', avgCost: 'Average cost', ltp: 'Current price', segment: 'Segment',
+  buyDate: 'Buy date', sellDate: 'Sell date', buyValue: 'Buy value', sellValue: 'Sell value', charges: 'Charges (optional)',
+  gain: 'Taxable gain (optional)', gainLt: 'Long-term gain (optional)', fmv2018: '31 Jan 2018 value (optional)',
 };
+
+/** The columns the column screen offers for a file of this kind. */
+export const fieldsFor = (kind: TableKind): readonly Field[] =>
+  kind === 'pnl' ? ['symbol', 'isin', 'qty', ...PNL_FIELDS] : TABLE_FIELDS;
 
 const ALIASES: Record<Field, RegExp> = {
   date: /^(trade[\s_]?date|date|order[\s_]?date|transaction[\s_]?date|txn[\s_]?date|execution[\s_]?(date|time)|order[\s_]?execution[\s_]?time|trade[\s_]?time)$/i,
-  symbol: /^(symbol|trading[\s_]?symbol|tradingsymbol|scrip([\s_]?name)?|instrument|stock([\s_]?name)?|company([\s_]?name)?|security([\s_]?name)?|scheme([\s_]?name)?|fund([\s_]?name)?|name)$/i,
+  symbol: /^(symbol|trading[\s_]?symbol|tradingsymbol|scrip([\s_]?name)?|scrip\/contract|instrument|stock([\s_]?name)?|company([\s_]?name)?|security([\s_]?name)?|scheme([\s_]?name)?|fund([\s_]?name)?|name|description[\s_]?of[\s_]?mutual[\s_]?fund[\s_]?sold)$/i,
   isin: /^isin([\s_]?(code|no\.?))?$/i,
   side: /^(trade[\s_]?type|type|buy\/?sell|b\/s|side|action|transaction[\s_]?type|order[\s_]?side)$/i,
-  qty: /^(quantity|qty\.?|units|no\.?[\s_]?of[\s_]?(shares|units)|shares|quantity[\s_]?available|available[\s_]?qty\.?)$/i,
+  qty: /^(quantity|qty\.?|units|no\.?[\s_]?of[\s_]?(shares|units)|number[\s_]?of[\s_]?(shares|units)|shares|quantity[\s_]?available|available[\s_]?qty\.?)$/i,
   price: /^(price|rate|trade[\s_]?price|nav|execution[\s_]?price|purchase[\s_]?price)$/i,
   amount: /^(amount|value|net[\s_]?amount|trade[\s_]?value|total([\s_]?amount)?|order[\s_]?value|investment)$/i,
   avgCost: /^(avg\.?[\s_]?cost|average[\s_]?cost|buy[\s_]?avg\.?|average[\s_]?buy[\s_]?price|avg\.?[\s_]?buy[\s_]?price|avg\.?[\s_]?price|average[\s_]?price)$/i,
   ltp: /^(ltp|last[\s_]?price|current[\s_]?price|market[\s_]?price|closing[\s_]?price|cmp|current[\s_]?nav|last[\s_]?traded[\s_]?price|previous[\s_]?closing[\s_]?price|prev\.?[\s_]?close|close[\s_]?price)$/i,
   segment: /^(segment|exchange[\s_]?segment|product)$/i,
+  // "Transfer Date" and "Transfer Value" (shares moved out, not sold) deliberately match nothing.
+  buyDate: /^(buy[\s_]?date|date[\s_]?of[\s_]?purchase|purchase[\s_]?date|entry[\s_]?date|date[\s_]?of[\s_]?acquisition|acquisition[\s_]?date)$/i,
+  sellDate: /^(sell[\s_]?date|date[\s_]?of[\s_]?sale|sale[\s_]?date|exit[\s_]?date|buyback[\s_]?date|redemption[\s_]?date|date[\s_]?of[\s_]?redemption)$/i,
+  buyValue: /^(buy[\s_]?value|purchase[\s_]?value|acquisition[\s_]?cost|buy[\s_]?amount|purchase[\s_]?amount|total[\s_]?buy[\s_]?value)$/i,
+  sellValue: /^(sell[\s_]?value|sale[\s_]?value|full[\s_]?value[\s_]?of[\s_]?consideration|buyback[\s_]?value|sale[\s_]?consideration|sell[\s_]?amount|sale[\s_]?amount|redemption[\s_]?value|total[\s_]?sell[\s_]?value)$/i,
+  charges: /^(charges([\s_]?and[\s_]?statutory[\s_]?levies)?|transfer[\s_]?expenses|expenses|brokerage([\s_]?and[\s_]?charges)?|total[\s_]?charges)$/i,
+  // "Net Profit/Loss" also takes off STT, which is not deductible, so it is never the taxable gain.
+  gain: /^(taxable[\s_]?(profit|p&l|p\/l|gain)|short[\s_]?term[\s_]?taxable[\s_]?income|realized[\s_]?short[\s_]?term[\s_]?capital[\s_]?gains?|short[\s_]?term[\s_]?(capital[\s_]?)?gains?|stcg|profit|gain|capital[\s_]?gains?|reali[sz]ed[\s_]?p&l)$/i,
+  gainLt: /^(long[\s_]?term[\s_]?taxable[\s_]?income|realized[\s_]?long[\s_]?term[\s_]?capital[\s_]?gains?|long[\s_]?term[\s_]?(capital[\s_]?)?gains?|ltcg)$/i,
+  fmv2018: /^(fmv[\s_]?as[\s_]?on[\s_]?31[\s_]?jan\.?[\s_]?2018|fair[\s_]?market[\s_]?value)$/i,
 };
+/** Used for the buy value only when no other header is: some reports' "Cost of Acquisition" is the indexed or grandfathered cost. */
+const COST_OF_ACQUISITION = /^cost[\s_]?of[\s_]?acquisition$/i;
+
+/** A header cell without a bracketed note ("Date of Sale (DD/MM/YYYY)"), extra spaces or trailing dots. */
+export const normHeader = (h: string) => h.replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+/g, ' ').replace(/[.:]+$/, '').trim();
 
 /** Many broker exports put a title block above the real header row; find the first row that looks like a header. */
 export function findHeaderRow(rows: string[][]): number {
   let best = 0, bestScore = -1;
   rows.slice(0, 30).forEach((r, i) => {
-    const score = FIELDS.filter((f) => r.some((c) => ALIASES[f].test(c))).length;
+    const cells = r.map(normHeader);
+    const score = FIELDS.filter((f) => cells.some((c) => ALIASES[f].test(c))).length;
     if (score > bestScore) { best = i; bestScore = score; }
   });
   return best;
 }
 
+/** Sold-lots columns are tried first, so "Buy Value" is never taken as a plain amount. */
+const MATCH_ORDER: readonly Field[] = [...PNL_FIELDS, ...TABLE_FIELDS];
+
 export function guessMapping(header: string[]): Mapping {
   const m = Object.fromEntries(FIELDS.map((f) => [f, -1])) as Mapping;
-  header.forEach((h, i) => {
-    for (const f of FIELDS) if (m[f] === -1 && ALIASES[f].test(h.trim())) { m[f] = i; break; }
+  let coa = -1;
+  header.forEach((raw, i) => {
+    const h = normHeader(raw);
+    if (COST_OF_ACQUISITION.test(h)) { if (coa === -1) coa = i; return; }
+    for (const f of MATCH_ORDER) if (m[f] === -1 && ALIASES[f].test(h)) { m[f] = i; break; }
   });
+  if (m.buyValue === -1 && coa >= 0) m.buyValue = coa;
   return m;
 }
 
-/** "Trades" when the file has a date and a buy/sell column, "Holdings" when it has current prices but no dates. */
-export function detectKind(m: Mapping): 'trades' | 'holdings' | 'unknown' {
+/**
+ * "Sold lots" when the file has buy and sell dates and values (checked first: it also has dates and quantities),
+ * "Trades" when it has a date and a buy/sell column, "Holdings" when it has current prices but no dates.
+ */
+export function detectKind(m: Mapping): TableKind {
+  if (m.buyDate >= 0 && m.sellDate >= 0 && m.qty >= 0 && m.buyValue >= 0 && m.sellValue >= 0) return 'pnl';
   if (m.date >= 0 && m.qty >= 0 && (m.price >= 0 || m.amount >= 0 || m.avgCost >= 0)) return 'trades';
   if (m.qty >= 0 && (m.ltp >= 0 || m.avgCost >= 0)) return 'holdings';
   return 'unknown';
@@ -69,7 +106,7 @@ export function parseTable(rows: string[][], headerIdx: number, m: Mapping, form
   const prices: ParsedPrice[] = [];
   const warnings: string[] = [];
   let skipped = 0, segSkipped = 0;
-  const cell = (r: string[], f: keyof Mapping) => (m[f] >= 0 ? r[m[f]] ?? '' : '');
+  const cell = (r: string[], f: Field) => (m[f] >= 0 ? r[m[f]] ?? '' : '');
 
   for (const r of rows.slice(headerIdx + 1)) {
     const name = cell(r, 'symbol');

@@ -1,6 +1,7 @@
 import { isLongTerm } from '../engine/dates';
-import { BUYBACK_DIVIDEND_FROM, rulesFor } from '../engine/rules';
+import { rulesFor } from '../engine/rules';
 import type { ISODate, Paise } from '../engine/types';
+import { buybackOutcome, buybackWarnings, withBuybacks } from './buyback';
 import { findIsin, parseDate, parseNumber, toPaise, toQty, type ParsedTxn, type ParseResult } from './common';
 
 /** Zerodha Console's own totals for the period, to check the engine against. Rupee figures in paise. */
@@ -81,10 +82,9 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
     const isin = findIsin(text(r[cols['ISIN']!])) ?? `SYM:${symbol.toUpperCase()}`;
     const entry = date(r[cols['Entry Date']!]), exit = date(r[cols['Exit Date']!]);
     if (/Buyback/i.test(section) && exit) {
-      const rules = rulesFor(exit);
-      // rulesFor falls back to the oldest known year for earlier dates, so the exit must also fall inside that year.
-      if (!(rules.buybackIsCapitalGain && exit >= rules.start)) {
-        const key = exit < BUYBACK_DIVIDEND_FROM ? 'buybackBefore' : 'buyback';
+      const outcome = buybackOutcome(exit);
+      if (outcome !== 'book') {
+        const key = outcome === 'companyPaid' ? 'buybackBefore' : 'buyback';
         counts[key] = (counts[key] ?? 0) + 1;
         continue;
       }
@@ -126,9 +126,7 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
     fnoTurnover: sum(fo.get('options turnover'), fo.get('futures turnover')),
   };
 
-  const nb = counts.buyback, nbb = counts.buybackBefore;
-  if (nb) warnings.push(`${nb} buyback ${nb === 1 ? 'exit' : 'exits'} from 1 Oct 2024 to 31 Mar 2026 ${nb === 1 ? 'was' : 'were'} left out: in that period buyback money was taxed as dividend income.`);
-  if (nbb) warnings.push(`${nbb} buyback ${nbb === 1 ? 'exit' : 'exits'} before 1 Oct 2024 ${nbb === 1 ? 'was' : 'were'} left out: the company paid the tax on those.`);
+  warnings.push(...buybackWarnings(counts.buyback ?? 0, counts.buybackBefore ?? 0));
   if (summary.fno != null) warnings.push('F&O profit or loss and turnover were taken from the report totals and set on this member.');
   warnings.push('This report covers exits only. Import holdings or the full tradebook as well to see what is still held and suggest moves.');
 
@@ -136,20 +134,6 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
     format: `Zerodha Tax P&L${from && to ? ` · ${from} to ${to}` : ''}`,
     txns, prices: [], warnings, skipped, brokerSummary: summary, fmv2018,
   };
-}
-
-/**
- * A broker equity total that counts the buyback exits the parser books (capital gains from 1 Apr 2026), so the
- * engine's own figure, which books them, lands on it. A total that already matches its section plus the buybacks is
- * kept; one that matches the section alone gets them added. One that matches neither gets a buyback gain added and a
- * buyback loss left out: more booked gain is the safe side (less room, more tax).
- */
-function withBuybacks(total: Paise | null, section: Paise, buybacks: Paise): Paise | null {
-  if (total == null || buybacks === 0) return total;
-  const near = (a: Paise, b: Paise) => Math.abs(a - b) <= Math.max(100, Math.abs(total) * 0.0005);
-  if (near(total, section + buybacks)) return total;
-  if (near(total, section)) return total + buybacks;
-  return total + Math.max(0, buybacks);
 }
 
 /** Zerodha Console holdings workbook: "Equity" and "Mutual Funds" sheets ("Combined" repeats them and is skipped). */
