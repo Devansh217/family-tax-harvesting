@@ -366,10 +366,10 @@ describe('a sales table whose header does not read', () => {
   });
 
   it('when it is the only sales table, the file is not read as sold lots: the column screen would get a header with no rows', () => {
-    const rows = [['From Date', '01/04/2026'], ['To Date', '31/03/2027'], ['Mutual Funds'],
-      ['Scheme Name', 'ISIN', 'Units', 'Purchase Date', 'Cost of Acquisition', 'Redemption Date', 'Redemption Value', 'Short Term Gain', 'Long Term Gain'],
-      ['Alpha Fund', 'INF000A01011', '10', '01/01/2024', '1000', '10/07/2026', '1500', '0', '500'],
-      ['Beta Fund', 'INF000B01012', '10', '01/01/2024', '1000', '11/07/2026', '1600', '0', '600']];
+    const rows = [['From Date', '01/04/2026'], ['To Date', '31/03/2027'], ['Equity'],
+      ['Scrip', 'ISIN', 'Quantity', 'Buy Date', 'Cost of Acquisition', 'Sell Date', 'Sell Value'],
+      ['ALPHA', 'INE000A01011', '10', '01/01/2024', '1000', '10/07/2026', '1500'],
+      ['BETA', 'INE000B01012', '10', '01/01/2024', '1000', '11/07/2026', '1600']];
     expect(readSoldLots([{ sheet: 'Capital Gains', rows }]).confidence).toBe('low');
   });
 
