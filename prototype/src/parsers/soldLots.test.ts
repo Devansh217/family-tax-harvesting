@@ -360,4 +360,34 @@ describe('a sales table whose header does not read', () => {
       lot('INE000B01012', 'BETA', 20, '10/01/2025', '15/06/2026', 20_000, 30_000, 50, true), ...funds];
     expect(readSoldLots([{ sheet: 'Trades', rows }]).confidence).toBe('medium');
   });
+
+  it('when it is the only sales table, the file is not read as sold lots: the column screen would get a header with no rows', () => {
+    const rows = [['From Date', '01/04/2026'], ['To Date', '31/03/2027'], ['Mutual Funds'],
+      ['Scheme Name', 'ISIN', 'Units', 'Purchase Date', 'Cost of Acquisition', 'Redemption Date', 'Redemption Value', 'Short Term Gain', 'Long Term Gain'],
+      ['Alpha Fund', 'INF000A01011', '10', '01/01/2024', '1000', '10/07/2026', '1500', '0', '500'],
+      ['Beta Fund', 'INF000B01012', '10', '01/01/2024', '1000', '11/07/2026', '1600', '0', '600']];
+    expect(readSoldLots([{ sheet: 'Capital Gains', rows }]).confidence).toBe('low');
+  });
+
+  it('an empty share table it cannot read does not stop a fund report reading as fund capital gains', () => {
+    const head = ['ISIN', 'Description of Mutual Fund sold', 'Number of Units', 'Date of Purchase', 'Purchase Value', 'Date of Sale', 'Sale Value'];
+    const rows = [['Equity'], ['Scrip', 'ISIN', 'Quantity', 'Buy Date', 'Cost of Acquisition', 'Sell Date', 'Sell Value'],
+      ['Mutual Funds'], head, ['INF000A01011', 'Alpha Equity Fund', '10', '01/06/2020', '1000', '01/06/2025', '1500']];
+    const r = readSoldLots([{ sheet: 'Capital Gains', rows }]);
+    if (r.confidence !== 'high') throw new Error(`read ${r.confidence}`);
+    expect(r.result.format).toMatch(/^Fund capital gains · /);
+    expect(r.result.brokerSummary).toBeUndefined();
+  });
+
+  it('the column screen gets a table it can read, not the one whose header does not read', () => {
+    const rows = [['Equity Delivery'], DELIVERY_HEAD,
+      lot('INE000B01012', 'BETA', 20, '10/01/2025', '15/06/2026', 20_000, 30_000, 50, true),
+      ['Mutual Funds'], ['Scheme Name', 'ISIN', 'Units', 'Purchase Date', 'Cost of Acquisition', 'Redemption Date', 'Redemption Value'],
+      ['Alpha Fund', 'INF000A01011', '10', '01/01/2024', '1000', '10/07/2026', '1500'],
+      ['Beta Fund', 'INF000B01012', '10', '01/01/2024', '1000', '11/07/2026', '1600']];
+    const r = readSoldLots([{ sheet: 'Trades', rows }]);
+    if (r.confidence !== 'medium') throw new Error(`read ${r.confidence}`);
+    expect(r.preview.header).toEqual(DELIVERY_HEAD);
+    expect(r.preview.partial).toBe(true);
+  });
 });

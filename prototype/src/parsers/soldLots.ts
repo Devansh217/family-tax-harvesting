@@ -61,6 +61,8 @@ interface Table {
   rows: string[][];
   /** Lots after a one-line note that closed the table, with no header of their own: not read, so counted as skipped. */
   orphans: number;
+  /** A sales header this reader can't map: its lots only count as skipped, and it is never the table the column screen gets. */
+  unread?: boolean;
 }
 
 const STT_COLUMN = /^(stt|securities[\s_]?transaction[\s_]?tax)$/i;
@@ -214,7 +216,7 @@ function findTables(sheets: CellSheet[], meta: Meta): { tables: Table[]; derivat
       // reader can't read: its lots count as skipped, so the report can't read with high confidence without them.
       if (looksLikeHeader(mapping)) {
         const unread = (mapping.sellDate >= 0 || mapping.sellValue >= 0) && kind !== 'skip' && kind !== 'derivatives';
-        closed = unread ? { section, kind, fund: FUND_TABLE.test(cells.join(' ')) || FUND_TABLE.test(section), headerRow: cells, mapping, stt: -1, rows: [], orphans: 0 } : null;
+        closed = unread ? { section, kind, fund: FUND_TABLE.test(cells.join(' ')) || FUND_TABLE.test(section), headerRow: cells, mapping, stt: -1, rows: [], orphans: 0, unread: true } : null;
         if (closed) tables.push(closed);
         table = null;
         continue;
@@ -276,11 +278,13 @@ export function readSoldLots(sheets: CellSheet[]): SoldLotsRead {
   const meta = emptyMeta();
   const { tables, derivativeRows } = findTables(sheets, meta);
   const sales = tables.filter((t) => t.kind !== 'skip' && t.kind !== 'derivatives');
-  if (!sales.length) return { confidence: 'low' };
+  // With no table it can read, the file is not a sold-lots report this reader knows: the full sheet goes to the column screen.
+  const readable = sales.filter((t) => !t.unread);
+  if (!readable.length) return { confidence: 'low' };
   const totals = emptyTotals();
   for (const table of sales) readTable(table, totals);
   const passing = totals.read - totals.mismatches;
-  const fundOnly = sales.every((t) => t.fund);
+  const fundOnly = readable.every((t) => t.fund);
   // One set of totals covers one period. A fund-only report has no totals, so its sales may span years.
   const oneYear = (taxYears(totals).size === 1 && !spansYears(meta)) || fundOnly;
   // A report with clear headers and no lots says nothing was sold in its period: that is read too.
@@ -290,7 +294,7 @@ export function readSoldLots(sheets: CellSheet[]): SoldLotsRead {
   if (empty || (totals.read > 0 && totals.skipped === 0 && passing >= 0.9 * totals.read && oneYear)) {
     return { confidence: 'high', result: summarise(totals, meta, null, derivativeRows, fundOnly) };
   }
-  const biggest = sales.reduce((a, b) => (b.rows.length > a.rows.length ? b : a));
+  const biggest = readable.reduce((a, b) => (b.rows.length > a.rows.length ? b : a));
   const rows = [biggest.headerRow, ...biggest.rows];
   return { confidence: 'medium', preview: { rows, headerIdx: 0, header: biggest.headerRow, mapping: biggest.mapping, kind: detectKind(biggest.mapping), partial: sales.length > 1 } };
 }
