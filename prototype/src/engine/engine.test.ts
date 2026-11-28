@@ -432,4 +432,13 @@ describe('units sold from the opening lot', () => {
     expect(st.members[0]!.year.room.free).toBe(rs(1_25_000));
     expect(computeFamily({ ...state(), brokerSummaries: [] }, FILE, R).members[0]!.year.room.free).toBe(rs(1_22_600));
   });
+
+  it("last year's broker Tax P&L does not change this year's booked gains or room", () => {
+    // A ₹1,00,000 long-term loss from last year's P&L would otherwise be booked this year and free ₹1,00,000 of room.
+    const lastYear = { broker: 'Broker', from: '2025-04-01', to: '2026-03-31', equityShortTerm: 0, equityLongTerm: rs(-1_00_000), mfShortTerm: null, mfLongTerm: null };
+    const base: FamilyState = { members: [who], securities: [sec('X')], txns: history(), positions: [file] };
+    const without = computeFamily(base, FILE, R).members[0]!.year;
+    const withOld = computeFamily({ ...base, brokerSummaries: [{ memberId: 'a', account: 'Zerodha', summary: lastYear }] }, FILE, R).members[0]!.year;
+    expect([withOld.stNet, withOld.ltNet, withOld.room.free]).toEqual([without.stNet, without.ltNet, without.room.free]);
+  });
 });

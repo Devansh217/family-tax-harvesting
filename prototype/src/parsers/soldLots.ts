@@ -94,8 +94,12 @@ function readTable(table: Table, t: RowTotals): void {
     const name = cell(r, 'symbol');
     const isin = findIsin(cell(r, 'isin')) ?? findIsin(name) ?? (name ? symbolKey(name) : null);
     const qtyN = num(r, 'qty');
-    // Not a lot at all (a wrapped cell, a note, a blank): passed over without counting.
-    if (!isin || qtyN == null) continue;
+    // Not a lot at all (a wrapped cell, a note, a blank): passed over without counting. A row with a name and a sale
+    // date but no readable quantity is a lot that didn't read, so it counts as skipped.
+    if (!isin || qtyN == null) {
+      if (isin && (parseDate(cell(r, 'sellDate')) || parseDate(cell(r, 'date')))) t.skipped++;
+      continue;
+    }
     const oneDate = table.kind === 'intraday' && m.buyDate < 0 ? parseDate(cell(r, 'date')) : null;
     const buyDate = oneDate ?? parseDate(cell(r, 'buyDate'));
     const sellDate = oneDate ?? parseDate(cell(r, 'sellDate'));
@@ -200,13 +204,7 @@ function findTables(sheets: CellSheet[], meta: Meta): { tables: Table[]; derivat
   return { tables, derivativeRows };
 }
 
-/**
- * How a read report's totals are used. 'fund': a fund-only report, read as plain trades with no broker totals.
- * 'totals': a Tax P&L with its totals. Any other string: a Tax P&L whose totals are withheld, for that reason.
- */
-type Totals = 'fund' | 'totals' | { withheld: string };
-
-function summarise(t: RowTotals, meta: Meta, fileLabel: string | null, derivativeRows: number, totals: Totals): ParseResult {
+function summarise(t: RowTotals, meta: Meta, fileLabel: string | null, derivativeRows: number, fundOnly: boolean): ParseResult {
   const years = taxYears(t);
   const fy = meta.fyStart ?? (years.size === 1 ? [...years][0]! : null);
   const from = meta.from ?? (fy != null ? `${fy}-04-01` : null);
@@ -236,12 +234,7 @@ function summarise(t: RowTotals, meta: Meta, fileLabel: string | null, derivativ
   const base = { txns: t.txns, prices: [], warnings, skipped: t.skipped, fmv2018: t.fmv2018 };
   // A fund-only report is read as plain trades with no broker totals: a share tradebook in the same account doesn't
   // cover funds, so its sales must not be dropped, and the engine works out each fund's gain from its tax type.
-  if (totals === 'fund') return { ...base, format: `Fund capital gains · ${label}` };
-  // Withheld totals still import as a Tax P&L, so its exits are dropped beside a tradebook and never counted twice.
-  if (totals !== 'totals') {
-    warnings.push(`This report's totals are not used, because ${totals.withheld}. Booked gains come from the sales themselves.`);
-    return { ...base, format: `${TAX_PNL_PREFIX}${label}` };
-  }
+  if (fundOnly) return { ...base, format: `Fund capital gains · ${label}` };
   return { ...base, format: `${TAX_PNL_PREFIX}${label}`, brokerSummary: summary };
 }
 
@@ -265,17 +258,21 @@ export function readSoldLots(sheets: CellSheet[]): SoldLotsRead {
   // A skipped lot is in neither the lots nor the totals, so it would lower booked gains: every lot must read. A gain that
   // doesn't add up still reads (the broker's own figure goes into the totals), but only a few may.
   if (empty || (totals.read > 0 && totals.skipped === 0 && passing >= 0.9 * totals.read && oneYear)) {
-    return { confidence: 'high', result: summarise(totals, meta, null, derivativeRows, fundOnly ? 'fund' : 'totals') };
+    return { confidence: 'high', result: summarise(totals, meta, null, derivativeRows, fundOnly) };
   }
   const biggest = sales.reduce((a, b) => (b.rows.length > a.rows.length ? b : a));
   const rows = [biggest.headerRow, ...biggest.rows];
   return { confidence: 'medium', preview: { rows, headerIdx: 0, header: biggest.headerRow, mapping: biggest.mapping, kind: detectKind(biggest.mapping), partial: sales.length > 1 } };
 }
 
+/** Why the column screen turns a sold-lots table away, in the import card's words. */
+export const notReadInFull = (why: string) =>
+  `This report was not imported because ${why}. Its gains could come out wrong. Download the report for one tax year as Excel or CSV and import that.`;
+
 /**
- * The column screen's sold-lots table, with the columns the person picked: one table, no sections. Its totals are used
- * only when they cover the whole report for one tax year. Otherwise it still imports as a Tax P&L (so its exits are
- * dropped beside a tradebook, never counted twice) but with no totals, and booked gains come from the sales.
+ * The column screen's sold-lots table, with the columns the person picked: one table, no sections. It imports only when
+ * it is the whole report, every lot reads and (for shares) the sales are in one tax year. Anything less would carry
+ * totals that miss sales, or drop exits beside a tradebook that doesn't hold them, so it is turned away instead.
  */
 export function soldLotsFromTable(rows: string[][], headerIdx: number, mapping: Mapping, fileName: string, partial = false): ParseResult {
   const meta = emptyMeta();
@@ -287,10 +284,11 @@ export function soldLotsFromTable(rows: string[][], headerIdx: number, mapping: 
   };
   const totals = emptyTotals();
   readTable(table, totals);
-  const use: Totals = table.fund ? 'fund'
-    : partial ? { withheld: 'only one of its tables was read' }
-    : taxYears(totals).size > 1 ? { withheld: 'its sales span more than one tax year' }
-    : 'totals';
-  return summarise(totals, meta, fileName, 0, use);
+  const why = partial ? 'only one of its tables could be read'
+    : totals.skipped ? `${totals.skipped} ${totals.skipped === 1 ? 'row' : 'rows'} could not be read`
+    : !table.fund && taxYears(totals).size > 1 ? 'its sales span more than one tax year'
+    : null;
+  if (why) return { format: `Unread Tax P&L · ${fileName}`, txns: [], prices: [], skipped: totals.skipped, warnings: [notReadInFull(why)] };
+  return summarise(totals, meta, fileName, 0, table.fund);
 }
 

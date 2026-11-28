@@ -473,7 +473,9 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
     ['Mutual funds, short-term', x.mfShortTerm, 'st', false], ['Mutual funds, long-term', x.mfLongTerm, 'lt', false],
   ];
   const tolerance = (broker: Paise) => Math.max(100, Math.abs(broker) * 0.0005);
-  for (const g of pnlGroups(state.brokerSummaries ?? [])) {
+  // Only a P&L for this tax year corrects it: an older year's totals would be booked here as if earned this year.
+  const thisYear = (state.brokerSummaries ?? []).filter((b) => (b.summary.from ?? rules.start) >= rules.start && (b.summary.to ?? rules.end) <= rules.end);
+  for (const g of pnlGroups(thisYear)) {
     const mine = ledger.realised.filter((r) => r.memberId === g.memberId && g.group.some((b) => (r.account ?? '') === b.account));
     catsOf(g.summary).forEach(([label, , term, eq], i) => {
       const inCat = (r: Realised) => r.term === term && isEq(r.isin) === eq;

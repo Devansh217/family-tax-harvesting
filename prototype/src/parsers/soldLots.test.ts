@@ -250,20 +250,26 @@ describe('soldLotsFromTable', () => {
   const ROWS = [['ISIN', 'Qty', 'Buy Date', 'Sell Date', 'Buy Value', 'Sell Value'], ['INE000B01012', '20', '10/01/2025', '15/06/2026', '20000', '30000']];
   const MAP = () => Object.assign(guessMapping(ROWS[0]!), { isin: 0, qty: 1, buyDate: 2, sellDate: 3, buyValue: 4, sellValue: 5 });
 
-  it('one table of a bigger report imports as a Tax P&L with no totals, so missing sections cannot lower booked gains', () => {
-    const r = soldLotsFromTable(ROWS, 0, MAP(), 'gains.csv', true);
-    expect(r.format.startsWith(TAX_PNL_PREFIX)).toBe(true);
+  // Each of these would carry totals that miss sales, or drop exits beside a tradebook that doesn't hold them.
+  const turnedAway = (r: ReturnType<typeof soldLotsFromTable>, why: RegExp) => {
+    expect(r.txns).toHaveLength(0);
     expect(r.brokerSummary).toBeUndefined();
-    expect(r.txns).toHaveLength(2);
-    expect(r.warnings).toContain("This report's totals are not used, because only one of its tables was read. Booked gains come from the sales themselves.");
+    expect(r.format.startsWith(TAX_PNL_PREFIX)).toBe(false);
+    expect(r.warnings[0]).toMatch(why);
+    expect(r.warnings[0]).toMatch(/Excel or CSV/);
+  };
+
+  it('one table of a bigger report is turned away', () => {
+    turnedAway(soldLotsFromTable(ROWS, 0, MAP(), 'gains.csv', true), /only one of its tables could be read/);
   });
 
-  it('sales that span tax years import with no totals: one set of totals covers one year', () => {
-    const rows = [...ROWS, ['INE000C01013', '5', '10/01/2024', '15/06/2025', '5000', '6000']];
-    const r = soldLotsFromTable(rows, 0, MAP(), 'gains.csv');
-    expect(r.format.startsWith(TAX_PNL_PREFIX)).toBe(true);
-    expect(r.brokerSummary).toBeUndefined();
-    expect(r.warnings.at(-1)).toMatch(/span more than one tax year/);
+  it('share sales that span tax years are turned away: one set of totals covers one year', () => {
+    turnedAway(soldLotsFromTable([...ROWS, ['INE000C01013', '5', '10/01/2024', '15/06/2025', '5000', '6000']], 0, MAP(), 'gains.csv'), /more than one tax year/);
+  });
+
+  it('a lot that does not read turns the table away, even one with no quantity', () => {
+    turnedAway(soldLotsFromTable([...ROWS, ['INE000C01013', '100', '10/01/2024', 'n/a', '100000', '200000']], 0, MAP(), 'gains.csv'), /1 row could not be read/);
+    turnedAway(soldLotsFromTable([...ROWS, ['INE000C01013', '', '10/01/2024', '15/06/2026', '100000', '200000']], 0, MAP(), 'gains.csv'), /could not be read/);
   });
 });
 
