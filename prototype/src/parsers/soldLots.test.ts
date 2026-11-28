@@ -256,7 +256,7 @@ describe('soldLotsFromTable', () => {
     expect(r.brokerSummary).toBeUndefined();
     expect(r.format.startsWith(TAX_PNL_PREFIX)).toBe(false);
     expect(r.warnings[0]).toMatch(why);
-    expect(r.warnings[0]).toMatch(/Excel or CSV/);
+    expect(r.warnings[0]).toMatch(/full report for one tax year/);
   };
 
   it('one table of a bigger report is turned away', () => {
@@ -265,6 +265,14 @@ describe('soldLotsFromTable', () => {
 
   it('share sales that span tax years are turned away: one set of totals covers one year', () => {
     turnedAway(soldLotsFromTable([...ROWS, ['INE000C01013', '5', '10/01/2024', '15/06/2025', '5000', '6000']], 0, MAP(), 'gains.csv'), /more than one tax year/);
+  });
+
+  it('a stated period that crosses 1 April turns the table away: its totals mix two years', () => {
+    turnedAway(soldLotsFromTable([['From Date', '01/01/2026'], ['To Date', '28/11/2026'], ...ROWS], 2, MAP(), 'gains.csv'), /more than one tax year/);
+  });
+
+  it('a lot with a quantity and a sale date but no name turns the table away', () => {
+    turnedAway(soldLotsFromTable([...ROWS, ['', '100', '10/01/2024', '15/06/2026', '100000', '200000']], 0, MAP(), 'gains.csv'), /1 row could not be read/);
   });
 
   it('a lot that does not read turns the table away, even one with no quantity', () => {

@@ -473,8 +473,9 @@ export function computeFamily(state: FamilyState, asOf: ISODate, rules: TaxRules
     ['Mutual funds, short-term', x.mfShortTerm, 'st', false], ['Mutual funds, long-term', x.mfLongTerm, 'lt', false],
   ];
   const tolerance = (broker: Paise) => Math.max(100, Math.abs(broker) * 0.0005);
-  // Only a P&L for this tax year corrects it: an older year's totals would be booked here as if earned this year.
-  const thisYear = (state.brokerSummaries ?? []).filter((b) => (b.summary.from ?? rules.start) >= rules.start && (b.summary.to ?? rules.end) <= rules.end);
+  // A P&L that covers none of this tax year doesn't correct it: an older year's totals would be booked here as if
+  // earned this year. (The import guide's Tax P&L step uses the same overlap.)
+  const thisYear = (state.brokerSummaries ?? []).filter((b) => (b.summary.from ?? rules.start) <= rules.end && (b.summary.to ?? rules.end) >= rules.start);
   for (const g of pnlGroups(thisYear)) {
     const mine = ledger.realised.filter((r) => r.memberId === g.memberId && g.group.some((b) => (r.account ?? '') === b.account));
     catsOf(g.summary).forEach(([label, , term, eq], i) => {

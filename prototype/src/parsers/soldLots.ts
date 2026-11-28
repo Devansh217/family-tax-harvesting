@@ -32,6 +32,8 @@ const FY_RE = /(?:fy|financial\s+year|assessment\s+year)?\s*(20\d{2})\s*[-/]\s*(
 const fyStartOf = (d: ISODate) => (Number(d.slice(5, 7)) >= 4 ? Number(d.slice(0, 4)) : Number(d.slice(0, 4)) - 1);
 /** The tax years (by starting year) the lots were sold in. */
 const taxYears = (t: RowTotals) => new Set(t.sellDates.map(fyStartOf));
+/** A stated period (a custom date range) that crosses 1 April: its totals mix two tax years. */
+const spansYears = (meta: Meta) => meta.from != null && meta.to != null && fyStartOf(meta.from) !== fyStartOf(meta.to);
 
 function classify(section: string, sheet: string, header: string[]): SectionKind {
   if (header.some((h) => DERIVATIVE_COLUMN.test(normHeader(h)))) return 'derivatives';
@@ -94,10 +96,10 @@ function readTable(table: Table, t: RowTotals): void {
     const name = cell(r, 'symbol');
     const isin = findIsin(cell(r, 'isin')) ?? findIsin(name) ?? (name ? symbolKey(name) : null);
     const qtyN = num(r, 'qty');
-    // Not a lot at all (a wrapped cell, a note, a blank): passed over without counting. A row with a name and a sale
-    // date but no readable quantity is a lot that didn't read, so it counts as skipped.
+    // Not a lot at all (a wrapped cell, a note, a blank): passed over without counting. A row with a sale date and a
+    // name or a quantity is a lot that didn't read, so it counts as skipped.
     if (!isin || qtyN == null) {
-      if (isin && (parseDate(cell(r, 'sellDate')) || parseDate(cell(r, 'date')))) t.skipped++;
+      if ((isin || qtyN != null) && (parseDate(cell(r, 'sellDate')) || parseDate(cell(r, 'date')))) t.skipped++;
       continue;
     }
     const oneDate = table.kind === 'intraday' && m.buyDate < 0 ? parseDate(cell(r, 'date')) : null;
@@ -252,7 +254,7 @@ export function readSoldLots(sheets: CellSheet[]): SoldLotsRead {
   const passing = totals.read - totals.mismatches;
   const fundOnly = sales.every((t) => t.fund);
   // One set of totals covers one period. A fund-only report has no totals, so its sales may span years.
-  const oneYear = taxYears(totals).size === 1 || fundOnly;
+  const oneYear = (taxYears(totals).size === 1 && !spansYears(meta)) || fundOnly;
   // A report with clear headers and no lots says nothing was sold in its period: that is read too.
   const empty = totals.read + totals.skipped === 0 && (meta.from != null || meta.fyStart != null);
   // A skipped lot is in neither the lots nor the totals, so it would lower booked gains: every lot must read. A gain that
@@ -267,7 +269,7 @@ export function readSoldLots(sheets: CellSheet[]): SoldLotsRead {
 
 /** Why the column screen turns a sold-lots table away, in the import card's words. */
 export const notReadInFull = (why: string) =>
-  `This report was not imported because ${why}. Its gains could come out wrong. Download the report for one tax year as Excel or CSV and import that.`;
+  `This report was not imported because ${why}. Its gains could come out wrong. Import the broker's full report for one tax year instead.`;
 
 /**
  * The column screen's sold-lots table, with the columns the person picked: one table, no sections. It imports only when
@@ -285,6 +287,7 @@ export function soldLotsFromTable(rows: string[][], headerIdx: number, mapping: 
   const totals = emptyTotals();
   readTable(table, totals);
   const why = partial ? 'only one of its tables could be read'
+    : spansYears(meta) ? 'it covers more than one tax year'
     : totals.skipped ? `${totals.skipped} ${totals.skipped === 1 ? 'row' : 'rows'} could not be read`
     : !table.fund && taxYears(totals).size > 1 ? 'its sales span more than one tax year'
     : null;
