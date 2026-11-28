@@ -10,6 +10,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import readXlsxFile from 'read-excel-file/node';
+import * as XLSX from 'xlsx';
 import { cellText, extractItems, linesOf, parseCSV, parsePdfStatement, readSoldLots, type CellSheet, isAngelFundHoldings, isAngelTrades, parseAngelFundHoldings, parseAngelTrades, resolveNames, isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseTablePreview, parseZerodhaTaxPnl, PdfPasswordError, previewRows, previewTable, type PdfJsLike } from '../src/parsers';
 import { addDays, addMonths, inRange } from '../src/engine/dates';
 import { computeFamily, countingSummaries, pnlGroups } from '../src/engine/family';
@@ -53,6 +54,34 @@ function reconcileTaxPnl(f: string, r: ParseResult, account: string) {
   return fam;
 }
 
+/** Every sheet of an .xlsx or an old .xls workbook, as the Import screen reads them. */
+async function readBook(path: string): Promise<{ sheet: string; data: unknown[][] }[]> {
+  if (!path.toLowerCase().endsWith('.xls')) return (await readXlsxFile(path)).map((s) => ({ sheet: s.sheet, data: s.data as unknown[][] }));
+  const wb = XLSX.read(readFileSync(path), { type: 'buffer', cellDates: true });
+  return wb.SheetNames.map((n) => ({ sheet: n, data: XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[n]!, { header: 1, raw: true, defval: '' }) }));
+}
+
+/**
+ * An ET Money capital gains report states its short-term and long-term totals on its Summary sheet. All sales read
+ * together (sale less cost) must land on those totals. Prints match / % only.
+ */
+function reconcileEtMoney(sheets: { sheet: string; data: unknown[][] }[], r: ParseResult) {
+  const summary = sheets.find((s) => s.sheet.trim().toLowerCase() === 'summary');
+  if (!summary) return;
+  const header = summary.data.find((row) => row.some((c) => cellText(c).trim().toLowerCase() === 'total')) ?? [];
+  const col = header.findIndex((c) => cellText(c).trim().toLowerCase() === 'total');
+  const total = (re: RegExp) => {
+    const row = summary.data.find((x) => re.test(x.map(cellText).join(' ').toLowerCase().replace(/\s+/g, ' ')));
+    const n = row && col >= 0 ? Number(cellText(row[col]).replace(/,/g, '')) : NaN;
+    return Number.isFinite(n) ? n : 0;
+  };
+  const theirs = total(/short ?term.*gain\/loss/) + total(/longtermwithoutindex.*gain\/loss/);
+  const ours = (r.txns.filter((t) => t.side === 'sell').reduce((a, t) => a + t.amount, 0) - r.txns.filter((t) => t.side === 'buy').reduce((a, t) => a + t.amount, 0)) / 100;
+  const ok = Math.abs(ours - theirs) <= Math.max(1, Math.abs(theirs) * 0.0005);
+  const pct = theirs === 0 ? (ours === 0 ? 0 : 100) : (Math.abs(ours - theirs) / Math.abs(theirs)) * 100;
+  console.log(`  ${ok ? 'MATCH   ' : 'MISMATCH'} All sales together against the Summary sheet${ok ? '' : ` (off by ${pct.toFixed(2)}%)`}`);
+}
+
 /** The generic sold-lots reader, as the Import screen runs it after the known readers. */
 function soldLots(f: string, sheets: CellSheet[]): ParseResult | null {
   const read = readSoldLots(sheets);
@@ -84,9 +113,9 @@ for (const f of files) {
         if (e instanceof PdfPasswordError) { console.log(`\n${f}: locked. Run with PDF_PASSWORD=<password>.`); continue; }
         throw e;
       }
-    } else if (lower.endsWith('.xlsx')) {
-      const sheets = await readXlsxFile(path);
-      const asSheets = sheets.map((s) => ({ sheet: s.sheet, data: s.data as unknown[][] }));
+    } else if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+      const sheets = await readBook(path);
+      const asSheets = sheets;
       if (isZerodhaHoldings(asSheets)) {
         r = parseZerodhaHoldings(asSheets);
         console.log(`\n${f}: Zerodha holdings, ${r.prices.filter((p) => p.ltQty != null).length} with long-term quantity`);
@@ -103,6 +132,7 @@ for (const f of files) {
         console.log(`\n${f}: Angel One fund holdings`);
       } else {
         r = soldLots(f, asSheets.map((s) => ({ sheet: s.sheet, rows: s.data.map((row) => row.map(cellText)) })));
+        if (r?.format.includes('ET Money')) reconcileEtMoney(asSheets, r);
         if (!r) {
           const p = sheets.map((s) => previewRows(s.data as unknown[][])).find((x) => x.kind !== 'unknown') ?? previewRows(sheets[0]?.data as unknown[][] ?? []);
           console.log(`  header row ${p.headerIdx + 1}: [${p.header.join(' | ')}] → ${p.kind}`);
@@ -150,9 +180,9 @@ if (memberDirs.length) {
       try { const pdf = await pdfOf(path); return parsePdfStatement(pdf.lines, pdf.words); }
       catch (e) { return e instanceof PdfPasswordError ? 'locked' : null; }
     }
-    if (lower.endsWith('.xlsx')) {
+    if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
       try {
-        const sheets = (await readXlsxFile(path)).map((s) => ({ sheet: s.sheet, data: s.data as unknown[][] }));
+        const sheets = await readBook(path);
         if (isZerodhaTaxPnl(sheets)) return parseZerodhaTaxPnl(sheets);
         if (isZerodhaHoldings(sheets)) return parseZerodhaHoldings(sheets);
         if (isAngelTrades(sheets)) return resolveNames(parseAngelTrades(sheets), shares);

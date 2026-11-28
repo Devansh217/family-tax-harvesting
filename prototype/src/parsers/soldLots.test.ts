@@ -391,3 +391,55 @@ describe('a sales table whose header does not read', () => {
     expect(r.preview.partial).toBe(true);
   });
 });
+
+// Made-up figures; sheet names, group titles and headers copy an ET Money capital gains report (.xls).
+describe('ET Money capital gains report', () => {
+  const head = ['Fund', 'Fund Name', 'Folio Number', 'Scheme Name', 'Trxn.Type', 'Date', 'Current Units', 'Grandfathered NAV as on31/01/2018',
+    'GrandFathered Cost Value', 'Trxn.Type', 'Date', 'Units', 'Amount', 'Price', 'Tax Perc', 'Tax', 'Short Term', 'Indexed Cost',
+    'Long Term With Index', 'Long Term Without Index'];
+  const groups = Array<string>(20).fill('');
+  groups[4] = 'Section A : Purchase'; groups[9] = 'Section B : Redemption'; groups[16] = 'Section C : Capital Gains/Losses';
+  /** One redemption: the report gives units, price, amount and the gain, but no purchase value. */
+  const sale = (scheme: string, bought: string, sold: string, units: number, price: number, amount: number, st: number, lt: number) =>
+    ['101', 'Alpha Mutual Fund', '1234567890', scheme, 'Purchase', bought, String(units), '0', '0', 'Redemption', sold, String(units),
+      String(amount), String(price), '0.00', '0.00', String(st), '0', '0.00', String(lt)];
+  const workbook = (rows: string[][]): CellSheet[] => [
+    { sheet: 'Summary', rows: [['', '', '', '', '', '', 'Total'], ['Short Term Capital Gain/Loss', '', '', '', '', '', '500']] },
+    { sheet: 'Schemes Summary', rows: [['Scheme Name', 'Count', 'Outflow Amount', 'Net Value', 'Short Gain', 'Long Gain Without Index'], ['Alpha Flexi Cap Fund', '1', '1500', '1500', '500', '0']] },
+    { sheet: 'Transactions Summary', rows: [groups, [], head, ...rows] },
+  ];
+  const short = sale('Alpha Flexi Cap Fund - Direct Growth INF000A01011', '05-Jan-2026', '10-Jul-2026', 100, 15, 1500, 500, 0);
+  const long = sale('Beta Index Fund - Direct Growth INF000B01012', '05-Jan-2024', '10-Jul-2026', 10, 200, 2000, 0, 800);
+
+  it('reads the repeated Date and Trxn.Type columns by their group, and takes the ISIN from the scheme name', () => {
+    const r = readSoldLots(workbook([short, long]));
+    expect(r.confidence).toBe('high');
+    if (r.confidence !== 'high') return;
+    expect(r.result.format).toMatch(/^Fund capital gains · ET Money/);
+    expect(r.result.brokerSummary).toBeUndefined();
+    expect(r.result.txns.map((t) => [t.isin, t.side, t.date])).toEqual([
+      ['INF000A01011', 'buy', '2026-01-05'], ['INF000A01011', 'sell', '2026-07-10'],
+      ['INF000B01012', 'buy', '2024-01-05'], ['INF000B01012', 'sell', '2026-07-10'],
+    ]);
+  });
+
+  it('works the cost out as the amount less the gain, from the short-term or the long-term-without-index column', () => {
+    const r = readSoldLots(workbook([short, long]));
+    if (r.confidence !== 'high') throw new Error('not read');
+    // 1,500 sold with a 500 short-term gain cost 1,000; 2,000 sold with an 800 long-term gain cost 1,200.
+    expect(r.result.txns.map((t) => t.amount)).toEqual([toPaise(1000), toPaise(1500), toPaise(1200), toPaise(2000)]);
+  });
+
+  it('flags a sale whose units times price is not its amount', () => {
+    const off = sale('Alpha Flexi Cap Fund - Direct Growth INF000A01011', '05-Jan-2026', '10-Jul-2026', 100, 12, 1500, 500, 0);
+    const r = readSoldLots(workbook([off, ...Array<string[]>(9).fill(long)]));
+    expect(r.confidence).toBe('high');
+    if (r.confidence !== 'high') return;
+    expect(r.result.warnings[0]).toMatch(/1 with a gain that doesn't add up/);
+  });
+
+  it('a gain larger than the sale (a negative cost) does not read', () => {
+    const bad = sale('Alpha Flexi Cap Fund - Direct Growth INF000A01011', '05-Jan-2026', '10-Jul-2026', 100, 15, 1500, 2000, 0);
+    expect(readSoldLots(workbook([bad, long])).confidence).toBe('medium');
+  });
+});

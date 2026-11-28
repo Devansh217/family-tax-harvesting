@@ -39,8 +39,8 @@ const ALIASES: Record<Field, RegExp> = {
   symbol: /^(symbol|trading[\s_]?symbol|tradingsymbol|scrip([\s_]?name)?|scrip\/contract|instrument|stock([\s_]?name)?|company([\s_]?name)?|security([\s_]?name)?|scheme([\s_]?name)?|fund([\s_]?name)?|name|description[\s_]?of[\s_]?mutual[\s_]?fund[\s_]?sold)$/i,
   isin: /^isin([\s_]?(code|no\.?))?$/i,
   side: /^(trade[\s_]?type|type|buy\/?sell|b\/s|side|action|transaction[\s_]?type|order[\s_]?side)$/i,
-  qty: /^(quantity|qty\.?|units|no\.?[\s_]?of[\s_]?(shares|units)|number[\s_]?of[\s_]?(shares|units)|shares|quantity[\s_]?available|available[\s_]?qty\.?)$/i,
-  price: /^(price|rate|trade[\s_]?price|nav|execution[\s_]?price|purchase[\s_]?price)$/i,
+  qty: /^(quantity|qty\.?|units|(redemption|sale|sell|sold)[\s_]?(units|quantity|qty\.?)|no\.?[\s_]?of[\s_]?(shares|units)|number[\s_]?of[\s_]?(shares|units)|shares|quantity[\s_]?available|available[\s_]?qty\.?)$/i,
+  price: /^(price|rate|trade[\s_]?price|nav|redemption[\s_]?(price|nav)|execution[\s_]?price|purchase[\s_]?price)$/i,
   amount: /^(amount|value|net[\s_]?amount|trade[\s_]?value|total([\s_]?amount)?|order[\s_]?value|investment)$/i,
   avgCost: /^(avg\.?[\s_]?cost|average[\s_]?cost|buy[\s_]?avg\.?|average[\s_]?buy[\s_]?price|avg\.?[\s_]?buy[\s_]?price|avg\.?[\s_]?price|average[\s_]?price)$/i,
   ltp: /^(ltp|last[\s_]?price|current[\s_]?price|market[\s_]?price|closing[\s_]?price|cmp|current[\s_]?nav|last[\s_]?traded[\s_]?price|previous[\s_]?closing[\s_]?price|prev\.?[\s_]?close|close[\s_]?price)$/i,
@@ -49,15 +49,16 @@ const ALIASES: Record<Field, RegExp> = {
   buyDate: /^(buy[\s_]?date|date[\s_]?of[\s_]?purchase|purchase[\s_]?date|entry[\s_]?date|date[\s_]?of[\s_]?acquisition|acquisition[\s_]?date)$/i,
   sellDate: /^(sell[\s_]?date|date[\s_]?of[\s_]?sale|sale[\s_]?date|exit[\s_]?date|buyback[\s_]?date|redemption[\s_]?date|date[\s_]?of[\s_]?redemption)$/i,
   buyValue: /^(buy[\s_]?value|purchase[\s_]?value|acquisition[\s_]?cost|buy[\s_]?amount|purchase[\s_]?amount|total[\s_]?buy[\s_]?value)$/i,
-  sellValue: /^(sell[\s_]?value|sale[\s_]?value|full[\s_]?value[\s_]?of[\s_]?consideration|buyback[\s_]?value|sale[\s_]?consideration|sell[\s_]?amount|sale[\s_]?amount|redemption[\s_]?value|total[\s_]?sell[\s_]?value)$/i,
+  sellValue: /^(sell[\s_]?value|sale[\s_]?value|full[\s_]?value[\s_]?of[\s_]?consideration|buyback[\s_]?value|sale[\s_]?consideration|sell[\s_]?amount|sale[\s_]?amount|redemption[\s_]?(value|amount)|total[\s_]?sell[\s_]?value)$/i,
   charges: /^(charges([\s_]?and[\s_]?statutory[\s_]?levies)?|transfer[\s_]?expenses|expenses|brokerage([\s_]?and[\s_]?charges)?|total[\s_]?charges)$/i,
   // "Net Profit/Loss" also takes off STT, which is not deductible, so it is never the taxable gain.
-  gain: /^(taxable[\s_]?(profit|p&l|p\/l|gain)|short[\s_]?term[\s_]?taxable[\s_]?income|realized[\s_]?short[\s_]?term[\s_]?capital[\s_]?gains?|short[\s_]?term[\s_]?(capital[\s_]?)?gains?|stcg|profit|gain|capital[\s_]?gains?|reali[sz]ed[\s_]?p&l)$/i,
-  gainLt: /^(long[\s_]?term[\s_]?taxable[\s_]?income|realized[\s_]?long[\s_]?term[\s_]?capital[\s_]?gains?|long[\s_]?term[\s_]?(capital[\s_]?)?gains?|ltcg)$/i,
-  fmv2018: /^(fmv[\s_]?as[\s_]?on[\s_]?31[\s_]?jan\.?[\s_]?2018|fair[\s_]?market[\s_]?value)$/i,
+  gain: /^(taxable[\s_]?(profit|p&l|p\/l|gain)|short[\s_]?term[\s_]?taxable[\s_]?income|realized[\s_]?short[\s_]?term[\s_]?capital[\s_]?gains?|short[\s_]?term[\s_]?(capital[\s_]?)?gains?|stcg|capital[\s_]?gains?[\s_]?short[\s_]?term|profit|gain|capital[\s_]?gains?|reali[sz]ed[\s_]?p&l)$/i,
+  gainLt: /^(long[\s_]?term[\s_]?taxable[\s_]?income|realized[\s_]?long[\s_]?term[\s_]?capital[\s_]?gains?|long[\s_]?term[\s_]?(capital[\s_]?)?gains?|ltcg|(capital[\s_]?gains?[\s_]?)?long[\s_]?term[\s_]?without[\s_]?index(ation)?)$/i,
+  fmv2018: /^(fmv[\s_]?as[\s_]?on[\s_]?31[\s_]?jan\.?[\s_]?2018|fair[\s_]?market[\s_]?value|(purchase[\s_]?)?grand[\s_]?fathered[\s_]?cost[\s_]?value)$/i,
 };
 /** Never read: some reports' "Cost of Acquisition" is the indexed or grandfathered cost, not what was paid. */
 const COST_OF_ACQUISITION = /^cost[\s_]?of[\s_]?acquisition$/i;
+const SCHEME = /^scheme[\s_]?name$/i;
 
 /** A header cell without a bracketed note ("Date of Sale (DD/MM/YYYY)"), extra spaces or trailing dots. */
 export const normHeader = (h: string) => h.replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+/g, ' ').replace(/[.:]+$/, '').trim();
@@ -83,15 +84,19 @@ export function guessMapping(header: string[]): Mapping {
     if (COST_OF_ACQUISITION.test(h)) return;
     for (const f of MATCH_ORDER) if (m[f] === -1 && ALIASES[f].test(h)) { m[f] = i; break; }
   });
+  // A fund report with both a fund house column ("Fund") and a scheme column names each holding by its scheme.
+  const scheme = header.findIndex((h) => SCHEME.test(normHeader(h)));
+  if (scheme >= 0) m.symbol = scheme;
   return m;
 }
 
 /**
- * "Sold lots" when the file has buy and sell dates and values (checked first: it also has dates and quantities),
+ * "Sold lots" when the file has buy and sell dates, a sell value, and a buy value or the gain (some fund statements give
+ * only the gain, so the cost is the sale less it). Checked first: it also has dates and quantities.
  * "Trades" when it has a date and a buy/sell column, "Holdings" when it has current prices but no dates.
  */
 export function detectKind(m: Mapping): TableKind {
-  if (m.buyDate >= 0 && m.sellDate >= 0 && m.qty >= 0 && m.buyValue >= 0 && m.sellValue >= 0) return 'pnl';
+  if (m.buyDate >= 0 && m.sellDate >= 0 && m.qty >= 0 && m.sellValue >= 0 && (m.buyValue >= 0 || m.gain >= 0 || m.gainLt >= 0)) return 'pnl';
   if (m.date >= 0 && m.qty >= 0 && (m.price >= 0 || m.amount >= 0 || m.avgCost >= 0)) return 'trades';
   if (m.qty >= 0 && (m.ltp >= 0 || m.avgCost >= 0)) return 'holdings';
   return 'unknown';
