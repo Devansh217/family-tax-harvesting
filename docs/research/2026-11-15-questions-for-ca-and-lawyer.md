@@ -37,6 +37,18 @@ All tax questions are for **FY 2026-27 under the Income-tax Act 2025, as amended
 19. **Section numbers to confirm:** TDS thresholds on interest (₹50,000 / ₹1 L seniors) in s.393; 80D, 80DD, 80DDB, 80U, 80G equivalents; bonus and dividend stripping (old s.94(7), (8)); FIFO for demat (old s.45(2A)); the cash-payment bar for health premiums.
 20. **Same-scheme rebuy.** Does selling a mutual fund and buying the same scheme the next day (to reset cost) draw different scrutiny from doing it with shares?
 
+### Fund tax types (D1 #40; detail in `2026-11-28-fund-tax-types.md` §7.2)
+
+Question 5 above is partly answered there from the Act's text: unlisted non-equity units need 24 months (s.2(101)); listed units look like 12. Question 21 asks a CA to confirm the listed half.
+
+21. **Listed ETFs.** Is a listed gold, silver or overseas ETF unit a "security listed in a recognised stock exchange" under s.2(101)(b)(i), so long-term after 12 months?
+22. **FoF of several ETFs.** Does a fund of funds that splits 90% or more across two or more Indian equity ETFs meet s.198(8)(i), given the words "another fund"?
+23. **Arbitrage positions.** For the 65% test in s.198(8), do shares held against short futures count in full?
+24. **SID says equity, average says not.** If a balanced advantage or multi asset fund's SID says "equity oriented" but its annual average falls under 65%, which treatment applies to the investor, and who bears the error?
+25. **Gold FoF bought in 2024.** A gold FoF unit bought in June 2024 and sold in December 2026: deemed short-term under s.76, or long-term after 24 months under s.2(101)? In other words, is specified-fund status tested at transfer under the 2025 wording?
+26. **Conservative hybrid with gold.** A conservative hybrid holding 70% debt, 10% gold and 20% equity: specified mutual fund or not?
+27. **STT on an equity FoF.** Is STT charged when an equity FoF unit is redeemed, as s.198 needs for the 12.5% rate?
+
 ---
 
 ## Sheet B: for a lawyer (SEBI, IRDAI, DPDP, consumer law)
