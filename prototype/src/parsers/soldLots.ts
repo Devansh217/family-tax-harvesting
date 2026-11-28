@@ -209,8 +209,16 @@ function findTables(sheets: CellSheet[], meta: Meta): { tables: Table[]; derivat
         closed = null;
         continue;
       }
-      // Any other header (transfers, holdings) ends the table: its rows are not sales, whatever columns they line up with.
-      if (looksLikeHeader(mapping)) { table = null; closed = null; continue; }
+      // Any other header ends the table. A transfer or holdings header's rows are not sales, whatever columns they line up
+      // with. A header with a sale column that still doesn't read (a cost headed "Cost of Acquisition") holds sales this
+      // reader can't read: its lots count as skipped, so the report can't read with high confidence without them.
+      if (looksLikeHeader(mapping)) {
+        const unread = (mapping.sellDate >= 0 || mapping.sellValue >= 0) && kind !== 'skip' && kind !== 'derivatives';
+        closed = unread ? { section, kind, fund: FUND_TABLE.test(cells.join(' ')) || FUND_TABLE.test(section), headerRow: cells, mapping, stt: -1, rows: [], orphans: 0 } : null;
+        if (closed) tables.push(closed);
+        table = null;
+        continue;
+      }
       if (TOTAL_ROW.test(filled[0]!)) continue;
       // A row with no date and no number is a title spread over cells ("Transfer Transactions | Off-market"): it closes the table like a one-line note.
       if (!hasData(filled)) { section = filled.join(' '); closed = table ?? closed; table = null; continue; }

@@ -351,3 +351,13 @@ describe('the row check', () => {
     expect(readSoldLots([{ sheet: '', rows: [DELIVERY_HEAD, row] }]).confidence).toBe('medium');
   });
 });
+
+describe('a sales table whose header does not read', () => {
+  it('counts its lots as skipped instead of dropping them, so the report is not high confidence', () => {
+    const funds = [['Mutual Funds'], ['Scheme Name', 'ISIN', 'Units', 'Purchase Date', 'Cost of Acquisition', 'Redemption Date', 'Redemption Value', 'Short Term Gain', 'Long Term Gain'],
+      ['Alpha Fund', 'INF000A01011', '10', '01/01/2024', '1000', '10/07/2026', '1500', '0', '500']];
+    const rows = [['From Date', '01/04/2026'], ['To Date', '31/03/2027'], ['Equity Delivery'], DELIVERY_HEAD,
+      lot('INE000B01012', 'BETA', 20, '10/01/2025', '15/06/2026', 20_000, 30_000, 50, true), ...funds];
+    expect(readSoldLots([{ sheet: 'Trades', rows }]).confidence).toBe('medium');
+  });
+});
