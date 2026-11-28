@@ -1,3 +1,5 @@
+import type { PdfWord } from './pdfTable';
+
 /** The slice of the pdf.js API used here, so the same code runs with the browser build and the Node legacy build. */
 export interface PdfJsLike {
   getDocument(src: { data: Uint8Array; password?: string; verbosity?: number; isEvalSupported?: boolean }): { promise: Promise<PdfDoc> };
@@ -14,8 +16,8 @@ export class PdfPasswordError extends Error {
   }
 }
 
-/** Rebuilds visual lines: items with the same baseline (within 2pt) are joined left to right. */
-export async function extractLines(pdfjs: PdfJsLike, data: Uint8Array, password?: string): Promise<string[]> {
+/** Every page's text items as positioned words, from one open of the document. */
+export async function extractItems(pdfjs: PdfJsLike, data: Uint8Array, password?: string): Promise<PdfWord[][]> {
   let doc: PdfDoc;
   try {
     // A statement PDF is untrusted input: never let pdf.js compile code from it (CVE-2024-4367 was this path).
@@ -25,30 +27,41 @@ export async function extractLines(pdfjs: PdfJsLike, data: Uint8Array, password?
     if (err?.name === 'PasswordException') throw new PdfPasswordError(err.code === 2);
     throw e;
   }
-  const lines: string[] = [];
+  const pages: PdfWord[][] = [];
   for (let p = 1; p <= doc.numPages; p++) {
-    const page = await doc.getPage(p);
-    const content = await page.getTextContent();
-    const items = (content.items as TextItem[]).filter((i) => typeof i.str === 'string' && i.str.trim() !== '');
-    const rows: { y: number; parts: TextItem[] }[] = [];
+    const content = await (await doc.getPage(p)).getTextContent();
+    pages.push((content.items as TextItem[])
+      .filter((i) => typeof i.str === 'string' && i.str.trim() !== '')
+      .map((i) => ({ str: i.str, x: i.transform[4]!, y: i.transform[5]!, width: i.width })));
+  }
+  return pages;
+}
+
+/** Rebuilds visual lines: items with the same baseline (within 2pt) are joined left to right. */
+export function linesOf(pages: PdfWord[][]): string[] {
+  const lines: string[] = [];
+  for (const items of pages) {
+    const rows: { y: number; parts: PdfWord[] }[] = [];
     for (const it of items) {
-      const y = it.transform[5]!;
-      const row = rows.find((r) => Math.abs(r.y - y) <= 2);
+      const row = rows.find((r) => Math.abs(r.y - it.y) <= 2);
       if (row) row.parts.push(it);
-      else rows.push({ y, parts: [it] });
+      else rows.push({ y: it.y, parts: [it] });
     }
     rows.sort((a, b) => b.y - a.y);
     for (const r of rows) {
-      r.parts.sort((a, b) => a.transform[4]! - b.transform[4]!);
+      r.parts.sort((a, b) => a.x - b.x);
       let text = '', lastEnd = -Infinity;
       for (const it of r.parts) {
-        const x = it.transform[4]!;
-        text += text && x - lastEnd > 1 ? '  ' : '';
+        text += text && it.x - lastEnd > 1 ? '  ' : '';
         text += it.str;
-        lastEnd = x + it.width;
+        lastEnd = it.x + it.width;
       }
       lines.push(text.trim());
     }
   }
   return lines;
+}
+
+export async function extractLines(pdfjs: PdfJsLike, data: Uint8Array, password?: string): Promise<string[]> {
+  return linesOf(await extractItems(pdfjs, data, password));
 }

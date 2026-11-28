@@ -6,7 +6,8 @@ import { detectKind, findHeaderRow, guessMapping, parseTable, type Mapping } fro
 export * from './common';
 export { FIELDS, FIELD_LABELS, PNL_FIELDS, detectKind, fieldsFor, guessMapping, normHeader, parseTable, type Field, type Mapping, type TableKind } from './table';
 export { cellText, readSoldLots, soldLotsFromTable, type CellSheet, type SoldLotsPreview, type SoldLotsRead } from './soldLots';
-export { extractLines, PdfPasswordError, type PdfJsLike } from './pdfText';
+export { extractItems, extractLines, linesOf, PdfPasswordError, type PdfJsLike } from './pdfText';
+export { pdfRows, type PdfWord } from './pdfTable';
 export { isAngelFundHoldings, isAngelTrades, parseAngelFundHoldings, parseAngelTrades } from './angel';
 export { isEncryptedOffice, resolveNames } from './names';
 export { isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseZerodhaTaxPnl, type BrokerSummary } from './zerodhaTaxPnl';
