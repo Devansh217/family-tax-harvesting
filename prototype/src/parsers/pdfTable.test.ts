@@ -91,3 +91,15 @@ describe('parsePdfStatement', () => {
     expect(r.warnings[0]).toMatch(/does not look like a CAS/);
   });
 });
+
+describe('a PDF table ends at the next header', () => {
+  it('a transfer table whose title was merged into the row above is not read as sales', () => {
+    const transferHead = at(600, [['isin', 'ISIN'], ['name', 'Scrip Name'], ['qty', 'Qty'], ['buyDate', 'Buy Date'], ['sellDate', 'Transfer Date'], ['buy', 'Buy Value'], ['sell', 'Transfer Value']]);
+    const transfer = at(580, [['isin', 'INE000E01015'], ['name', 'EPSILON'], ['qty', '3'], ['buyDate', '01-01-2024'], ['sellDate', '01-09-2026'], ['buy', '300.00'], ['sell', '360.00']]);
+    const rows = pdfRows([[w('Angel One', 20, 760), w('Delivery P&L', 20, 700), ...HEADER(680), ...lot(660, 'INE000A01011', 'ALPHA', '480.00', '0.00'), w('Transfer', X.name, 650), ...transferHead, ...transfer]]);
+    const r = readSoldLots([{ sheet: 'pdf', rows }]);
+    expect(r.confidence).toBe('high');
+    if (r.confidence !== 'high') return;
+    expect(r.result.txns.some((t) => t.isin === 'INE000E01015')).toBe(false);
+  });
+});

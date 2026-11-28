@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Any broker's report of sold lots (Excel, CSV or PDF) reads on its own when its headers are clear, feeds the broker totals so the Plan's booked gains match the broker, and lands on the column screen (or a clear "use Excel or CSV" message for PDF) when it is not clear. First real target: Angel One's Tax P&L in Excel and PDF, and Angel's fund capital gains report.
+**Goal:** Any broker's report of sold lots (Excel, CSV or PDF) reads on its own when its headers are clear, feeds the broker totals so the Plan's booked gains match the broker, and lands on the column screen (or a clear "use Excel or CSV" message for PDF) when it is not clear. A PDF that has no sold-lots table at all still gets "Unrecognised PDF". First real target: Angel One's Tax P&L in Excel and PDF, and Angel's fund capital gains report.
 
 **Architecture:**
 - `parsers/table.ts` learns the sold-lots fields and a `pnl` kind.
@@ -13,7 +13,7 @@
 
 **Tech Stack:** TypeScript, React + Vite, Vitest, Playwright smoke. No new dependency (`pdfjs-dist` and `read-excel-file` are already in).
 
-**Spec:** `docs/superpowers/specs/2026-11-28-generic-tax-pnl-design.md`. Issue [#28](https://github.com/Devansh217/family-tax-harvesting/issues/28).
+**Spec:** `docs/superpowers/specs/2026-11-28-generic-tax-pnl-design.md`. Its "As built" section lists where the code differs from this plan. Issue [#28](https://github.com/Devansh217/family-tax-harvesting/issues/28).
 
 ## Global Constraints
 
@@ -30,7 +30,7 @@
 
 1. **Transfers are not sales.** "Transfer Date" and "Transfer Value" must map to nothing, and the Transfer section is skipped even if a mapping were found. Test: Task 3, `never reads a transfer as a sale`.
 2. **Derivatives sheet.** It has Buy Date, Sell date, Buy Value, Sell Value and Qty, so it would score as `pnl`. Test: Task 3, `skips options rows by sheet, section and expiry columns`.
-3. **Taxable gain.** Gain = sell − buy − charges; STT is not deducted; "Net Profit/Loss" and "Cost Of Acquisition" are never the gain or the cost. Test: Task 3, `uses the taxable column, not net profit`.
+3. **Taxable gain.** Gain = sell − buy − charges; STT is not deducted, except from intraday gains; "Net Profit/Loss" and "Cost Of Acquisition" are never the gain or the cost. Test: Task 3, `uses the taxable column, not net profit`.
 4. **Term from dates.** A row in Angel's short-term column held 13 months counts as long-term in the summary, and the reverse. Test: Task 3, `summary terms come from the engine`.
 5. **Beside a tradebook.** The new format's exits are dropped beside a tradebook (except buyback sells), as Zerodha's are. Test: Task 5, `generic Tax P&L exits are dropped beside a tradebook`.
 6. **Zerodha unchanged.** All existing Zerodha Tax P&L tests pass with no edits.

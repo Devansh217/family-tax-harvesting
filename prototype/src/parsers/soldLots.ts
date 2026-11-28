@@ -59,6 +59,8 @@ interface Table {
   /** STT column: deductible only from intraday (business) income, so only an intraday gain may take it off. */
   stt: number;
   rows: string[][];
+  /** Lots after a one-line note that closed the table, with no header of their own: not read, so counted as skipped. */
+  orphans: number;
 }
 
 const STT_COLUMN = /^(stt|securities[\s_]?transaction[\s_]?tax)$/i;
@@ -92,16 +94,13 @@ function readTable(table: Table, t: RowTotals): void {
   const m = table.mapping;
   const cell = (r: string[], f: Field) => (m[f] >= 0 ? (r[m[f]] ?? '').trim() : '');
   const num = (r: string[], f: Field) => (m[f] >= 0 ? parseNumber(cell(r, f)) : null);
+  t.skipped += table.orphans;
   for (const r of table.rows) {
     const name = cell(r, 'symbol');
     const isin = findIsin(cell(r, 'isin')) ?? findIsin(name) ?? (name ? symbolKey(name) : null);
     const qtyN = num(r, 'qty');
-    // Not a lot at all (a wrapped cell, a note, a blank): passed over without counting. A row with a sale date and a
-    // name or a quantity is a lot that didn't read, so it counts as skipped.
-    if (!isin || qtyN == null) {
-      if ((isin || qtyN != null) && (parseDate(cell(r, 'sellDate')) || parseDate(cell(r, 'date')))) t.skipped++;
-      continue;
-    }
+    // Blank and total rows never get here, so any other row that doesn't read is a lot that didn't read.
+    if (!isin || qtyN == null) { t.skipped++; continue; }
     const oneDate = table.kind === 'intraday' && m.buyDate < 0 ? parseDate(cell(r, 'date')) : null;
     const buyDate = oneDate ?? parseDate(cell(r, 'buyDate'));
     const sellDate = oneDate ?? parseDate(cell(r, 'sellDate'));
@@ -123,10 +122,13 @@ function readTable(table: Table, t: RowTotals): void {
     // Bought by the grandfathering date: the value on that date may stand in for the cost.
     const grandfathered = fmv != null && fmv > 0 && buyDate <= rulesFor(sellDate).grandfatherDate;
     if (stated != null) {
+      // The cost is what was paid or, bought by the grandfathering date, the higher of that and the 31 Jan 2018 value capped at the sale.
       const costs = [Math.abs(buy)];
-      if (grandfathered) costs.push(fmv, Math.max(Math.abs(buy), Math.min(fmv, Math.abs(sell))));
+      if (grandfathered) costs.push(Math.max(Math.abs(buy), Math.min(fmv, Math.abs(sell))));
       const stt = table.kind === 'intraday' && table.stt >= 0 ? Math.abs(parseNumber(r[table.stt] ?? '') ?? 0) : 0;
-      const fits = costs.some((c) => [charges, 0, charges + stt].some((x) => near(Math.abs(sell) - c - x, stated)));
+      // A gain that leaves out charges only fits when the file has no charges column.
+      const offs = m.charges < 0 ? [0] : [charges, charges + stt];
+      const fits = costs.some((c) => offs.some((x) => near(Math.abs(sell) - c - x, stated)));
       if (!fits) t.mismatches++;
     }
 
@@ -177,6 +179,12 @@ function brokerName(raw: string): string {
   return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
 }
 
+/** A header row of some other table: three or more cells name columns. A row of figures names none. */
+const looksLikeHeader = (m: Mapping) => Object.values(m).filter((i) => i >= 0).length >= 3;
+/** A row with a date and a figure in it: a lot, not a note. */
+const hasData = (filled: string[]) => filled.some((c) => parseDate(c) || parseNumber(c) != null);
+const looksLikeLot = (filled: string[]) => filled.some((c) => parseDate(c)) && filled.some((c) => !parseDate(c) && parseNumber(c) != null);
+
 /** Finds every sold-lots table in every sheet, following the section title above each one. */
 function findTables(sheets: CellSheet[], meta: Meta): { tables: Table[]; derivativeRows: number } {
   const tables: Table[] = [];
@@ -184,22 +192,30 @@ function findTables(sheets: CellSheet[], meta: Meta): { tables: Table[]; derivat
   for (const s of sheets) {
     let section = '';
     let table: Table | null = null;
+    // The table a one-line note closed: lots under the note, with no header of their own, belong to no table.
+    let closed: Table | null = null;
     for (const raw of s.rows) {
       const cells = raw.map((c) => (c ?? '').trim());
       const filled = cells.filter(Boolean);
       if (!filled.length) continue;
       // Only title lines and label pairs outside a table: a scrip named after a broker is not the broker.
       if (!table && filled.length <= 2) readMeta(filled, meta);
-      if (filled.length === 1) { section = filled[0]!; table = null; continue; }
+      if (filled.length === 1) { section = filled[0]!; closed = table ?? closed; table = null; continue; }
       const mapping = guessMapping(cells);
       const kind = classify(section, s.sheet, cells);
       if (isHeader(mapping, kind === 'intraday')) {
-        table = { section, kind, fund: FUND_TABLE.test(cells.join(' ')) || FUND_TABLE.test(section), headerRow: cells, mapping, stt: sttIndex(cells), rows: [] };
+        table = { section, kind, fund: FUND_TABLE.test(cells.join(' ')) || FUND_TABLE.test(section), headerRow: cells, mapping, stt: sttIndex(cells), rows: [], orphans: 0 };
         tables.push(table);
+        closed = null;
         continue;
       }
-      if (!table || TOTAL_ROW.test(filled[0]!)) continue;
-      table.rows.push(cells);
+      // Any other header (transfers, holdings) ends the table: its rows are not sales, whatever columns they line up with.
+      if (looksLikeHeader(mapping)) { table = null; closed = null; continue; }
+      if (TOTAL_ROW.test(filled[0]!)) continue;
+      // A row with no date and no number is a title spread over cells ("Transfer Transactions | Off-market"): it closes the table like a one-line note.
+      if (!hasData(filled)) { section = filled.join(' '); closed = table ?? closed; table = null; continue; }
+      if (table) table.rows.push(cells);
+      else if (closed && looksLikeLot(filled)) closed.orphans++;
     }
   }
   for (const t of tables) if (t.kind === 'derivatives') derivativeRows += t.rows.length;
@@ -210,7 +226,11 @@ function summarise(t: RowTotals, meta: Meta, fileLabel: string | null, derivativ
   const years = taxYears(t);
   const fy = meta.fyStart ?? (years.size === 1 ? [...years][0]! : null);
   const from = meta.from ?? (fy != null ? `${fy}-04-01` : null);
-  const to = meta.to ?? (fy != null ? `${fy + 1}-03-31` : null);
+  // With no stated end, the report runs to its last sale (never past today): a later tradebook sale is not covered.
+  const lastSale = t.sellDates.reduce<ISODate | null>((a, d) => (a == null || d > a ? d : a), null);
+  const today = new Date().toISOString().slice(0, 10);
+  const yearEnd = fy != null ? `${fy + 1}-03-31` : null;
+  const to = meta.to ?? (yearEnd == null ? null : [yearEnd, lastSale ?? today, today].reduce((a, b) => (b < a ? b : a)));
   const broker = meta.broker ?? 'Broker';
   const anyShares = t.read > t.fundRows;
   const summary: BrokerSummary = {
@@ -282,7 +302,7 @@ export function soldLotsFromTable(rows: string[][], headerIdx: number, mapping: 
   const header = rows[headerIdx] ?? [];
   const table: Table = {
     section: '', kind: 'delivery', fund: FUND_TABLE.test(header.join(' ')), headerRow: header, mapping, stt: -1,
-    rows: rows.slice(headerIdx + 1).filter((r) => !TOTAL_ROW.test(r.find(Boolean) ?? '')),
+    rows: rows.slice(headerIdx + 1).filter((r) => r.some((c) => (c ?? '').trim()) && !TOTAL_ROW.test(r.find(Boolean) ?? '')), orphans: 0,
   };
   const totals = emptyTotals();
   readTable(table, totals);

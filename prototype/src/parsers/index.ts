@@ -59,7 +59,8 @@ export const PDF_NOT_RELIABLE = 'This PDF could not be read reliably. Download t
 
 /**
  * A statement PDF: a CAS first, else a broker's report of sold lots (a Tax P&L) rebuilt from word positions. A sold-lots
- * PDF that isn't read with high confidence is turned away: a PDF has no column screen to check it on.
+ * PDF that isn't read with high confidence is turned away: the founder's policy is to accept a PDF only at high
+ * confidence and point people to the Excel or CSV version otherwise.
  */
 export function parsePdfStatement(lines: string[], words: PdfWord[][]): ParseResult {
   const cas = parseStatementLines(lines);

@@ -56,7 +56,7 @@ const ALIASES: Record<Field, RegExp> = {
   gainLt: /^(long[\s_]?term[\s_]?taxable[\s_]?income|realized[\s_]?long[\s_]?term[\s_]?capital[\s_]?gains?|long[\s_]?term[\s_]?(capital[\s_]?)?gains?|ltcg)$/i,
   fmv2018: /^(fmv[\s_]?as[\s_]?on[\s_]?31[\s_]?jan\.?[\s_]?2018|fair[\s_]?market[\s_]?value)$/i,
 };
-/** Used for the buy value only when no other header is: some reports' "Cost of Acquisition" is the indexed or grandfathered cost. */
+/** Never read: some reports' "Cost of Acquisition" is the indexed or grandfathered cost, not what was paid. */
 const COST_OF_ACQUISITION = /^cost[\s_]?of[\s_]?acquisition$/i;
 
 /** A header cell without a bracketed note ("Date of Sale (DD/MM/YYYY)"), extra spaces or trailing dots. */
@@ -78,13 +78,11 @@ const MATCH_ORDER: readonly Field[] = [...PNL_FIELDS, ...TABLE_FIELDS];
 
 export function guessMapping(header: string[]): Mapping {
   const m = Object.fromEntries(FIELDS.map((f) => [f, -1])) as Mapping;
-  let coa = -1;
   header.forEach((raw, i) => {
     const h = normHeader(raw);
-    if (COST_OF_ACQUISITION.test(h)) { if (coa === -1) coa = i; return; }
+    if (COST_OF_ACQUISITION.test(h)) return;
     for (const f of MATCH_ORDER) if (m[f] === -1 && ALIASES[f].test(h)) { m[f] = i; break; }
   });
-  if (m.buyValue === -1 && coa >= 0) m.buyValue = coa;
   return m;
 }
 

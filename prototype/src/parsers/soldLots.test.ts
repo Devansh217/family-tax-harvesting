@@ -226,7 +226,7 @@ describe('readSoldLots', () => {
     const csv = [DELIVERY_HEAD, lot('INE000B01012', 'BETA', 20, '10/01/2025', '15/06/2026', 20_000, 30_000, 50, true)]
       .map((r) => r.map((c) => (c.includes(',') ? `"${c}"` : c)).join(',')).join('\n');
     const r = high([{ sheet: 'csv', rows: parseCSV(csv) }]);
-    expect(r.format).toBe('Tax P&L · Broker · 2026-04-01 to 2027-03-31');
+    expect(r.format).toBe('Tax P&L · Broker · 2026-04-01 to 2026-06-15');
     expect(r.brokerSummary!.equityLongTerm).toBe(toPaise(9_950));
   });
 
@@ -242,7 +242,7 @@ describe('soldLotsFromTable', () => {
     const m = guessMapping(rows[0]!);
     Object.assign(m, { isin: 0, qty: 1, buyDate: 2, sellDate: 3, buyValue: 4, sellValue: 5 });
     const r = soldLotsFromTable(rows, 0, m, 'gains.csv');
-    expect(r.format).toBe('Tax P&L · Broker · gains.csv · 2026-04-01 to 2027-03-31');
+    expect(r.format).toBe('Tax P&L · Broker · gains.csv · 2026-04-01 to 2026-06-15');
     expect(r.txns).toHaveLength(2);
     expect(r.brokerSummary!.equityLongTerm).toBe(toPaise(10_000));
   });
@@ -299,9 +299,9 @@ describe('sold-lots columns', () => {
     expect(m).toMatchObject({ symbol: 0, qty: 1, buyDate: 2, buyValue: 3, sellDate: 4, sellValue: 5, fmv2018: 6 });
   });
 
-  it('uses cost of acquisition only when there is no buy value', () => {
+  it('never takes cost of acquisition as the buy value (it may be the indexed or grandfathered cost)', () => {
     expect(guessMapping(['Cost Of Acquisition', 'Buy Value']).buyValue).toBe(1);
-    expect(guessMapping(['Cost Of Acquisition', 'Sale Value']).buyValue).toBe(0);
+    expect(guessMapping(['Cost Of Acquisition', 'Sale Value']).buyValue).toBe(-1);
   });
 
   it('trade and holdings files keep their kind', () => {
@@ -309,5 +309,45 @@ describe('sold-lots columns', () => {
     expect(detectKind(guessMapping(['Instrument', 'Qty.', 'Avg. cost', 'LTP']))).toBe('holdings');
     expect(fieldsFor('trades')).not.toContain('buyDate');
     expect(fieldsFor('pnl')).toContain('sellValue');
+  });
+});
+
+describe('what ends a sold-lots table', () => {
+  const sheet = (rows: string[][]): CellSheet[] => [{ sheet: 'Trades', rows: [['From Date', '01/04/2026'], ['To Date', '31/03/2027'], ...rows] }];
+  const delivery = [['Delivery P&L'], DELIVERY_HEAD, lot('INE000B01012', 'BETA', 20, '10/01/2025', '15/06/2026', 20_000, 30_000, 50, true)];
+
+  it('a transfer header ends the table even when its title has two cells, so transfers are not read as sales', () => {
+    const r = readSoldLots(sheet([...delivery, ['Transfer Transactions', 'Off-market'], TRANSFER_HEAD,
+      ['INE000E01015', 'EPSILON', '3', '01/01/2024', '01/09/2026', '100', '300', '120', '360']]));
+    expect(r.confidence).toBe('high');
+    if (r.confidence !== 'high') return;
+    expect(r.result.txns.some((t) => t.isin === 'INE000E01015')).toBe(false);
+  });
+
+  it('an F&O header ends the table the same way', () => {
+    const r = readSoldLots(sheet([...delivery, ['Options', 'NFO'], OPTIONS_HEAD,
+      ['NIFTY', 'NFO', '26/06/2026', '25000', 'CE', '75', '01/06/2026', '20/06/2026', '7500', '9000', '1500']]));
+    if (r.confidence !== 'high') throw new Error('not read');
+    expect(r.result.txns.some((t) => t.name === 'NIFTY')).toBe(false);
+  });
+
+  it('a row in a table that does not read counts as skipped, and so do lots under a note with no header', () => {
+    expect(readSoldLots(sheet([...delivery, ['INE000C01013', 'GAMMA', '', '01/02/2026', '20/07/2026']])).confidence).toBe('medium');
+    const orphan = lot('INE000C01013', 'GAMMA', 5, '01/02/2026', '20/07/2026', 5_000, 4_000, 20, false);
+    expect(readSoldLots(sheet([...delivery, ['Continued'], orphan])).confidence).toBe('medium');
+  });
+
+  it('with no stated period, the report runs to its last sale, not to 31 March', () => {
+    const r = readSoldLots([{ sheet: 'Trades', rows: delivery }]);
+    if (r.confidence !== 'high') throw new Error('not read');
+    expect(r.result.brokerSummary).toMatchObject({ from: '2026-04-01', to: '2026-06-15' });
+  });
+});
+
+describe('the row check', () => {
+  it('a gain that leaves out charges does not fit when the file has a charges column', () => {
+    const row = lot('INE000B01012', 'BETA', 20, '10/01/2025', '15/06/2026', 20_000, 30_000, 50, true);
+    row[13] = '10000'; // the long-term gain without the 50 of charges
+    expect(readSoldLots([{ sheet: '', rows: [DELIVERY_HEAD, row] }]).confidence).toBe('medium');
   });
 });
