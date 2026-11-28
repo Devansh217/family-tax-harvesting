@@ -25,7 +25,8 @@ export const TRIMMING_HOLDINGS_SOURCES = ['Zerodha holdings'];
 export const APPROX_MARGIN = 0.1;
 
 export const isTradebook = (t: Txn) => t.source.startsWith('Trade history');
-const isTaxPnl = (t: Txn) => t.source.startsWith('Zerodha Tax P&L');
+/** A broker Tax P&L's sold lots: Zerodha's own reader, or the generic one for any broker (`Tax P&L · <broker> …`). */
+const isTaxPnl = (t: Txn) => t.source.startsWith('Zerodha Tax P&L') || t.source.startsWith('Tax P&L · ');
 const key = (memberId: string, isin: string, account = '') => `${memberId}|${isin}|${account}`;
 
 /** Account labels are free text: one account matches whatever the spaces and case (defined in ledger.ts). */

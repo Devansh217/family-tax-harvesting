@@ -83,6 +83,32 @@ describe('opening lots from the holdings file', () => {
     const other = { ...pnlSell, account: 'Groww' };
     expect(effectiveTxns([tb, other], [], ASOF)).toEqual([tb, other]);
   });
+
+  describe('a generic Tax P&L (any broker)', () => {
+    const SRC = 'Tax P&L · Angel One · 2026-04-01 to 2027-03-31';
+    const tb = trade('sell', '2026-06-01', 10, 900);
+
+    it('generic Tax P&L exits are dropped beside a tradebook', () => {
+      const buy = trade('buy', '2021-12-06', 10, 500, { source: SRC });
+      const sell = trade('sell', '2026-06-01', 10, 900, { source: SRC });
+      expect(effectiveTxns([tb, buy, sell], [], ASOF)).toEqual([tb]);
+    });
+
+    it('buyback sells are kept', () => {
+      const sell = trade('sell', '2026-07-01', 5, 1200, { source: SRC, buyback: true });
+      expect(effectiveTxns([tb, sell], [], ASOF)).toContainEqual(sell);
+    });
+
+    it('kept when the account has no tradebook', () => {
+      const sell = trade('sell', '2026-06-01', 10, 900, { source: SRC, account: 'Angel' });
+      expect(effectiveTxns([tb, sell], [], ASOF)).toEqual([tb, sell]);
+    });
+
+    it('a fund capital gains report is not a Tax P&L and is kept beside a tradebook', () => {
+      const sell = trade('sell', '2026-06-01', 10, 900, { source: 'Fund capital gains · Angel One · 2026-04-01 to 2027-03-31' });
+      expect(effectiveTxns([tb, sell], [], ASOF)).toEqual([tb, sell]);
+    });
+  });
 });
 
 describe('a demat CAS on top of broker files', () => {
