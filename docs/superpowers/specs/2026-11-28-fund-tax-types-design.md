@@ -1,6 +1,6 @@
 # Fund tax types from sources, not user picks (design)
 
-28 Nov 2026. Issue #40 (D1). Research: `docs/research/2026-11-28-fund-tax-types.md` (**FUNDTAX**). Fresh-run notes: "Fund tax types shouldn't be asked of users" and finding 17c ("a sold ETF needs checking but there's no Pick"). **Status: waiting for the founder's approval.** Nothing here is built.
+28 Nov 2026. Issue #40 (D1). Research: `docs/research/2026-11-28-fund-tax-types.md` (**FUNDTAX**). Fresh-run notes: "Fund tax types shouldn't be asked of users" and finding 17c ("a sold ETF needs checking but there's no Pick"). **Status: approved by the founder on 28 Nov 2026 (decisions at the end). The build waits until the SEBI circular itself is read.** Nothing here is built.
 
 ## Why
 
@@ -96,7 +96,7 @@ A suggestion is a type plus a short reason. Only these, from the research:
 
 | Fund | Suggest | Reason shown |
 |---|---|---|
-| Balanced advantage / dynamic asset allocation | Equity | "Most of these hold 65% or more in Indian shares. The fund's SID says for sure." |
+| Balanced advantage / dynamic asset allocation | none (founder, 28 Nov) | Choices only, until a curated entry exists |
 | Domestic FoF, name says ETF and Nifty or Sensex | Equity | "Funds that put 90% in one Indian share ETF are taxed as equity." |
 | Other domestic FoF | Long-term 12.5% | "A fund of ordinary equity funds is not taxed as equity." |
 | Equity heading, overseas name | Long-term 12.5% | "Funds that invest abroad are not taxed as equity." |
@@ -136,15 +136,16 @@ A curator turns the report into new entries by hand. A later, optional helper (`
 - Overrides file shape test.
 - Build report: fixture NAVAll with a new heading, a stale entry and an orphan ISIN.
 
-## Proposed build issues (opened after approval)
+## Build split (tracked in #40 until the build starts)
 
 1. **D1a engine and data:** category defaults (§2), overrides shape and test (§3), engine fix (§7), first curated entries. `status: ready`.
 2. **D1b prompt:** suggestions (§4), confirm-only prompt with sold funds (§5). Shares `FundsToCheck.tsx` with C3 #33 (finding 17c); build after C3 or tell C3 to leave 17c to D1b.
 3. **D1c build report:** §6. Independent of D1b.
 
-## Questions for the founder
+## Decisions (founder, 28 Nov 2026)
 
-1. **Approve the design?** In particular the rule that equity is never applied without a cited source or the family's tap.
-2. **SEBI text:** start D1a before anyone reads the SEBI circular itself (the bands rest on a law-firm note), or wait?
-3. **Balanced advantage suggestion:** suggest Equity (most are), or show no suggestion until a curated entry exists?
-4. **CA questions** in FUNDTAX §7.2 (seven of them): add to `docs/research/2026-11-15-questions-for-ca-and-lawyer.md`?
+1. **Design approved**, including the rule that equity is never applied without a cited source or the family's tap.
+2. **Wait for the SEBI text.** D1a does not start until someone reads the SEBI circular itself (No. HO/24/13/15(2)2026-IMD-RAC4/I/5764/2026, 26 Feb 2026) and confirms the hybrid bands in FUNDTAX §3. The law-firm note is not enough.
+3. **No suggestion for balanced advantage funds.** They show the three choices until a curated entry exists (§4 table updated).
+4. **CA questions added** to `docs/research/2026-11-15-questions-for-ca-and-lawyer.md` as questions 21 to 27.
+5. **Tracking stays in issue #40.** The founder asked for the findings to go into #40; the D1a to D1c split above is recorded there for when the build starts.
