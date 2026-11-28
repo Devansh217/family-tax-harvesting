@@ -34,15 +34,43 @@ function loadShares(): Promise<SharesFile | null> {
   return sharesPromise;
 }
 
-const LOCKED = 'This spreadsheet is password-protected (or an old .xls file), so it cannot be read here. Open it in Excel or Numbers with its password, save a copy as .xlsx, and import that copy.';
+const LOCKED = 'This spreadsheet is password-protected, so it cannot be read here. Open it in Excel or Numbers with its password, save a copy as .xlsx, and import that copy.';
+
+const LOCKED_XLS = 'This .xls file could not be read: it may be password-protected or damaged. Open it in Excel or Numbers, save a copy as .xlsx, and import that copy.';
+
+/**
+ * An old binary .xls workbook as rows of cells, read with SheetJS (pinned to the build from cdn.sheetjs.com, since the
+ * npm copy is out of date and has known flaws). Loaded only when a .xls file is opened. Formulas, styles and HTML are
+ * not read; a merged cell's value sits in its first cell, as in an .xlsx.
+ */
+async function readXls(file: File): Promise<{ sheet: string; data: unknown[][] }[]> {
+  try {
+    return await xlsRows(new Uint8Array(await file.arrayBuffer()));
+  } catch {
+    throw new Error(LOCKED_XLS);
+  }
+}
+
+/**
+ * A .xls workbook's sheets as rows. Dates come back at midnight UTC: the cells' text takes the date with toISOString,
+ * so a local-midnight date would read a day early east of Greenwich (in India, 18:30 the day before).
+ */
+export async function xlsRows(bytes: Uint8Array): Promise<{ sheet: string; data: unknown[][] }[]> {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.read(bytes, { type: 'array', cellDates: true, cellFormula: false, cellHTML: false, cellStyles: false, UTC: true });
+  return wb.SheetNames.map((n) => ({ sheet: n, data: XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[n]!, { header: 1, raw: true, defval: '', UTC: true }) }));
+}
 
 export async function readSpreadsheet(file: File): Promise<SheetRead> {
   const name = file.name.toLowerCase();
-  if (name.endsWith('.xls')) throw new Error('Old .xls files are not supported. Open it and save as .xlsx or CSV.');
-  if (name.endsWith('.xlsx')) {
-    if (isEncryptedOffice(new Uint8Array(await file.slice(0, 8).arrayBuffer()))) throw new Error(LOCKED);
-    const { default: readXlsxFile } = await import('read-excel-file/browser');
-    const sheets = (await readXlsxFile(file)).map((s) => ({ sheet: s.sheet, data: s.data as unknown[][] }));
+  if (name.endsWith('.xls') || name.endsWith('.xlsx')) {
+    let sheets: { sheet: string; data: unknown[][] }[];
+    if (name.endsWith('.xls')) sheets = await readXls(file);
+    else {
+      if (isEncryptedOffice(new Uint8Array(await file.slice(0, 8).arrayBuffer()))) throw new Error(LOCKED);
+      const { default: readXlsxFile } = await import('read-excel-file/browser');
+      sheets = (await readXlsxFile(file)).map((s) => ({ sheet: s.sheet, data: s.data as unknown[][] }));
+    }
     if (isZerodhaTaxPnl(sheets)) return { kind: 'statement', result: parseZerodhaTaxPnl(sheets) };
     if (isZerodhaHoldings(sheets)) return { kind: 'statement', result: parseZerodhaHoldings(sheets) };
     if (isAngelTrades(sheets)) return { kind: 'statement', result: resolveNames(parseAngelTrades(sheets), await loadShares()) };

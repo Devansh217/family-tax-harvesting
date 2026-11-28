@@ -299,6 +299,10 @@ describe('sold-lots columns', () => {
     expect(m).toMatchObject({ symbol: 0, qty: 1, buyDate: 2, buyValue: 3, sellDate: 4, sellValue: 5, fmv2018: 6 });
   });
 
+  it('never takes a grandfathered cost value as the 31 Jan 2018 value (it is the cost after grandfathering)', () => {
+    expect(guessMapping(['Scrip Name', 'ISIN', 'Quantity', 'Purchase Date', 'Purchase Value', 'Sale Date', 'Sale Value', 'GrandFathered Cost Value']).fmv2018).toBe(-1);
+  });
+
   it('never takes cost of acquisition as the buy value (it may be the indexed or grandfathered cost)', () => {
     expect(guessMapping(['Cost Of Acquisition', 'Buy Value']).buyValue).toBe(1);
     expect(guessMapping(['Cost Of Acquisition', 'Sale Value']).buyValue).toBe(-1);
@@ -362,10 +366,10 @@ describe('a sales table whose header does not read', () => {
   });
 
   it('when it is the only sales table, the file is not read as sold lots: the column screen would get a header with no rows', () => {
-    const rows = [['From Date', '01/04/2026'], ['To Date', '31/03/2027'], ['Mutual Funds'],
-      ['Scheme Name', 'ISIN', 'Units', 'Purchase Date', 'Cost of Acquisition', 'Redemption Date', 'Redemption Value', 'Short Term Gain', 'Long Term Gain'],
-      ['Alpha Fund', 'INF000A01011', '10', '01/01/2024', '1000', '10/07/2026', '1500', '0', '500'],
-      ['Beta Fund', 'INF000B01012', '10', '01/01/2024', '1000', '11/07/2026', '1600', '0', '600']];
+    const rows = [['From Date', '01/04/2026'], ['To Date', '31/03/2027'], ['Equity'],
+      ['Scrip', 'ISIN', 'Quantity', 'Buy Date', 'Cost of Acquisition', 'Sell Date', 'Sell Value'],
+      ['ALPHA', 'INE000A01011', '10', '01/01/2024', '1000', '10/07/2026', '1500'],
+      ['BETA', 'INE000B01012', '10', '01/01/2024', '1000', '11/07/2026', '1600']];
     expect(readSoldLots([{ sheet: 'Capital Gains', rows }]).confidence).toBe('low');
   });
 
@@ -389,5 +393,71 @@ describe('a sales table whose header does not read', () => {
     if (r.confidence !== 'medium') throw new Error(`read ${r.confidence}`);
     expect(r.preview.header).toEqual(DELIVERY_HEAD);
     expect(r.preview.partial).toBe(true);
+  });
+});
+
+// Made-up figures; sheet names, group titles and headers copy an ET Money capital gains report (.xls).
+describe('ET Money capital gains report', () => {
+  const head = ['Fund', 'Fund Name', 'Folio Number', 'Scheme Name', 'Trxn.Type', 'Date', 'Current Units', 'Grandfathered NAV as on31/01/2018',
+    'GrandFathered Cost Value', 'Trxn.Type', 'Date', 'Units', 'Amount', 'Price', 'Tax Perc', 'Tax', 'Short Term', 'Indexed Cost',
+    'Long Term With Index', 'Long Term Without Index'];
+  const groups = Array<string>(20).fill('');
+  groups[4] = 'Section A : Purchase'; groups[9] = 'Section B : Redemption'; groups[16] = 'Section C : Capital Gains/Losses';
+  /** One redemption: the report gives units, price, amount and the gain, but no purchase value. */
+  const sale = (scheme: string, bought: string, sold: string, units: number, price: number, amount: number, st: number, lt: number) =>
+    ['101', 'Alpha Mutual Fund', '1234567890', scheme, 'Purchase', bought, String(units), '0', '0', 'Redemption', sold, String(units),
+      String(amount), String(price), '0.00', '0.00', String(st), '0', '0.00', String(lt)];
+  const workbook = (rows: string[][]): CellSheet[] => [
+    { sheet: 'Summary', rows: [['', '', '', '', '', '', 'Total'], ['Short Term Capital Gain/Loss', '', '', '', '', '', '500']] },
+    { sheet: 'Schemes Summary', rows: [['Scheme Name', 'Count', 'Outflow Amount', 'Net Value', 'Short Gain', 'Long Gain Without Index'], ['Alpha Flexi Cap Fund', '1', '1500', '1500', '500', '0']] },
+    { sheet: 'Transactions Summary', rows: [groups, [], head, ...rows] },
+  ];
+  const short = sale('Alpha Flexi Cap Fund - Direct Growth INF000A01011', '05-Jan-2026', '10-Jul-2026', 100, 15, 1500, 500, 0);
+  const long = sale('Beta Index Fund - Direct Growth INF000B01012', '05-Jan-2024', '10-Jul-2026', 10, 200, 2000, 0, 800);
+
+  it('reads the repeated Date and Trxn.Type columns by their group, and takes the ISIN from the scheme name', () => {
+    const r = readSoldLots(workbook([short, long]));
+    expect(r.confidence).toBe('high');
+    if (r.confidence !== 'high') return;
+    expect(r.result.format).toMatch(/^Fund capital gains · ET Money/);
+    expect(r.result.brokerSummary).toBeUndefined();
+    expect(r.result.txns.map((t) => [t.isin, t.side, t.date])).toEqual([
+      ['INF000A01011', 'buy', '2026-01-05'], ['INF000A01011', 'sell', '2026-07-10'],
+      ['INF000B01012', 'buy', '2024-01-05'], ['INF000B01012', 'sell', '2026-07-10'],
+    ]);
+  });
+
+  it('works the cost out as the amount less the gain, from the short-term or the long-term-without-index column', () => {
+    const r = readSoldLots(workbook([short, long]));
+    if (r.confidence !== 'high') throw new Error('not read');
+    // 1,500 sold with a 500 short-term gain cost 1,000; 2,000 sold with an 800 long-term gain cost 1,200.
+    expect(r.result.txns.map((t) => t.amount)).toEqual([toPaise(1000), toPaise(1500), toPaise(1200), toPaise(2000)]);
+  });
+
+  it('flags a sale whose units times price is not its amount', () => {
+    const off = sale('Alpha Flexi Cap Fund - Direct Growth INF000A01011', '05-Jan-2026', '10-Jul-2026', 100, 12, 1500, 500, 0);
+    const r = readSoldLots(workbook([off, ...Array<string[]>(9).fill(long)]));
+    expect(r.confidence).toBe('high');
+    if (r.confidence !== 'high') return;
+    expect(r.result.warnings[0]).toMatch(/1 with a gain that doesn't add up/);
+  });
+
+  it('a gain larger than the sale (a negative cost) does not read', () => {
+    const bad = sale('Alpha Flexi Cap Fund - Direct Growth INF000A01011', '05-Jan-2026', '10-Jul-2026', 100, 15, 1500, 2000, 0);
+    expect(readSoldLots(workbook([bad, long])).confidence).toBe('medium');
+  });
+
+  it('a gain stated only with indexation does not read: the cost without it is unknown', () => {
+    const indexed = [...long]; indexed[18] = '900'; indexed[19] = '0';
+    expect(readSoldLots(workbook([indexed, short])).confidence).toBe('medium');
+  });
+
+  it('the 31 Jan 2018 value is the per-unit grandfathered NAV, not the grandfathered cost value', () => {
+    // Bought 2017: NAV 150 on 31 Jan 2018; the cost value column holds the grandfathered cost (1,800), not 10 x 150.
+    const old = sale('Beta Index Fund - Direct Growth INF000B01012', '05-Jan-2017', '10-Jul-2026', 10, 200, 2000, 0, 200);
+    old[7] = '150'; old[8] = '1800';
+    const r = readSoldLots(workbook([old, short]));
+    if (r.confidence !== 'high') throw new Error('not read');
+    expect(r.result.fmv2018).toEqual({ INF000B01012: toPaise(150) });
   });
 });

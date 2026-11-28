@@ -58,6 +58,10 @@ interface Table {
   mapping: Mapping;
   /** STT column: deductible only from intraday (business) income, so only an intraday gain may take it off. */
   stt: number;
+  /** ET Money's "Long Term With Index": a gain only there can't give the cost, so its lot doesn't read. */
+  indexed: number;
+  /** ET Money's per-unit 31 Jan 2018 NAV; its "GrandFathered Cost Value" is the grandfathered cost, not that value. */
+  gfNav: number;
   rows: string[][];
   /** Lots after a one-line note that closed the table, with no header of their own: not read, so counted as skipped. */
   orphans: number;
@@ -66,7 +70,13 @@ interface Table {
 }
 
 const STT_COLUMN = /^(stt|securities[\s_]?transaction[\s_]?tax)$/i;
-const sttIndex = (header: string[]) => header.findIndex((h) => STT_COLUMN.test(normHeader(h)));
+const INDEXED_COLUMN = /long[\s_]?term[\s_]?with[\s_]?index/i;
+const GF_NAV_COLUMN = /grand[\s_]?fathered[\s_]?nav/i;
+/** Columns that only a few reports have and that the field mapping doesn't carry. */
+const extraColumns = (header: string[]) => {
+  const at = (re: RegExp) => header.findIndex((h) => re.test(normHeader(h)));
+  return { stt: at(STT_COLUMN), indexed: at(INDEXED_COLUMN), gfNav: at(GF_NAV_COLUMN) };
+};
 
 interface RowTotals {
   txns: ParsedTxn[];
@@ -106,8 +116,19 @@ function readTable(table: Table, t: RowTotals): void {
     const oneDate = table.kind === 'intraday' && m.buyDate < 0 ? parseDate(cell(r, 'date')) : null;
     const buyDate = oneDate ?? parseDate(cell(r, 'buyDate'));
     const sellDate = oneDate ?? parseDate(cell(r, 'sellDate'));
-    const buy = num(r, 'buyValue'), sell = num(r, 'sellValue');
-    if (qtyN === 0 || !buyDate || !sellDate || sellDate < buyDate || buy == null || sell == null) { t.skipped++; continue; }
+    const sell = num(r, 'sellValue');
+    const charges = Math.abs(num(r, 'charges') ?? 0);
+    const st = num(r, 'gain'), lt = num(r, 'gainLt');
+    // A file that splits the gain into a long-term and a short-term column fills one of them per lot.
+    const stated = lt != null && lt !== 0 ? lt : st != null && st !== 0 ? st : lt ?? st;
+    const raw = (i: number) => (i >= 0 ? parseNumber(r[i] ?? '') : null);
+    // A gain stated only with indexation: the gain without it is unknown, so the cost can't be worked out.
+    const indexedOnly = (raw(table.indexed) ?? 0) !== 0 && !stated;
+    if (indexedOnly) { t.skipped++; continue; }
+    // No buy value column (some fund statements): the cost is the sale less its charges and stated gain.
+    const derived = m.buyValue < 0;
+    const buy = derived ? (sell != null && stated != null ? Math.abs(sell) - charges - stated : null) : num(r, 'buyValue');
+    if (qtyN === 0 || !buyDate || !sellDate || sellDate < buyDate || buy == null || sell == null || (derived && buy < 0)) { t.skipped++; continue; }
 
     if (table.kind === 'buyback') {
       const outcome = buybackOutcome(sellDate);
@@ -116,18 +137,20 @@ function readTable(table: Table, t: RowTotals): void {
     }
 
     const units = Math.abs(qtyN);
-    const charges = Math.abs(num(r, 'charges') ?? 0);
-    const st = num(r, 'gain'), lt = num(r, 'gainLt');
-    // A file that splits the gain into a long-term and a short-term column fills one of them per lot.
-    const stated = lt != null && lt !== 0 ? lt : st != null && st !== 0 ? st : lt ?? st;
-    const fmv = num(r, 'fmv2018');
+    // The 31 Jan 2018 value of the lot: the per-unit NAV times units when the report gives it, else its value column.
+    const nav = raw(table.gfNav);
+    const fmv = nav != null && nav > 0 ? nav * units : table.gfNav >= 0 ? null : num(r, 'fmv2018');
     // Bought by the grandfathering date: the value on that date may stand in for the cost.
     const grandfathered = fmv != null && fmv > 0 && buyDate <= rulesFor(sellDate).grandfatherDate;
-    if (stated != null) {
+    if (derived) {
+      // A cost worked out from the gain always fits it, so check the sale instead: units times the sale price.
+      const price = num(r, 'price');
+      if (price == null || Math.abs(units * price - Math.abs(sell)) > Math.max(1, Math.abs(sell) * 0.01)) t.mismatches++;
+    } else if (stated != null) {
       // The cost is what was paid or, bought by the grandfathering date, the higher of that and the 31 Jan 2018 value capped at the sale.
       const costs = [Math.abs(buy)];
       if (grandfathered) costs.push(Math.max(Math.abs(buy), Math.min(fmv, Math.abs(sell))));
-      const stt = table.kind === 'intraday' && table.stt >= 0 ? Math.abs(parseNumber(r[table.stt] ?? '') ?? 0) : 0;
+      const stt = table.kind === 'intraday' ? Math.abs(raw(table.stt) ?? 0) : 0;
       // A gain that leaves out charges only fits when the file has no charges column.
       const offs = m.charges < 0 ? [0] : [charges, charges + stt];
       const fits = costs.some((c) => offs.some((x) => near(Math.abs(sell) - c - x, stated)));
@@ -187,6 +210,28 @@ const looksLikeHeader = (m: Mapping) => Object.values(m).filter((i) => i >= 0).l
 const hasData = (filled: string[]) => filled.some((c) => parseDate(c) || parseNumber(c) != null);
 const looksLikeLot = (filled: string[]) => filled.some((c) => parseDate(c)) && filled.some((c) => !parseDate(c) && parseNumber(c) != null);
 
+/**
+ * A header that repeats a name ("Date" under both "Purchase" and "Redemption") sits under a row of group titles, each
+ * spanning the columns up to the next one. Such a header gets its group title in front ("Redemption Date"); any other
+ * row is left as it is.
+ */
+function grouped(header: string[], above: string[]): string[] {
+  const names = header.filter(Boolean).map((h) => normHeader(h).toLowerCase());
+  if (new Set(names).size === names.length || above.filter(Boolean).length < 2) return header;
+  let group = '';
+  return header.map((h, i) => {
+    // "Section B : Redemption" names the group "Redemption"; "Capital Gains/Losses" names it "Capital Gains".
+    if (above[i]) group = above[i]!.replace(/^section\s+\w+\s*:\s*/i, '').replace(/\s*\/\s*loss(es)?$/i, '');
+    return group && h ? `${group} ${h}` : h;
+  });
+}
+
+/** A broker whose report names no broker, known by its sheets. */
+function layoutBroker(sheets: CellSheet[]): string | null {
+  const names = new Set(sheets.map((s) => s.sheet.trim().toLowerCase()));
+  return names.has('transactions summary') && names.has('schemes summary') ? 'ET Money' : null;
+}
+
 /** Finds every sold-lots table in every sheet, following the section title above each one. */
 function findTables(sheets: CellSheet[], meta: Meta): { tables: Table[]; derivativeRows: number } {
   const tables: Table[] = [];
@@ -196,17 +241,28 @@ function findTables(sheets: CellSheet[], meta: Meta): { tables: Table[]; derivat
     let table: Table | null = null;
     // The table a one-line note closed: lots under the note, with no header of their own, belong to no table.
     let closed: Table | null = null;
+    let above: string[] = [];
     for (const raw of s.rows) {
-      const cells = raw.map((c) => (c ?? '').trim());
-      const filled = cells.filter(Boolean);
+      const plain = raw.map((c) => (c ?? '').trim());
+      const filled = plain.filter(Boolean);
       if (!filled.length) continue;
+      const prev = above;
+      above = plain;
       // Only title lines and label pairs outside a table: a scrip named after a broker is not the broker.
       if (!table && filled.length <= 2) readMeta(filled, meta);
       if (filled.length === 1) { section = filled[0]!; closed = table ?? closed; table = null; continue; }
-      const mapping = guessMapping(cells);
+      let cells = plain;
+      let mapping = guessMapping(cells);
+      // A header whose repeated names ("Date" under Purchase and again under Redemption) only read with the group titles
+      // in the row above them.
+      if (!table && !isHeader(mapping, /intraday|speculat/i.test(section))) {
+        const g = grouped(plain, prev);
+        const gm = g === plain ? null : guessMapping(g);
+        if (gm && detectKind(gm) === 'pnl') { cells = g; mapping = gm; }
+      }
       const kind = classify(section, s.sheet, cells);
       if (isHeader(mapping, kind === 'intraday')) {
-        table = { section, kind, fund: FUND_TABLE.test(cells.join(' ')) || FUND_TABLE.test(section), headerRow: cells, mapping, stt: sttIndex(cells), rows: [], orphans: 0 };
+        table = { section, kind, fund: FUND_TABLE.test(cells.join(' ')) || FUND_TABLE.test(section), headerRow: cells, mapping, ...extraColumns(cells), rows: [], orphans: 0 };
         tables.push(table);
         closed = null;
         continue;
@@ -216,7 +272,7 @@ function findTables(sheets: CellSheet[], meta: Meta): { tables: Table[]; derivat
       // reader can't read: its lots count as skipped, so the report can't read with high confidence without them.
       if (looksLikeHeader(mapping)) {
         const unread = (mapping.sellDate >= 0 || mapping.sellValue >= 0) && kind !== 'skip' && kind !== 'derivatives';
-        closed = unread ? { section, kind, fund: FUND_TABLE.test(cells.join(' ')) || FUND_TABLE.test(section), headerRow: cells, mapping, stt: -1, rows: [], orphans: 0, unread: true } : null;
+        closed = unread ? { section, kind, fund: FUND_TABLE.test(cells.join(' ')) || FUND_TABLE.test(section), headerRow: cells, mapping, ...extraColumns(cells), rows: [], orphans: 0, unread: true } : null;
         if (closed) tables.push(closed);
         table = null;
         continue;
@@ -276,6 +332,7 @@ function summarise(t: RowTotals, meta: Meta, fileLabel: string | null, derivativ
  */
 export function readSoldLots(sheets: CellSheet[]): SoldLotsRead {
   const meta = emptyMeta();
+  meta.broker = layoutBroker(sheets);
   const { tables, derivativeRows } = findTables(sheets, meta);
   const sales = tables.filter((t) => t.kind !== 'skip' && t.kind !== 'derivatives');
   // With no table it can read, the file is not a sold-lots report this reader knows: the full sheet goes to the column screen.
@@ -313,7 +370,7 @@ export function soldLotsFromTable(rows: string[][], headerIdx: number, mapping: 
   rows.slice(0, headerIdx).map((r) => r.filter(Boolean)).filter((r) => r.length <= 2).forEach((r) => readMeta(r, meta));
   const header = rows[headerIdx] ?? [];
   const table: Table = {
-    section: '', kind: 'delivery', fund: FUND_TABLE.test(header.join(' ')), headerRow: header, mapping, stt: -1,
+    section: '', kind: 'delivery', fund: FUND_TABLE.test(header.join(' ')), headerRow: header, mapping, ...extraColumns(header),
     rows: rows.slice(headerIdx + 1).filter((r) => r.some((c) => (c ?? '').trim()) && !TOTAL_ROW.test(r.find(Boolean) ?? '')), orphans: 0,
   };
   const totals = emptyTotals();

@@ -341,7 +341,7 @@ function DropZone({ onFiles, compact }: { onFiles: (files: FileList | File[]) =>
       <p style={{ fontWeight: 600 }}>Drop files here</p>
       <label className="btn primary" style={{ cursor: 'pointer' }}>
         Choose files
-        <input type="file" multiple hidden accept=".pdf,.csv,.tsv,.txt,.xlsx,application/pdf,text/csv" onChange={(e) => { if (e.target.files) onFiles(e.target.files); e.target.value = ''; }} />
+        <input type="file" multiple hidden accept=".pdf,.csv,.tsv,.txt,.xlsx,.xls,application/pdf,text/csv" onChange={(e) => { if (e.target.files) onFiles(e.target.files); e.target.value = ''; }} />
       </label>
     </div>
   );
