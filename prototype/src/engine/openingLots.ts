@@ -25,7 +25,13 @@ export const TRIMMING_HOLDINGS_SOURCES = ['Zerodha holdings'];
 export const APPROX_MARGIN = 0.1;
 
 export const isTradebook = (t: Txn) => t.source.startsWith('Trade history');
-const isTaxPnl = (t: Txn) => t.source.startsWith('Zerodha Tax P&L');
+/**
+ * How the generic Tax P&L reader's format names start (`Tax P&L · <broker> …`). The parser builds its names from this,
+ * so a reworded label can't stop exits being dropped beside a tradebook. Saved families hold it: don't change it.
+ */
+export const TAX_PNL_PREFIX = 'Tax P&L · ';
+/** A broker Tax P&L's sold lots: Zerodha's own reader, or the generic one for any broker. */
+const isTaxPnl = (t: Txn) => t.source.startsWith('Zerodha Tax P&L') || t.source.startsWith(TAX_PNL_PREFIX);
 const key = (memberId: string, isin: string, account = '') => `${memberId}|${isin}|${account}`;
 
 /** Account labels are free text: one account matches whatever the spaces and case (defined in ledger.ts). */

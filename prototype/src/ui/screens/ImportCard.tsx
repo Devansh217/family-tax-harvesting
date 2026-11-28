@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  detectKind, FIELD_LABELS, FIELDS, parseTablePreview,
+  detectKind, FIELD_LABELS, fieldsFor, parseTablePreview,
   type Field, type Mapping, type ParseResult, type TablePreview,
 } from '../../parsers';
 import { guessAccount } from '../../store';
@@ -24,6 +24,9 @@ export function resultOf(item: Item): ParseResult | null {
   if (item.status === 'table') return parseTablePreview(item.preview, item.mapping, item.name);
   return null;
 }
+
+const columnsLabel = (k: ReturnType<typeof detectKind>) =>
+  k === 'pnl' ? 'sold lots, from a Tax P&L' : k === 'trades' ? 'trade history' : k === 'holdings' ? 'holdings' : 'not recognised';
 
 /** One file's card: password unlock, column mapping, preview, account label, "Also import its exits", Add, and its notes. */
 export function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDismiss, hasTradebook }: {
@@ -65,10 +68,10 @@ export function ItemCard({ item, memberName, onChange, onAdd, onPassword, onDism
       )}
 
       {item.status === 'table' && (
-        <details open={detectKind(item.mapping) === 'unknown'}>
-          <summary>Columns ({detectKind(item.mapping) === 'trades' ? 'trade history' : detectKind(item.mapping) === 'holdings' ? 'holdings' : 'not recognised'}) · check or change</summary>
+        <details open={item.preview.kind === 'pnl' || detectKind(item.mapping) === 'unknown'}>
+          <summary>Columns ({columnsLabel(item.preview.kind === 'pnl' ? 'pnl' : detectKind(item.mapping))}) · check or change</summary>
           <div className="form-grid" style={{ marginTop: 10 }}>
-            {FIELDS.map((f: Field) => (
+            {fieldsFor(item.preview.kind === 'pnl' ? 'pnl' : 'trades').map((f: Field) => (
               <label key={f} className="field">{FIELD_LABELS[f]}
                 <select value={item.mapping[f]} onChange={(e) => onChange({ ...item, mapping: { ...item.mapping, [f]: Number(e.target.value) } })}>
                   <option value={-1}>Not in file</option>

@@ -87,6 +87,41 @@ function lockedPdf(): Buffer {
   return Buffer.from(out, 'latin1');
 }
 
+/** A one-page PDF with each word drawn at its own position (x, y in points), for the PDF table reader. */
+function textPdf(words: [string, number, number][]): Buffer {
+  const esc = (t: string) => t.replace(/[\\()]/g, (c) => `\\${c}`);
+  const stream = words.map(([t, x, y]) => `BT /F1 7 Tf ${x} ${y} Td (${esc(t)}) Tj ET`).join('\n');
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let out = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objs.forEach((o, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
+
+/** A made-up Tax P&L in an Angel-like layout: title lines, a delivery section and three sold lots. */
+const TAX_PNL_COLS = ['ISIN', 'Scrip Name', 'Qty', 'Buy Date', 'Sell Date', 'Buy Value', 'Sell Value', 'Charges', 'Long Term', 'Short Term'];
+const TAX_PNL_LOTS = [
+  ['INE000T01011', 'TESTA', '10', '02-01-2025', '05-05-2026', '1000.00', '1500.00', '20.00', '480.00', '0.00'],
+  ['INE000T01029', 'TESTB', '5', '01-04-2026', '06-06-2026', '2000.00', '1800.00', '10.00', '0.00', '-210.00'],
+  ['INE000T01037', 'TESTC', '8', '10-04-2026', '07-07-2026', '800.00', '1000.00', '5.00', '0.00', '195.00'],
+];
+function taxPnlPdf(lots = TAX_PNL_LOTS): Buffer {
+  const xs = [30, 110, 190, 230, 290, 350, 420, 490, 550, 620];
+  const words: [string, number, number][] = [['Angel One', 30, 560], ['Tax P&L', 30, 548], ['Delivery P&L', 30, 520]];
+  TAX_PNL_COLS.forEach((c, i) => words.push([c, xs[i]!, 500]));
+  lots.forEach((lot, r) => lot.forEach((c, i) => words.push([c, xs[i]!, 485 - r * 14])));
+  return textPdf(words);
+}
+
 async function expectNoSideScroll(page: Page) {
   const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
   expect(scroll, 'page scrolls sideways').toBeLessThanOrEqual(client);
@@ -415,6 +450,32 @@ for (const size of SIZES) {
         await expect(page.getByRole('region', { name: 'Add another file' }).locator('input[type="file"]')).toHaveCount(1);
         await expect(page.locator('.step.quiet').filter({ hasText: 'Trade history' }).locator('input[type="file"]')).toHaveCount(1);
         await expectNoSideScroll(page);
+      });
+
+      test("any broker's Tax P&L reads from CSV and from PDF", async ({ page }) => {
+        await startOwnFamilyImport(page);
+        await memberRows(page).first().click();
+        const csv = ['Angel One,Tax P&L', 'Delivery P&L', TAX_PNL_COLS.join(','), ...TAX_PNL_LOTS.map((l) => l.join(','))].join('\n') + '\n';
+        for (const [name, mimeType, buffer] of [['angel-tax-pnl.csv', 'text/csv', Buffer.from(csv)], ['angel-tax-pnl.pdf', 'application/pdf', taxPnlPdf()]] as const) {
+          await page.locator('input[type="file"]').first().setInputFiles({ name, mimeType, buffer });
+          const card = page.getByRole('article', { name });
+          await expect(card.getByText(/3 sold lots read/)).toBeVisible();
+          await card.getByRole('button', { name: /^Add to / }).click();
+          await expect(card.getByText(/^(Added|Same as angel-tax-pnl.csv)/).first()).toBeVisible();
+        }
+        await expect(page.getByRole('status', { name: 'File added' })).toContainText('Tax P&L');
+        await expectNoSideScroll(page);
+      });
+
+      test('a Tax P&L PDF that does not read reliably points to the Excel or CSV version', async ({ page }) => {
+        await startOwnFamilyImport(page);
+        await memberRows(page).first().click();
+        // Every lot sold before it was bought: the table is found, but nothing in it reads.
+        const bad = TAX_PNL_LOTS.map((l) => [l[0]!, l[1]!, l[2]!, '01-08-2026', '01-05-2026', ...l.slice(5)]);
+        await page.locator('input[type="file"]').first().setInputFiles({ name: 'bad-tax-pnl.pdf', mimeType: 'application/pdf', buffer: taxPnlPdf(bad) });
+        const card = page.getByRole('article', { name: 'bad-tax-pnl.pdf' });
+        await expect(card.getByText(/Download the Excel or CSV version/)).toBeVisible();
+        await expect(card.getByRole('button', { name: /^Add to / })).toBeDisabled();
       });
 
       test('a locked PDF asks for the password the statement was ordered with', async ({ page }) => {
