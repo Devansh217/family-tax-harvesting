@@ -44,13 +44,21 @@ const LOCKED_XLS = 'This .xls file could not be read: it may be password-protect
  * not read; a merged cell's value sits in its first cell, as in an .xlsx.
  */
 async function readXls(file: File): Promise<{ sheet: string; data: unknown[][] }[]> {
-  const XLSX = await import('xlsx');
   try {
-    const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array', cellDates: true, cellFormula: false, cellHTML: false, cellStyles: false });
-    return wb.SheetNames.map((n) => ({ sheet: n, data: XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[n]!, { header: 1, raw: true, defval: '' }) }));
+    return await xlsRows(new Uint8Array(await file.arrayBuffer()));
   } catch {
     throw new Error(LOCKED_XLS);
   }
+}
+
+/**
+ * A .xls workbook's sheets as rows. Dates come back at midnight UTC: the cells' text takes the date with toISOString,
+ * so a local-midnight date would read a day early east of Greenwich (in India, 18:30 the day before).
+ */
+export async function xlsRows(bytes: Uint8Array): Promise<{ sheet: string; data: unknown[][] }[]> {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.read(bytes, { type: 'array', cellDates: true, cellFormula: false, cellHTML: false, cellStyles: false, UTC: true });
+  return wb.SheetNames.map((n) => ({ sheet: n, data: XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[n]!, { header: 1, raw: true, defval: '', UTC: true }) }));
 }
 
 export async function readSpreadsheet(file: File): Promise<SheetRead> {

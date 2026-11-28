@@ -442,4 +442,18 @@ describe('ET Money capital gains report', () => {
     const bad = sale('Alpha Flexi Cap Fund - Direct Growth INF000A01011', '05-Jan-2026', '10-Jul-2026', 100, 15, 1500, 2000, 0);
     expect(readSoldLots(workbook([bad, long])).confidence).toBe('medium');
   });
+
+  it('a gain stated only with indexation does not read: the cost without it is unknown', () => {
+    const indexed = [...long]; indexed[18] = '900'; indexed[19] = '0';
+    expect(readSoldLots(workbook([indexed, short])).confidence).toBe('medium');
+  });
+
+  it('the 31 Jan 2018 value is the per-unit grandfathered NAV, not the grandfathered cost value', () => {
+    // Bought 2017: NAV 150 on 31 Jan 2018; the cost value column holds the grandfathered cost (1,800), not 10 x 150.
+    const old = sale('Beta Index Fund - Direct Growth INF000B01012', '05-Jan-2017', '10-Jul-2026', 10, 200, 2000, 0, 200);
+    old[7] = '150'; old[8] = '1800';
+    const r = readSoldLots(workbook([old, short]));
+    if (r.confidence !== 'high') throw new Error('not read');
+    expect(r.result.fmv2018).toEqual({ INF000B01012: toPaise(150) });
+  });
 });

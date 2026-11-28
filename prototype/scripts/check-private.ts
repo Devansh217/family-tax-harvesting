@@ -10,7 +10,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import readXlsxFile from 'read-excel-file/node';
-import * as XLSX from 'xlsx';
+import { xlsRows } from '../src/ui/readers';
 import { cellText, extractItems, linesOf, parseCSV, parsePdfStatement, readSoldLots, type CellSheet, isAngelFundHoldings, isAngelTrades, parseAngelFundHoldings, parseAngelTrades, resolveNames, isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseTablePreview, parseZerodhaTaxPnl, PdfPasswordError, previewRows, previewTable, type PdfJsLike } from '../src/parsers';
 import { addDays, addMonths, inRange } from '../src/engine/dates';
 import { computeFamily, countingSummaries, pnlGroups } from '../src/engine/family';
@@ -57,8 +57,7 @@ function reconcileTaxPnl(f: string, r: ParseResult, account: string) {
 /** Every sheet of an .xlsx or an old .xls workbook, as the Import screen reads them. */
 async function readBook(path: string): Promise<{ sheet: string; data: unknown[][] }[]> {
   if (!path.toLowerCase().endsWith('.xls')) return (await readXlsxFile(path)).map((s) => ({ sheet: s.sheet, data: s.data as unknown[][] }));
-  const wb = XLSX.read(readFileSync(path), { type: 'buffer', cellDates: true });
-  return wb.SheetNames.map((n) => ({ sheet: n, data: XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[n]!, { header: 1, raw: true, defval: '' }) }));
+  return xlsRows(new Uint8Array(readFileSync(path)));
 }
 
 /**
