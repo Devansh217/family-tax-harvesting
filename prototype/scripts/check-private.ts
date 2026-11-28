@@ -10,7 +10,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import readXlsxFile from 'read-excel-file/node';
-import { extractLines, isAngelFundHoldings, isAngelTrades, parseAngelFundHoldings, parseAngelTrades, resolveNames, isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseStatementLines, parseTablePreview, parseZerodhaTaxPnl, PdfPasswordError, previewRows, previewTable, type PdfJsLike } from '../src/parsers';
+import { cellText, extractItems, linesOf, parseCSV, parsePdfStatement, readSoldLots, type CellSheet, isAngelFundHoldings, isAngelTrades, parseAngelFundHoldings, parseAngelTrades, resolveNames, isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseTablePreview, parseZerodhaTaxPnl, PdfPasswordError, previewRows, previewTable, type PdfJsLike } from '../src/parsers';
 import { addDays, addMonths, inRange } from '../src/engine/dates';
 import { computeFamily, countingSummaries, pnlGroups } from '../src/engine/family';
 import { FY_2026_27 } from '../src/engine/rules';
@@ -30,6 +30,43 @@ const entries = readdirSync(dir).filter((f) => !f.startsWith('.'));
 const files = entries.filter((f) => statSync(join(dir, f)).isFile());
 if (entries.length === 0) console.log(`No files in ${dir}. Put your statements there (it is git-ignored).`);
 
+/** Rebuilds gains from a Tax P&L's exits and compares them with the broker's own totals. Prints match / % only. */
+function reconcileTaxPnl(f: string, r: ParseResult, account: string) {
+  let st: AppState = { ...emptyState(), members: [{ id: 'm', name: 'Member', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: 20_00_000_00, from: 'manual' as const }] }] };
+  st = applyImport(st, 'm', f, r, { account });
+  const fam = computeFamily(st, r.brokerSummary!.to ?? FY_2026_27.end, FY_2026_27);
+  for (const l of reconcile(fam, st.brokerSummaries[0]!)) {
+    const pct = l.broker === 0 ? (l.ours === 0 ? 0 : 100) : (Math.abs(l.diff) / Math.abs(l.broker)) * 100;
+    console.log(`  ${l.ok ? 'MATCH   ' : 'MISMATCH'} ${l.label}${l.ok ? '' : ` (off by ${pct.toFixed(2)}%)`}`);
+  }
+  // With no fund list here, ETFs and funds sold in a shares section stay "check" and fall outside the shares lines;
+  // the app classifies them. All sales together still have to land on the broker's figures.
+  const s = r.brokerSummary!;
+  const from = s.from ?? fam.rules.start, to = s.to ?? fam.rules.end;
+  const sold = fam.ledger.realised.filter((x) => inRange(x.sellDate, from, to));
+  const unsorted = new Set(sold.filter((x) => x.taxType === 'check').map((x) => x.isin)).size;
+  if (unsorted) {
+    const ours = sold.reduce((a, x) => a + x.gain, 0) + fam.ledger.intraday.filter((t) => inRange(t.date, from, to)).reduce((a, t) => a + t.pnl, 0);
+    const theirs = (s.intraday ?? 0) + (s.equityShortTerm ?? 0) + (s.equityLongTerm ?? 0) + (s.mfShortTerm ?? 0) + (s.mfLongTerm ?? 0);
+    console.log(`  ${Math.abs(ours - theirs) <= Math.max(100, Math.abs(theirs) * 0.0005) ? 'MATCH   ' : 'MISMATCH'} All sales together (${unsorted} ETFs or funds unclassified without the fund list)`);
+  }
+  return fam;
+}
+
+/** The generic sold-lots reader, as the Import screen runs it after the known readers. */
+function soldLots(f: string, sheets: CellSheet[]): ParseResult | null {
+  const read = readSoldLots(sheets);
+  console.log(`\n${f}: sold-lots reader, ${read.confidence} confidence`);
+  if (read.confidence !== 'high') return null;
+  if (read.result.brokerSummary) reconcileTaxPnl(f, read.result, read.result.brokerSummary.broker ?? 'Broker');
+  return read.result;
+}
+
+const pdfOf = async (path: string) => {
+  const words = await extractItems(pdfjs as unknown as PdfJsLike, new Uint8Array(readFileSync(path)), process.env.PDF_PASSWORD);
+  return { lines: linesOf(words), words };
+};
+
 for (const f of files) {
   const path = join(dir, f);
   const lower = f.toLowerCase();
@@ -38,12 +75,15 @@ for (const f of files) {
     let lines: string[] = [];
     if (lower.endsWith('.pdf')) {
       try {
-        lines = await extractLines(pdfjs as unknown as PdfJsLike, new Uint8Array(readFileSync(path)), process.env.PDF_PASSWORD);
+        const pdf = await pdfOf(path);
+        lines = pdf.lines;
+        r = parsePdfStatement(pdf.lines, pdf.words);
+        console.log(`\n${f}:`);
+        if (r.brokerSummary) reconcileTaxPnl(f, r, r.brokerSummary.broker ?? 'Broker');
       } catch (e) {
         if (e instanceof PdfPasswordError) { console.log(`\n${f}: locked. Run with PDF_PASSWORD=<password>.`); continue; }
         throw e;
       }
-      r = parseStatementLines(lines);
     } else if (lower.endsWith('.xlsx')) {
       const sheets = await readXlsxFile(path);
       const asSheets = sheets.map((s) => ({ sheet: s.sheet, data: s.data as unknown[][] }));
@@ -52,29 +92,35 @@ for (const f of files) {
         console.log(`\n${f}: Zerodha holdings, ${r.prices.filter((p) => p.ltQty != null).length} with long-term quantity`);
       } else if (isZerodhaTaxPnl(asSheets)) {
         r = parseZerodhaTaxPnl(asSheets);
-        // Reconcile: rebuild gains from the exits and compare with Zerodha's own totals. Prints match / % only.
-        let st: AppState = { ...emptyState(), members: [{ id: 'm', name: 'Member', relation: 'self', age: 40, regime: 'new', income: [{ kind: 'other' as const, amount: 20_00_000_00 , from: 'manual' as const }]}] };
-        st = applyImport(st, 'm', f, r, { account: 'Zerodha' });
-        const fam = computeFamily(st, r.brokerSummary!.to ?? FY_2026_27.end, FY_2026_27);
         console.log(`\n${f}: Zerodha Tax P&L, ${r.brokerSummary!.from} to ${r.brokerSummary!.to}`);
-        for (const l of reconcile(fam, st.brokerSummaries[0]!)) {
-          const pct = l.broker === 0 ? (l.ours === 0 ? 0 : 100) : (Math.abs(l.diff) / Math.abs(l.broker)) * 100;
-          console.log(`  ${l.ok ? 'MATCH   ' : 'MISMATCH'} ${l.label}${l.ok ? '' : ` (off by ${pct.toFixed(2)}%)`}`);
-        }
+        const fam = reconcileTaxPnl(f, r, 'Zerodha');
         console.log(`  F&O from report totals: ${r.brokerSummary!.fno == null ? 'none' : r.brokerSummary!.fno < 0 ? 'loss' : 'profit'}; 2018 values for ${Object.keys(r.fmv2018 ?? {}).length} securities; ${fam.ledger.warnings.length} unmatched sells`);
+      } else if (isAngelTrades(asSheets)) {
+        r = parseAngelTrades(asSheets);
+        console.log(`\n${f}: Angel One trades`);
+      } else if (isAngelFundHoldings(asSheets)) {
+        r = parseAngelFundHoldings(asSheets);
+        console.log(`\n${f}: Angel One fund holdings`);
       } else {
-      const p = sheets.map((s) => previewRows(s.data as unknown[][])).find((x) => x.kind !== 'unknown') ?? previewRows(sheets[0]?.data as unknown[][] ?? []);
-      console.log(`\n${f}: header row ${p.headerIdx + 1}: [${p.header.join(' | ')}] → ${p.kind}`);
-      r = parseTablePreview(p, p.mapping, f);
+        r = soldLots(f, asSheets.map((s) => ({ sheet: s.sheet, rows: s.data.map((row) => row.map(cellText)) })));
+        if (!r) {
+          const p = sheets.map((s) => previewRows(s.data as unknown[][])).find((x) => x.kind !== 'unknown') ?? previewRows(sheets[0]?.data as unknown[][] ?? []);
+          console.log(`  header row ${p.headerIdx + 1}: [${p.header.join(' | ')}] → ${p.kind}`);
+          r = parseTablePreview(p, p.mapping, f);
+        }
       }
     } else {
-      const p = previewTable(readFileSync(path, 'utf8'));
-      console.log(`\n${f}: header row ${p.headerIdx + 1}: [${p.header.join(' | ')}] → ${p.kind}`);
+      const text = readFileSync(path, 'utf8');
+      r = soldLots(f, [{ sheet: f, rows: parseCSV(text) }]);
+      if (r) { /* read */ } else {
+      const p = previewTable(text);
+      console.log(`  header row ${p.headerIdx + 1}: [${p.header.join(' | ')}] → ${p.kind}`);
       r = parseTablePreview(p, p.mapping, f);
+      }
     }
     const dates = r.txns.map((t) => t.date).sort();
     const secs = new Set([...r.txns.map((t) => t.isin), ...r.prices.map((p) => p.isin)]);
-    console.log(`${lower.endsWith('.pdf') ? `\n${f}: ` : ''}${r.format}`);
+    console.log(`${r.format}`);
     console.log(`  ${r.txns.length} transactions (${r.txns.filter((t) => t.side === 'buy').length} buys, ${r.txns.filter((t) => t.side === 'sell').length} sells)${dates.length ? `, ${dates[0]} → ${dates.at(-1)}` : ''}`);
     console.log(`  ${r.prices.length} prices, ${secs.size} securities, ${r.skipped} rows skipped`);
     for (const w of r.warnings) console.log(`  ! ${w.replace(/^[^:]{3,80}: statement/, '<scheme>: statement')}`);
@@ -101,7 +147,7 @@ if (memberDirs.length) {
   async function readStatement(path: string): Promise<ParseResult | 'locked' | null> {
     const lower = path.toLowerCase();
     if (lower.endsWith('.pdf')) {
-      try { return parseStatementLines(await extractLines(pdfjs as unknown as PdfJsLike, new Uint8Array(readFileSync(path)), process.env.PDF_PASSWORD)); }
+      try { const pdf = await pdfOf(path); return parsePdfStatement(pdf.lines, pdf.words); }
       catch (e) { return e instanceof PdfPasswordError ? 'locked' : null; }
     }
     if (lower.endsWith('.xlsx')) {
@@ -111,11 +157,19 @@ if (memberDirs.length) {
         if (isZerodhaHoldings(sheets)) return parseZerodhaHoldings(sheets);
         if (isAngelTrades(sheets)) return resolveNames(parseAngelTrades(sheets), shares);
         if (isAngelFundHoldings(sheets)) return parseAngelFundHoldings(sheets);
+        const read = readSoldLots(sheets.map((s) => ({ sheet: s.sheet, rows: s.data.map((row) => row.map(cellText)) })));
+        if (read.confidence === 'high') return read.result;
         const p = sheets.map((s) => previewRows(s.data)).find((x) => x.kind !== 'unknown');
         return p ? parseTablePreview(p, p.mapping, 'file.xlsx') : null;
       } catch { return null; } // password-protected or unreadable
     }
-    if (lower.endsWith('.csv')) { const p = previewTable(readFileSync(path, 'utf8')); return parseTablePreview(p, p.mapping, 'file.csv'); }
+    if (lower.endsWith('.csv')) {
+      const text = readFileSync(path, 'utf8');
+      const read = readSoldLots([{ sheet: 'file.csv', rows: parseCSV(text) }]);
+      if (read.confidence === 'high') return read.result;
+      const p = previewTable(text);
+      return parseTablePreview(p, p.mapping, 'file.csv');
+    }
     return null;
   }
 
