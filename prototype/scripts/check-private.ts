@@ -74,7 +74,7 @@ function reconcileEtMoney(sheets: { sheet: string; data: unknown[][] }[], r: Par
     const n = row && col >= 0 ? Number(cellText(row[col]).replace(/,/g, '')) : NaN;
     return Number.isFinite(n) ? n : 0;
   };
-  const theirs = total(/short ?term.*gain\/loss/) + total(/longtermwithoutindex.*gain\/loss/);
+  const theirs = total(/short ?term.*gain\/loss/) + total(/long ?term ?without ?index.*gain\/loss/);
   const ours = (r.txns.filter((t) => t.side === 'sell').reduce((a, t) => a + t.amount, 0) - r.txns.filter((t) => t.side === 'buy').reduce((a, t) => a + t.amount, 0)) / 100;
   const ok = Math.abs(ours - theirs) <= Math.max(1, Math.abs(theirs) * 0.0005);
   const pct = theirs === 0 ? (ours === 0 ? 0 : 100) : (Math.abs(ours - theirs) / Math.abs(theirs)) * 100;

@@ -299,6 +299,10 @@ describe('sold-lots columns', () => {
     expect(m).toMatchObject({ symbol: 0, qty: 1, buyDate: 2, buyValue: 3, sellDate: 4, sellValue: 5, fmv2018: 6 });
   });
 
+  it('never takes a grandfathered cost value as the 31 Jan 2018 value (it is the cost after grandfathering)', () => {
+    expect(guessMapping(['Scrip Name', 'ISIN', 'Quantity', 'Purchase Date', 'Purchase Value', 'Sale Date', 'Sale Value', 'GrandFathered Cost Value']).fmv2018).toBe(-1);
+  });
+
   it('never takes cost of acquisition as the buy value (it may be the indexed or grandfathered cost)', () => {
     expect(guessMapping(['Cost Of Acquisition', 'Buy Value']).buyValue).toBe(1);
     expect(guessMapping(['Cost Of Acquisition', 'Sale Value']).buyValue).toBe(-1);

@@ -54,7 +54,7 @@ const ALIASES: Record<Field, RegExp> = {
   // "Net Profit/Loss" also takes off STT, which is not deductible, so it is never the taxable gain.
   gain: /^(taxable[\s_]?(profit|p&l|p\/l|gain)|short[\s_]?term[\s_]?taxable[\s_]?income|realized[\s_]?short[\s_]?term[\s_]?capital[\s_]?gains?|short[\s_]?term[\s_]?(capital[\s_]?)?gains?|stcg|capital[\s_]?gains?[\s_]?short[\s_]?term|profit|gain|capital[\s_]?gains?|reali[sz]ed[\s_]?p&l)$/i,
   gainLt: /^(long[\s_]?term[\s_]?taxable[\s_]?income|realized[\s_]?long[\s_]?term[\s_]?capital[\s_]?gains?|long[\s_]?term[\s_]?(capital[\s_]?)?gains?|ltcg|(capital[\s_]?gains?[\s_]?)?long[\s_]?term[\s_]?without[\s_]?index(ation)?)$/i,
-  fmv2018: /^(fmv[\s_]?as[\s_]?on[\s_]?31[\s_]?jan\.?[\s_]?2018|fair[\s_]?market[\s_]?value|(purchase[\s_]?)?grand[\s_]?fathered[\s_]?cost[\s_]?value)$/i,
+  fmv2018: /^(fmv[\s_]?as[\s_]?on[\s_]?31[\s_]?jan\.?[\s_]?2018|fair[\s_]?market[\s_]?value)$/i,
 };
 /** Never read: some reports' "Cost of Acquisition" is the indexed or grandfathered cost, not what was paid. */
 const COST_OF_ACQUISITION = /^cost[\s_]?of[\s_]?acquisition$/i;
