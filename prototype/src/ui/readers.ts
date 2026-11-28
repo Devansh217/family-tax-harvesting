@@ -53,7 +53,7 @@ export async function readSpreadsheet(file: File): Promise<SheetRead> {
     return { kind: 'table', preview: previews.find((p) => p.kind !== 'unknown') ?? previews[0] ?? previewRows([]) };
   }
   const text = await file.text();
-  return soldLots([{ sheet: file.name, rows: parseCSV(text) }]) ?? { kind: 'table', preview: previewTable(text) };
+  return soldLots([{ sheet: '', rows: parseCSV(text) }]) ?? { kind: 'table', preview: previewTable(text) };
 }
 
 /** Any broker's Tax P&L: read on its own when sure, else its table on the column screen; null when it isn't one. */

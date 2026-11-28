@@ -2,26 +2,16 @@ import { isDematCAS, isMutualFundCAS, parseDematCAS, parseMutualFundCAS } from '
 import { parseCSV, type ParseResult } from './common';
 import { pdfRows, type PdfWord } from './pdfTable';
 import { readSoldLots, soldLotsFromTable } from './soldLots';
-import { detectKind, findHeaderRow, guessMapping, parseTable, type Mapping } from './table';
+import { detectKind, findHeaderRow, guessMapping, parseTable, type Mapping, type TablePreview } from './table';
 
 export * from './common';
-export { FIELDS, FIELD_LABELS, PNL_FIELDS, detectKind, fieldsFor, guessMapping, normHeader, parseTable, type Field, type Mapping, type TableKind } from './table';
-export { cellText, readSoldLots, soldLotsFromTable, type CellSheet, type SoldLotsPreview, type SoldLotsRead } from './soldLots';
+export { FIELDS, FIELD_LABELS, PNL_FIELDS, detectKind, fieldsFor, guessMapping, normHeader, parseTable, type Field, type Mapping, type TableKind, type TablePreview } from './table';
+export { readSoldLots, soldLotsFromTable, type CellSheet, type SoldLotsRead } from './soldLots';
 export { extractItems, extractLines, linesOf, PdfPasswordError, type PdfJsLike } from './pdfText';
 export { pdfRows, type PdfWord } from './pdfTable';
 export { isAngelFundHoldings, isAngelTrades, parseAngelFundHoldings, parseAngelTrades } from './angel';
 export { isEncryptedOffice, resolveNames } from './names';
 export { isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseZerodhaTaxPnl, type BrokerSummary } from './zerodhaTaxPnl';
-
-export interface TablePreview {
-  rows: string[][];
-  headerIdx: number;
-  header: string[];
-  mapping: Mapping;
-  kind: ReturnType<typeof detectKind>;
-  /** A sold-lots report with more tables than these rows (see `SoldLotsPreview`). */
-  partial?: boolean;
-}
 
 /** Spreadsheet-like text (CSV/TSV, or rows pasted from Excel) → header guess the user can correct. */
 export function previewTable(text: string): TablePreview {

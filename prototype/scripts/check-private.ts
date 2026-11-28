@@ -111,7 +111,7 @@ for (const f of files) {
       }
     } else {
       const text = readFileSync(path, 'utf8');
-      r = soldLots(f, [{ sheet: f, rows: parseCSV(text) }]);
+      r = soldLots(f, [{ sheet: '', rows: parseCSV(text) }]);
       if (r) { /* read */ } else {
       const p = previewTable(text);
       console.log(`  header row ${p.headerIdx + 1}: [${p.header.join(' | ')}] → ${p.kind}`);
@@ -165,7 +165,7 @@ if (memberDirs.length) {
     }
     if (lower.endsWith('.csv')) {
       const text = readFileSync(path, 'utf8');
-      const read = readSoldLots([{ sheet: 'file.csv', rows: parseCSV(text) }]);
+      const read = readSoldLots([{ sheet: '', rows: parseCSV(text) }]);
       if (read.confidence === 'high') return read.result;
       const p = previewTable(text);
       return parseTablePreview(p, p.mapping, 'file.csv');

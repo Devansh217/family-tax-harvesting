@@ -63,6 +63,13 @@ export function parseDate(raw: string | undefined): ISODate | null {
   return null;
 }
 
+/** Excel cells as text: dates as ISO, numbers as plain strings. */
+export function cellText(c: unknown): string {
+  if (c == null) return '';
+  if (c instanceof Date) return c.toISOString().slice(0, 10);
+  return String(c).trim();
+}
+
 export const toQty = (units: number): Qty => Math.round(units * QTY_SCALE);
 export const toPaise = (rupees: number): Paise => Math.round(rupees * 100);
 

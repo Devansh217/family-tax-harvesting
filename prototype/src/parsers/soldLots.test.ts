@@ -196,6 +196,13 @@ describe('readSoldLots', () => {
     expect(r.fmv2018).toEqual({ INF000A01011: 1200 });
   });
 
+  it('a lot that cannot be read sends the report to the column screen: it would be missing from booked gains', () => {
+    const lots = Array.from({ length: 20 }, (_, i) => lot(`INE00${String(i).padStart(2, '0')}B0101`, 'BETA', 1, '10/01/2025', '15/06/2026', 100, 200, 0, true));
+    const broken = lot('INE000Z01019', 'ZED', 1, '15/06/2026', '10/01/2025', 100, 200, 0, true); // sold before bought
+    expect(readSoldLots([{ sheet: '', rows: [DELIVERY_HEAD, ...lots] }]).confidence).toBe('high');
+    expect(readSoldLots([{ sheet: '', rows: [DELIVERY_HEAD, ...lots, broken] }]).confidence).toBe('medium');
+  });
+
   it('a fund-only report whose sales span tax years still reads with high confidence: it has no totals', () => {
     const head = ['ISIN', 'Description of Mutual Fund sold', 'Number of Units', 'Date of Purchase', 'Purchase Value', 'Date of Sale', 'Sale Value'];
     const r = high([{ sheet: 'Capital Gains', rows: [head,

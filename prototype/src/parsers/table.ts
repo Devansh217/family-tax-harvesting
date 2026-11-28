@@ -12,6 +12,17 @@ export type Field = (typeof FIELDS)[number];
 export type Mapping = Record<Field, number>;
 export type TableKind = 'pnl' | 'trades' | 'holdings' | 'unknown';
 
+/** One table for the column screen: rows with the header at `headerIdx`, and the columns guessed for it. */
+export interface TablePreview {
+  rows: string[][];
+  headerIdx: number;
+  header: string[];
+  mapping: Mapping;
+  kind: TableKind;
+  /** A sold-lots report with more sales tables than these rows, so the column screen sees only part of it. */
+  partial?: boolean;
+}
+
 export const FIELD_LABELS: Record<Field, string> = {
   date: 'Trade date', symbol: 'Name or symbol', isin: 'ISIN', side: 'Buy or sell', qty: 'Quantity', price: 'Price',
   amount: 'Amount', avgCost: 'Average cost', ltp: 'Current price', segment: 'Segment',

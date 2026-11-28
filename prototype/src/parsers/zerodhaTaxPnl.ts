@@ -106,7 +106,7 @@ export function parseZerodhaTaxPnl(sheets: Sheet[]): TaxPnlResult {
 
     const fmvCol = cols['Fair Market Value'];
     const fmv = fmvCol == null ? null : num(r[fmvCol]);
-    if (fmv && fmv > 0 && entry <= '2018-01-31') fmv2018[isin] = Math.round((fmv / units) * 100);
+    if (fmv && fmv > 0 && entry <= rulesFor(exit).grandfatherDate) fmv2018[isin] = Math.round((fmv / units) * 100);
   }
 
   const eq = labelled(sheets.find((s) => /Equity and Non Equity/i.test(s.sheet)));
