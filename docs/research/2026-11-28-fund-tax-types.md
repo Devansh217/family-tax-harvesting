@@ -205,7 +205,7 @@ Conclusion (Opinion, **Medium**):
 
 Engine points to raise as issues (not changed here):
 - `longTermMonthsFor` returns 12 for `check`. For an unlisted `check` holding this is the optimistic answer. A safer default is 24 until the family answers.
-- When a lot bought on or after 1 Apr 2023 is in a fund that was a specified MF under the old wording but is not under s.76(5)(b) (gold, overseas FoF), `lotTaxType` may need to return `other_lt` rather than `slab`. This depends on CA question Q5.
+- `lotTaxType` (`tax.ts`) only turns `slab` into `other_lt` for lots bought before 1 Apr 2023; it never touches a gold or overseas FoF, which are `check` or `other_lt`. The open point is the opposite: if specified-fund status is tested at purchase (CA question Q5), lots of those funds bought 1 Apr 2023 to 31 Mar 2025 should be `slab`, not `other_lt`. (Corrected after the guardrail review.)
 
 ---
 
