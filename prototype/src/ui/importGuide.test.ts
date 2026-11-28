@@ -21,6 +21,10 @@ const zPnl = (from: string, to: string): ParseResult => ({
   format: `Zerodha Tax P&L · ${from} to ${to}`, txns: [], prices: [], skipped: 0, warnings: [],
   brokerSummary: { broker: 'Zerodha', from, to, intraday: null, equityShortTerm: null, equityLongTerm: null, mfShortTerm: null, mfLongTerm: null, fno: null, fnoTurnover: null } as BrokerSummary,
 });
+const angelPnl = (from: string, to: string): ParseResult => ({
+  ...zPnl(from, to), format: `Tax P&L · Angel One · ${from} to ${to}`,
+  brokerSummary: { ...zPnl(from, to).brokerSummary!, broker: 'Angel One' },
+});
 const family = (...steps: Array<(s: AppState) => AppState>) => steps.reduce((s, f) => f(s), { ...emptyState(), members: [asha, ravi] });
 const add = (m: string, file: string, r: ParseResult, account: string) => (s: AppState) => applyImport(s, m, file, r, { account });
 const fam = (s: AppState) => computeFamily(s, ASOF, FY_2026_27);
@@ -364,12 +368,16 @@ describe('member and family guide', () => {
     expect(familyRow(r)).toEqual({ holdings: 'Start', pnl: '—', tradebooks: '—', usable: '—' });
   });
 
-  it('Angel never blocks done', () => {
+  it("Angel's Tax P&L is a step like Zerodha's, and the member is done once it is in", () => {
     // The funds' buy dates come from a CAS: without one the CAS gap keeps the member from done (tested below).
     const angelCas = add('r', 'cas.pdf', tradebook([['INF9', '2026-06-01', 'buy', 50, 100]], 'Mutual fund CAS (CAMS / KFintech)'), 'Folio 1/1');
-    const r = g(family(angelFunds(), angelTrades, angelCas));
+    const without = g(family(angelFunds(), angelTrades, angelCas));
+    expect(statuses(without)).toEqual(['done', 'next', 'suggestion']);
+    expect(without.done).toBe(false);
+    expect(familyRow(without).pnl).toBe('Next');
+    const r = g(family(angelFunds(), angelTrades, angelCas, add('r', 'pnl.xlsx', angelPnl('2026-04-01', '2027-03-31'), 'Angel One')));
     expect(r.accounts.map((a) => a.broker)).toEqual(['Angel One', 'Mutual funds']);
-    expect(statuses(r)).toEqual(['done', 'unreadable', 'suggestion']);
+    expect(statuses(r)).toEqual(['done', 'done', 'suggestion']);
     expect(r.done).toBe(true);
     expect(r.first).toBe(false);
     const [h, p, t] = r.accounts[0]!.steps;
@@ -377,17 +385,20 @@ describe('member and family guide', () => {
       kind: 'holdings', doneLine: "Funds read. Shares and SGBs in this file aren't read yet: they come from your tradebooks for now.",
       where: 'Open "Your Holding Details" with its password, save a copy as .xlsx, import the copy.',
     });
-    expect(p).toMatchObject({ kind: 'pnl', unlocks: "Angel One's tax P&L can't be read yet. Sales with unknown buy dates are counted the safe way." });
+    expect(p).toMatchObject({
+      kind: 'pnl', title: 'Tax P&L, FY 2026-27', where: 'Reports → Tax P&L → FY 2026-27 → download Excel (PDF also works)',
+      unlocks: "Exact gains booked this year, so the room matches Angel One's figures.", doneLine: 'Tax P&L · 1 Apr 2026 – 31 Mar 2027',
+    });
     expect(t).toMatchObject({
       kind: 'tradebook', title: 'Trade history, every year', where: 'Reports → Trade history (Excel), one per tax year',
       unlocks: 'Back to the year of your first purchase. In: FY 2026-27.',
     });
     expect(r.accounts[0]!.notes).toContain("Angel shares are counted from your tradebooks only until Angel's holdings file can be read.");
-    expect(familyRow(r)).toMatchObject({ holdings: 'Funds only', pnl: "Can't read yet", tradebooks: 'Optional' });
+    expect(familyRow(r)).toMatchObject({ holdings: 'Funds only', pnl: '✓', tradebooks: 'Optional' });
     // Shares only, no funds seen: funds bought before the oldest trade history leave no trace, so the holdings file
-    // (which reads funds) is offered as optional, with somewhere to add it, and the member is done.
-    const noFile = g(family(angelTrades));
-    expect(statuses(noFile)).toEqual(['suggestion', 'unreadable', 'suggestion']);
+    // (which reads funds) is offered as optional, with somewhere to add it, and the member is done once the P&L is in.
+    const noFile = g(family(angelTrades, add('r', 'pnl.xlsx', angelPnl('2026-04-01', '2027-03-31'), 'Angel One')));
+    expect(statuses(noFile)).toEqual(['suggestion', 'done', 'suggestion']);
     expect(noFile.accounts[0]!.steps[0]).toMatchObject({ kind: 'holdings', title: 'Holdings file', unlocks: "Hold mutual funds at Angel? Add the holdings file: its funds are read. Shares come from your trade history for now." });
     expect(noFile.done).toBe(true);
     expect(familyRow(noFile).holdings).toBe('Optional');
@@ -398,16 +409,18 @@ describe('member and family guide', () => {
   it("Angel funds all redeemed: the holdings file is optional, so the member can be done", () => {
     const s = family(add('r', 'angel-tb.xlsx', tradebook([
       ['INE2', '2026-11-10', 'buy', 5, 100], ['INF9', '2026-06-01', 'buy', 5, 100], ['INF9', '2026-10-01', 'sell', 5, 110],
-    ], 'Trade history · Angel One · x'), 'Angel One'));
+    ], 'Trade history · Angel One · x'), 'Angel One'), add('r', 'pnl.xlsx', angelPnl('2026-04-01', '2027-03-31'), 'Angel One'));
     const r = g(s);
-    expect(statuses(r)).toEqual(['suggestion', 'unreadable', 'suggestion']);
+    expect(statuses(r)).toEqual(['suggestion', 'done', 'suggestion']);
     expect(r.accounts[0]!.steps[0]).toMatchObject({ kind: 'holdings', unlocks: "Hold mutual funds at Angel? Add the holdings file: its funds are read. Shares come from your trade history for now." });
     expect(r.done).toBe(true);
   });
 
   it('old Angel trade history shows its date and asks for a refresh, without keeping the member stuck', () => {
     const oldTrades = add('r', 'angel-tb.xlsx', tradebook([['INE2', '2026-09-01', 'buy', 5, 100]], 'Trade history · Angel One · x'), 'Angel One');
-    const r = g(family(oldTrades));
+    // A Tax P&L downloaded on the same day as the trade history: the account's newest data stays 1 Sep.
+    const pnl = add('r', 'pnl.xlsx', angelPnl('2026-04-01', '2026-09-01'), 'Angel One');
+    const r = g(family(oldTrades, pnl));
     expect(r.accounts[0]).toMatchObject({ newest: '2026-09-01', stale: true });
     expect(r.accounts[0]!.notes).toContain('Newest data from 1 Sep 2026.');
     const t = r.accounts[0]!.steps.find((st) => st.kind === 'tradebook')!;
@@ -624,7 +637,8 @@ describe('member and family guide', () => {
     });
     it('a CAS for the funds clears it', () => {
       const cas = add('r', 'cas.pdf', tradebook([['INF9', '2026-06-01', 'buy', 50, 100]], 'Mutual fund CAS (CAMS / KFintech)'), 'Folio 1/1');
-      const r = g(family(fundsFile('Angel One fund holdings', 'Angel One'), shareTrade('Angel One'), cas));
+      const pnl = add('r', 'pnl.xlsx', angelPnl('2026-04-01', '2027-03-31'), 'Angel One');
+      const r = g(family(fundsFile('Angel One fund holdings', 'Angel One'), shareTrade('Angel One'), cas, pnl));
       expect(casGap(r)).toBeUndefined();
       expect(r.done).toBe(true);
     });
@@ -838,7 +852,10 @@ describe('success', () => {
   it('room change, matching the broker once the P&L is in', () => {
     const b = { pct: 80, room: 1_02_000_00, bookedLt: 0, bookedSt: 0, undatedShares: 2, undatedFunds: 3, stepsDone: ['a|zerodha:holdings'] };
     const a = { ...b, room: 1_01_000_00, undatedFunds: 1, stepsDone: ['a|zerodha:holdings', 'a|zerodha:pnl'] };
-    expect(successDiff(b, a, 'x').changes).toEqual(["Tax-free room left ₹1.02 L → ₹1.01 L, now matching Zerodha's figures", '2 undated funds now dated']);
+    expect(successDiff(b, a, 'x', 'Zerodha').changes).toEqual(["Tax-free room left ₹1.02 L → ₹1.01 L, now matching Zerodha's figures", '2 undated funds now dated']);
+    expect(successDiff(b, a, 'x', 'Angel One').changes[0]).toBe("Tax-free room left ₹1.02 L → ₹1.01 L, now matching Angel One's figures");
+    // A file with no broker totals (a tradebook) never claims to match a broker.
+    expect(successDiff(b, a, 'x').changes[0]).toBe('Tax-free room left ₹1.02 L → ₹1.01 L');
     expect(successDiff({ ...b, stepsDone: a.stepsDone }, a, 'x').changes[0]).toBe('Tax-free room left ₹1.02 L → ₹1.01 L');
   });
 

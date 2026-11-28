@@ -1,6 +1,7 @@
 import { isDematCAS, isMutualFundCAS, parseDematCAS, parseMutualFundCAS } from './cas';
 import { parseCSV, type ParseResult } from './common';
-import { soldLotsFromTable } from './soldLots';
+import { pdfRows, type PdfWord } from './pdfTable';
+import { readSoldLots, soldLotsFromTable } from './soldLots';
 import { detectKind, findHeaderRow, guessMapping, parseTable, type Mapping } from './table';
 
 export * from './common';
@@ -38,7 +39,7 @@ export function previewRows(raw: unknown[][]): TablePreview {
 
 export function parseTablePreview(p: TablePreview, mapping: Mapping, fileName: string): ParseResult {
   const kind = detectKind(mapping);
-  if (kind === 'pnl') return soldLotsFromTable(p.rows, p.headerIdx, mapping, fileName);
+  if (kind === 'pnl' || p.kind === 'pnl') return soldLotsFromTable(p.rows, p.headerIdx, mapping, fileName);
   const label = kind === 'trades' ? 'Trade history' : kind === 'holdings' ? 'Holdings' : 'Table';
   return parseTable(p.rows, p.headerIdx, mapping, `${label} · ${fileName}`);
 }
@@ -59,4 +60,20 @@ export function parseStatementLines(lines: string[]): ParseResult {
     format: 'Unrecognised PDF', txns: [], prices: [], skipped: 0,
     warnings: ['This PDF does not look like a CAS from CAMS, KFintech, NSDL or CDSL. For broker statements, download the CSV or Excel version.'],
   };
+}
+
+/** A PDF's text that the sold-lots reader turns away, in the words of the import card. */
+export const PDF_NOT_RELIABLE = 'This PDF could not be read reliably. Download the Excel or CSV version of the report and import that.';
+
+/**
+ * A statement PDF: a CAS first, else a broker's report of sold lots (a Tax P&L) rebuilt from word positions. A sold-lots
+ * PDF that isn't read with high confidence is turned away: a PDF has no column screen to check it on.
+ */
+export function parsePdfStatement(lines: string[], words: PdfWord[][]): ParseResult {
+  const cas = parseStatementLines(lines);
+  if (cas.format !== 'Unrecognised PDF') return cas;
+  const read = readSoldLots([{ sheet: 'pdf', rows: pdfRows(words) }]);
+  if (read.confidence === 'high') return read.result;
+  if (read.confidence === 'medium') return { ...cas, warnings: [PDF_NOT_RELIABLE] };
+  return cas;
 }

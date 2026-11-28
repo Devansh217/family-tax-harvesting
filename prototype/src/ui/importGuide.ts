@@ -89,7 +89,7 @@ export function usableShare(fam: Pick<FamilyView, 'members' | 'positions' | 'sec
 export const pct = (s: { usable: Paise; total: Paise }): number | null => (s.total === 0 ? null : Math.round((s.usable * 100) / s.total));
 
 export type StepKind = 'holdings' | 'pnl' | 'tradebook' | 'fund_tradebook' | 'cas';
-export type StepStatus = 'done' | 'next' | 'later' | 'unreadable' | 'suggestion';
+export type StepStatus = 'done' | 'next' | 'later' | 'suggestion';
 export interface GuideStep {
   kind: StepKind;
   status: StepStatus;
@@ -139,7 +139,7 @@ const OLDEST_COIN_FY = 2017;
 const yearIn = (years: number[], y: number) => years.length > 0 && Math.min(...years) <= y && y <= Math.max(...years);
 
 /** A step before its place in the order is known: `open` ones become next (the first) or later. */
-type Draft = Omit<GuideStep, 'status'> & { status: 'open' | 'done' | 'unreadable' | 'suggestion' };
+type Draft = Omit<GuideStep, 'status'> & { status: 'open' | 'done' | 'suggestion' };
 
 interface Ctx {
   state: GuideState; fam: FamilyView; memberId: string; acct: AccountRef; today: ISODate;
@@ -152,6 +152,20 @@ interface Ctx {
   /** The account keys this section covers: one, or every fund folio for the Mutual funds section. */
   keys: Set<string>;
   notes: string[];
+}
+
+/** The Tax P&L step: done once a broker Tax P&L covering this tax year is in for the account. */
+function pnlStep(c: Ctx, where: string, broker: string): Draft {
+  const rules = c.fam.rules;
+  const pnl = countingSummaries(c.state.brokerSummaries)
+    .filter((b) => b.memberId === c.memberId && normAccount(b.account) === c.acct.key)
+    .filter((b) => (b.summary.from ?? '0000-00-00') <= rules.end && (b.summary.to ?? '9999-12-31') >= rules.start)
+    .sort((x, y) => (y.summary.to ?? '').localeCompare(x.summary.to ?? ''))[0];
+  return {
+    kind: 'pnl', status: pnl ? 'done' : 'open', title: `Tax P&L, ${rules.label}`, where,
+    unlocks: `Exact gains booked this year, so the room matches ${broker}'s figures.`,
+    ...(pnl ? { doneLine: `Tax P&L · ${dateLabel(pnl.summary.from ?? rules.start)} – ${dateLabel(pnl.summary.to ?? rules.end)}` } : {}),
+  };
 }
 
 function zerodhaSteps(c: Ctx): Draft[] {
@@ -175,16 +189,7 @@ function zerodhaSteps(c: Ctx): Draft[] {
   });
 
   // 2. Tax P&L for this tax year.
-  const pnl = countingSummaries(c.state.brokerSummaries)
-    .filter((b) => b.memberId === c.memberId && normAccount(b.account) === acct.key)
-    .filter((b) => (b.summary.from ?? '0000-00-00') <= rules.end && (b.summary.to ?? '9999-12-31') >= rules.start)
-    .sort((x, y) => (y.summary.to ?? '').localeCompare(x.summary.to ?? ''))[0];
-  steps.push({
-    kind: 'pnl', status: pnl ? 'done' : 'open', title: `Tax P&L, ${rules.label}`,
-    where: `Console → Reports → Tax P&L → ${rules.label} → Download (.xlsx)`,
-    unlocks: "Exact gains booked this year, so the room matches Zerodha's figures.",
-    ...(pnl ? { doneLine: `Tax P&L · ${dateLabel(pnl.summary.from ?? rules.start)} – ${dateLabel(pnl.summary.to ?? rules.end)}` } : {}),
-  });
+  steps.push(pnlStep(c, `Console → Reports → Tax P&L → ${rules.label} → Download (.xlsx)`, 'Zerodha'));
 
   // 3. Tradebooks: only the tax years of the 12 months before the holdings file can date its short-term rest.
   const corporate = new Set(fam.holdingsNotes.corporateActions
@@ -270,10 +275,7 @@ function angelSteps(c: Ctx): Draft[] {
         : 'The funds held today, so the plan can see them.',
       ...(funds.length ? { doneLine: "Funds read. Shares and SGBs in this file aren't read yet: they come from your tradebooks for now.", ...(asOf ? { asOf } : {}) } : {}),
     },
-    {
-      kind: 'pnl', status: 'unreadable', title: `Tax P&L, ${c.fam.rules.label}`, where: '',
-      unlocks: "Angel One's tax P&L can't be read yet. Sales with unknown buy dates are counted the safe way.",
-    },
+    pnlStep(c, `Reports → Tax P&L → ${c.fam.rules.label} → download Excel (PDF also works)`, 'Angel One'),
     historySuggestion(c, 'Reports → Trade history (Excel), one per tax year'),
   ];
 }
@@ -314,7 +316,7 @@ const STEPS: Record<Broker, (c: Ctx) => Draft[]> = {
 };
 
 /**
- * The checklist for one account: its broker's steps in order, each done, unreadable or a suggestion by its own test,
+ * The checklist for one account: its broker's steps in order, each done or a suggestion by its own test,
  * the first remaining one next and the rest later. When the account's newest data is old (`isOld`), its holdings step
  * reopens, titled as a refresh when it was done (its done line kept), and a "Newest data from" note is added. A
  * deciding holdings file 30 or more days old, or traded since, reopens its step as a refresh the same way. The
@@ -546,18 +548,17 @@ function cell(g: MemberGuide, kinds: StepKind[], word: (a: AccountGuide, st: Gui
 
 const open = (st: GuideStep) => st.status === 'next' || st.status === 'later';
 
-/** The family table's words for one member: next > refresh > can't read yet / optional > done. */
+/** The family table's words for one member: next > refresh > optional > done. */
 export function familyRow(g: MemberGuide): FamilyRow {
   const holdings = g.first ? 'Start' : cell(g, ['holdings', 'cas'], (a, st) => {
     if (st.refresh) return [2, 'Refresh'];
     if (open(st)) return [3, 'Next'];
-    if (st.status === 'unreadable') return [1, "Can't read yet"];
     if (st.status === 'suggestion') return [1, 'Optional'];
     if (a.broker === 'Angel One') return [1, 'Funds only'];
     const d = st.asOf ?? a.newest;
     return [0, d ? `✓ ${dateLabel(d, false)}` : '✓'];
   });
-  const pnl = cell(g, ['pnl'], (_a, st) => (open(st) ? [3, 'Next'] : st.status === 'unreadable' ? [1, "Can't read yet"] : [0, '✓']));
+  const pnl = cell(g, ['pnl'], (_a, st) => (open(st) ? [3, 'Next'] : [0, '✓']));
   const tradebooks = cell(g, ['tradebook', 'fund_tradebook'], (_a, st) =>
     open(st) ? [3, 'Next'] : st.refresh ? [2, 'Refresh'] : st.status === 'suggestion' ? [1, 'Optional'] : [0, `✓ ${plural(st.years?.length ?? 0, 'year')}`]);
   return { holdings, pnl, tradebooks, usable: g.pct == null ? '—' : `${g.pct}%` };
@@ -599,15 +600,15 @@ export interface Success { read: string; changes: string[]; pctFrom: number | nu
 export const UNCHANGED = 'Read. Your plan is unchanged by this file.';
 
 /** What a file changed, in the card's order: completeness, room, then undated shares and funds now dated. */
-export function successDiff(before: GuideSummary, after: GuideSummary, read: string): Success {
+export function successDiff(before: GuideSummary, after: GuideSummary, read: string, broker?: string): Success {
   const changes: string[] = [];
   if (after.pct != null && after.pct !== before.pct) {
     changes.push(before.pct == null ? `Moves use ${after.pct}%` : `Moves use ${before.pct}% → ${after.pct}%`);
   }
   if (after.room !== before.room) {
-    // Only Zerodha's Tax P&L is read, so a P&L step that turned done is Zerodha's.
-    const pnlDone = after.stepsDone.some((k) => k.endsWith(':pnl') && !before.stepsDone.includes(k));
-    changes.push(`Tax-free room left ${inrShort(before.room)} → ${inrShort(after.room)}${pnlDone ? ", now matching Zerodha's figures" : ''}`);
+    // A P&L step that turned done is the broker of the file just read.
+    const pnlDone = broker != null && after.stepsDone.some((k) => k.endsWith(':pnl') && !before.stepsDone.includes(k));
+    changes.push(`Tax-free room left ${inrShort(before.room)} → ${inrShort(after.room)}${pnlDone ? `, now matching ${broker}'s figures` : ''}`);
   }
   const shares = before.undatedShares - after.undatedShares;
   if (shares > 0) changes.push(`${plural(shares, 'undated share')} now dated`);

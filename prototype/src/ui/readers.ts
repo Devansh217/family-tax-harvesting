@@ -1,5 +1,5 @@
 import type { SharesFile } from '../prices/parse';
-import { extractLines, isAngelFundHoldings, isAngelTrades, isEncryptedOffice, parseAngelFundHoldings, parseAngelTrades, resolveNames, isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseZerodhaTaxPnl, previewRows, previewTable, type ParseResult, type PdfJsLike, type TablePreview } from '../parsers';
+import { cellText, extractItems, isAngelFundHoldings, linesOf, parseCSV, readSoldLots, isAngelTrades, isEncryptedOffice, parseAngelFundHoldings, parseAngelTrades, resolveNames, isZerodhaHoldings, isZerodhaTaxPnl, parseZerodhaHoldings, parseZerodhaTaxPnl, previewRows, previewTable, type ParseResult, type CellSheet, type PdfJsLike, type PdfWord, type TablePreview } from '../parsers';
 
 let pdfjsPromise: Promise<PdfJsLike> | null = null;
 
@@ -12,10 +12,11 @@ function loadPdfJs(): Promise<PdfJsLike> {
   return pdfjsPromise;
 }
 
-export async function readPdfLines(file: File, password?: string): Promise<string[]> {
+/** A PDF's text lines (for a CAS) and its positioned words (for a table), from one open of the file. */
+export async function readPdf(file: File, password?: string): Promise<{ lines: string[]; words: PdfWord[][] }> {
   const pdfjs = await loadPdfJs();
-  const data = new Uint8Array(await file.arrayBuffer());
-  return extractLines(pdfjs, data, password);
+  const words = await extractItems(pdfjs, new Uint8Array(await file.arrayBuffer()), password);
+  return { lines: linesOf(words), words };
 }
 
 /** A spreadsheet is either a table to map column by column, or a known broker report read in full. */
@@ -46,10 +47,21 @@ export async function readSpreadsheet(file: File): Promise<SheetRead> {
     if (isZerodhaHoldings(sheets)) return { kind: 'statement', result: parseZerodhaHoldings(sheets) };
     if (isAngelTrades(sheets)) return { kind: 'statement', result: resolveNames(parseAngelTrades(sheets), await loadShares()) };
     if (isAngelFundHoldings(sheets)) return { kind: 'statement', result: parseAngelFundHoldings(sheets) };
+    const sold = soldLots(sheets.map((s) => ({ sheet: s.sheet, rows: s.data.map((r) => r.map(cellText)) })));
+    if (sold) return sold;
     const previews = sheets.map((s) => previewRows(s.data));
     return { kind: 'table', preview: previews.find((p) => p.kind !== 'unknown') ?? previews[0] ?? previewRows([]) };
   }
-  return { kind: 'table', preview: previewTable(await file.text()) };
+  const text = await file.text();
+  return soldLots([{ sheet: file.name, rows: parseCSV(text) }]) ?? { kind: 'table', preview: previewTable(text) };
+}
+
+/** Any broker's Tax P&L: read on its own when sure, else its table on the column screen; null when it isn't one. */
+function soldLots(sheets: CellSheet[]): SheetRead | null {
+  const read = readSoldLots(sheets);
+  if (read.confidence === 'high') return { kind: 'statement', result: read.result };
+  if (read.confidence === 'medium') return { kind: 'table', preview: read.preview };
+  return null;
 }
 
 export const isPdf = (f: File) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type DragEvent } from 'react';
 import { addMonths } from '../../engine/dates';
-import { parseStatementLines, PdfPasswordError, previewTable, type ParseResult } from '../../parsers';
+import { parsePdfStatement, PdfPasswordError, previewTable, type ParseResult } from '../../parsers';
 import { removeImport, type AppState, type ImportOptions } from '../../store';
 import { importAndDetect } from '../importFlow';
 import { useApp } from '../app-context';
@@ -11,7 +11,7 @@ import {
 } from '../importGuide';
 import { Icon, Svg } from '../parts';
 import { importHref } from '../plan';
-import { isPdf, readPdfLines, readSpreadsheet } from '../readers';
+import { isPdf, readPdf as readPdfFile, readSpreadsheet } from '../readers';
 import { SampleBanner } from './Home';
 import { ItemCard, nextItemId, resultOf, type Item } from './ImportCard';
 
@@ -160,8 +160,8 @@ function MemberChecklist({ memberId }: { memberId: string }) {
 
   const readPdf = async (id: string, file: File, password?: string) => {
     try {
-      const lines = await readPdfLines(file, password);
-      set(id, { id, name: file.name, status: 'pdf', lines, result: parseStatementLines(lines) });
+      const { lines, words } = await readPdfFile(file, password);
+      set(id, { id, name: file.name, status: 'pdf', lines, result: parsePdfStatement(lines, words) });
     } catch (e) {
       if (e instanceof PdfPasswordError) set(id, { id, name: file.name, file, status: 'password', wrong: e.wrong });
       else set(id, { id, name: file.name, status: 'error', error: `Could not read this PDF: ${(e as Error).message}` });
@@ -208,7 +208,7 @@ function MemberChecklist({ memberId }: { memberId: string }) {
       if (!imp) continue;
       done.push(p.itemId);
       const notes = fileNotes(p.beforeState, state, imp.id, fam, asOf, p.parsed);
-      const s = successDiff(p.before, guideSummary(state, fam, memberId, asOf), readLine(p.parsed.result));
+      const s = successDiff(p.before, guideSummary(state, fam, memberId, asOf), readLine(p.parsed.result), p.parsed.result.brokerSummary?.broker);
       setItems((xs) => xs.map((x) => (x.id === p.itemId && (x.status === 'pdf' || x.status === 'table' || x.status === 'statement') ? { ...x, notes } : x)));
       setSuccess(notes.length > 0 && notes.every(changedNothing) ? null : s);
     }
@@ -363,7 +363,7 @@ function FirstStep({ onFiles }: { onFiles: (files: FileList | File[]) => void })
         </div>
         <div className="stack" style={{ gap: 2 }}>
           <strong>Other brokers</strong>
-          <span className="small muted">Your broker&rsquo;s holdings export, or the NSDL / CDSL CAS. Mutual funds: the detailed CAS from MF Central, CAMS or KFintech.</span>
+          <span className="small muted">Your broker&rsquo;s holdings export, or the NSDL / CDSL CAS. Mutual funds: the detailed CAS from MF Central, CAMS or KFintech. A Tax P&amp;L reads too: Excel or CSV is best, PDF also works.</span>
         </div>
       </div>
       <DropZone onFiles={onFiles} />

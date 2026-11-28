@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { pdfRows, type PdfWord } from './pdfTable';
 import { readSoldLots } from './soldLots';
+import { parsePdfStatement, PDF_NOT_RELIABLE } from './index';
 
 // Column left edges of a made-up Angel-shaped PDF table.
 const X = { isin: 40, name: 110, qty: 220, buyDate: 260, sellDate: 320, buy: 380, sell: 440, charges: 500, lt: 560, st: 620 };
@@ -65,5 +66,28 @@ describe('pdfRows', () => {
     if (r.confidence !== 'high') return;
     expect(r.result.brokerSummary?.equityLongTerm).toBe(4 * 48000);
     expect(r.result.brokerSummary?.broker).toBe('Angel One');
+  });
+});
+
+describe('parsePdfStatement', () => {
+  const page = (lots: PdfWord[]) => [[w('Angel One', 20, 760), w('Delivery P&L', 20, 700), ...HEADER(680), ...lots]];
+  const lines = ['Angel One', 'Delivery P&L'];
+
+  it('a Tax P&L PDF read with high confidence imports', () => {
+    const lots = Array.from({ length: 3 }, (_, i) => lot(660 - i * 20, `INE00${i}A01011`, `CO${i}`, '480.00', '0.00')).flat();
+    expect(parsePdfStatement(lines, page(lots)).format).toMatch(/^Tax P&L · Angel One/);
+  });
+
+  it('a sold-lots PDF that is not read reliably is turned away with the Excel or CSV advice', () => {
+    // The only lot was sold before it was bought, so nothing reads.
+    const bad = at(660, [['isin', 'INE000A01011'], ['name', 'ALPHA'], ['qty', '10'], ['buyDate', '02-06-2024'], ['sellDate', '01-05-2023'], ['buy', '1,000.00'], ['sell', '1,500.00']]);
+    const r = parsePdfStatement(lines, page(bad));
+    expect(r).toMatchObject({ format: 'Unrecognised PDF', txns: [], warnings: [PDF_NOT_RELIABLE] });
+  });
+
+  it('a PDF with neither a CAS nor a sold-lots table is unrecognised as before', () => {
+    const r = parsePdfStatement(['Some letter'], [[w('Some letter', 20, 700)]]);
+    expect(r.format).toBe('Unrecognised PDF');
+    expect(r.warnings[0]).toMatch(/does not look like a CAS/);
   });
 });
