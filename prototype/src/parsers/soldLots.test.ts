@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseCSV, toPaise } from './common';
 import { readSoldLots, soldLotsFromTable, type CellSheet } from './soldLots';
 import { detectKind, fieldsFor, guessMapping } from './table';
+import { TAX_PNL_PREFIX } from '../engine/openingLots';
 
 // Made-up figures; headers and section titles copy a real Angel One Tax P&L layout.
 const DELIVERY_HEAD = ['ISIN', 'Scrip Name', 'Qty', 'Buy Date', 'Sell Date', 'Avg Buy Price', 'Buy Value', 'Avg Sell Price', 'Sell Value',
@@ -195,6 +196,25 @@ describe('readSoldLots', () => {
     expect(r.fmv2018).toEqual({ INF000A01011: 1200 });
   });
 
+  it('a fund-only report whose sales span tax years still reads with high confidence: it has no totals', () => {
+    const head = ['ISIN', 'Description of Mutual Fund sold', 'Number of Units', 'Date of Purchase', 'Purchase Value', 'Date of Sale', 'Sale Value'];
+    const r = high([{ sheet: 'Capital Gains', rows: [head,
+      ['INF000A01011', 'Alpha Equity Fund', '10', '01/06/2020', '1000', '01/06/2024', '1500'],
+      ['INF000B01012', 'Beta Equity Fund', '10', '01/06/2020', '1000', '01/06/2025', '1500']] }]);
+    expect(r.format).toMatch(/^Fund capital gains · /);
+    expect(r.brokerSummary).toBeUndefined();
+  });
+
+  it('a share report whose sales span tax years goes to the column screen, marked partial when it has more tables', () => {
+    const sheets = angelWorkbook();
+    sheets[1]!.rows.splice(7, 0, lot('INE000G01017', 'ETA', 1, '10/01/2024', '15/06/2025', 100, 200, 0, true));
+    const r = readSoldLots(sheets);
+    expect(r.confidence).toBe('medium');
+    if (r.confidence !== 'medium') return;
+    expect(r.preview.partial).toBe(true);
+    expect(r.preview.kind).toBe('pnl');
+  });
+
   it('a CSV with the same columns reads the same', () => {
     const csv = [DELIVERY_HEAD, lot('INE000B01012', 'BETA', 20, '10/01/2025', '15/06/2026', 20_000, 30_000, 50, true)]
       .map((r) => r.map((c) => (c.includes(',') ? `"${c}"` : c)).join(',')).join('\n');
@@ -218,6 +238,31 @@ describe('soldLotsFromTable', () => {
     expect(r.format).toBe('Tax P&L · Broker · gains.csv · 2026-04-01 to 2027-03-31');
     expect(r.txns).toHaveLength(2);
     expect(r.brokerSummary!.equityLongTerm).toBe(toPaise(10_000));
+  });
+
+  const ROWS = [['ISIN', 'Qty', 'Buy Date', 'Sell Date', 'Buy Value', 'Sell Value'], ['INE000B01012', '20', '10/01/2025', '15/06/2026', '20000', '30000']];
+  const MAP = () => Object.assign(guessMapping(ROWS[0]!), { isin: 0, qty: 1, buyDate: 2, sellDate: 3, buyValue: 4, sellValue: 5 });
+
+  it('one table of a bigger report imports as a Tax P&L with no totals, so missing sections cannot lower booked gains', () => {
+    const r = soldLotsFromTable(ROWS, 0, MAP(), 'gains.csv', true);
+    expect(r.format.startsWith(TAX_PNL_PREFIX)).toBe(true);
+    expect(r.brokerSummary).toBeUndefined();
+    expect(r.txns).toHaveLength(2);
+    expect(r.warnings).toContain("This report's totals are not used, because only one of its tables was read. Booked gains come from the sales themselves.");
+  });
+
+  it('sales that span tax years import with no totals: one set of totals covers one year', () => {
+    const rows = [...ROWS, ['INE000C01013', '5', '10/01/2024', '15/06/2025', '5000', '6000']];
+    const r = soldLotsFromTable(rows, 0, MAP(), 'gains.csv');
+    expect(r.format.startsWith(TAX_PNL_PREFIX)).toBe(true);
+    expect(r.brokerSummary).toBeUndefined();
+    expect(r.warnings.at(-1)).toMatch(/span more than one tax year/);
+  });
+});
+
+describe('TAX_PNL_PREFIX', () => {
+  it('stays the literal saved families hold, so their exits are still dropped beside a tradebook', () => {
+    expect(TAX_PNL_PREFIX).toBe('Tax P&L · ');
   });
 });
 

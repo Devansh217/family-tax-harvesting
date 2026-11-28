@@ -2,7 +2,18 @@
 
 28 Nov 2026. Issue [#28](https://github.com/Devansh217/family-tax-harvesting/issues/28). Source: founder feedback point 1 (an Angel Tax P&L was not recognised). Decided with the founder in this session.
 
-**Status: draft, for the founder's review.** The layouts were checked against the real Angel files (three years of Tax P&L in Excel and PDF, two years of the fund capital gains report).
+**Status: approved and built** (branch `b2-generic-tax-pnl`). The layouts were checked against the real Angel files (three years of Tax P&L in Excel and PDF, two years of the fund capital gains report).
+
+## As built: where it differs from the design below
+
+- **Fund-only reports have no broker totals.** A report with only fund sales (Angel's fund capital gains statement) is read as "Fund capital gains · <broker> …": plain trades with no `BrokerSummary`, so it is not a Tax P&L and is kept beside a share tradebook in the same account.
+- **Funds in a mixed report do get totals.** When a Tax P&L also has shares, its fund sales are dropped beside a tradebook like the rest, so their gains go into the mutual fund totals, with the listed-equity term. A debt fund's term may differ; that moves gain between short-term and long-term, but none is lost.
+- **The column screen never brings broker totals it can't vouch for.** It sees only the biggest sales table. When the report had more tables (intraday, buyback), or its sales span more than one tax year, the result keeps the "Tax P&L · " format, so its exits are still dropped beside a tradebook, but carries no totals, and booked gains come from the sales. Otherwise missing sections could lower booked gains, and totals from several years would be read as this year's. A fund-only report spanning years still reads with high confidence, since it has no totals. The engine and the parser share the prefix as `TAX_PNL_PREFIX`.
+- **An empty report still reads** (no sales that year): high confidence with zero lots, so the guide can mark the year as in.
+- **Charges are part of the cost.** Each lot's buy amount is buy value plus charges, so the engine's gain is sell − buy − charges, as the law allows. STT is never added. The gain check also accepts sell − buy − charges − STT for an intraday row, where STT is deductible from business income.
+- **Angel's Tax P&L is a guide step like Zerodha's.** A member with an Angel account is done only once that year's Tax P&L is in. The import guide's "unreadable" step status is gone.
+- **Real-file check (`npm run check:private`):** Excel and PDF give the same lots for all three years. With the engine rebuilding gains, long-term matches Angel and all sales together match. Two split lines differ, both by design: ETFs sold in the shares section stay "check" until the fund list classifies them (the script has no fund list), and a same-day sell and rebuy of one share is intraday in the engine (`splitIntraday`) where Angel keeps it as delivery.
+- **Follow-ups opened:** dividend income ([#57](https://github.com/Devansh217/family-tax-harvesting/issues/57)) and carried-forward losses from last year's Tax P&L ([#58](https://github.com/Devansh217/family-tax-harvesting/issues/58)).
 
 ## Why
 

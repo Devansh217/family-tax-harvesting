@@ -1,4 +1,5 @@
 import { isLongTerm } from '../engine/dates';
+import { TAX_PNL_PREFIX } from '../engine/openingLots';
 import { rulesFor } from '../engine/rules';
 import type { ISODate, Paise } from '../engine/types';
 import { buybackOutcome, buybackWarnings } from './buyback';
@@ -10,7 +11,8 @@ import type { BrokerSummary } from './zerodhaTaxPnl';
 export interface CellSheet { sheet: string; rows: string[][] }
 
 /** One table the column screen can show: rows with the header at `headerIdx`. */
-export interface SoldLotsPreview { rows: string[][]; headerIdx: number; header: string[]; mapping: Mapping; kind: TableKind }
+/** `partial`: the report had more sales tables than this one, so the column screen sees only part of it. */
+export interface SoldLotsPreview { rows: string[][]; headerIdx: number; header: string[]; mapping: Mapping; kind: TableKind; partial: boolean }
 
 export type SoldLotsRead =
   | { confidence: 'high'; result: ParseResult }
@@ -229,7 +231,7 @@ function summarise(t: RowTotals, meta: Meta, fileLabel: string | null, derivativ
     return { format: `Fund capital gains · ${broker}${fileLabel ? ` · ${fileLabel}` : ''}${period}`, txns: t.txns, prices: [], warnings, skipped: t.skipped, fmv2018: t.fmv2018 };
   }
   return {
-    format: `Tax P&L · ${broker}${fileLabel ? ` · ${fileLabel}` : ''}${period}`,
+    format: `${TAX_PNL_PREFIX}${broker}${fileLabel ? ` · ${fileLabel}` : ''}${period}`,
     txns: t.txns, prices: [], warnings, skipped: t.skipped, brokerSummary: summary, fmv2018: t.fmv2018,
   };
 }
@@ -247,7 +249,8 @@ export function readSoldLots(sheets: CellSheet[]): SoldLotsRead {
   for (const table of sales) readTable(table, totals);
   const tried = totals.read + totals.skipped;
   const passing = totals.read - totals.mismatches;
-  const oneYear = new Set(totals.sellDates.map(fyStartOf)).size === 1;
+  // One set of totals covers one period. A fund-only report has no totals, so its sales may span years.
+  const oneYear = new Set(totals.sellDates.map(fyStartOf)).size === 1 || sales.every((t) => t.fund);
   // A report with clear headers and no lots says nothing was sold in its period: that is read too.
   const empty = tried === 0 && (meta.from != null || meta.fyStart != null);
   if (empty || (totals.read > 0 && passing >= 0.9 * tried && oneYear)) {
@@ -255,11 +258,15 @@ export function readSoldLots(sheets: CellSheet[]): SoldLotsRead {
   }
   const biggest = sales.reduce((a, b) => (b.rows.length > a.rows.length ? b : a));
   const rows = [biggest.headerRow, ...biggest.rows];
-  return { confidence: 'medium', preview: { rows, headerIdx: 0, header: biggest.headerRow, mapping: biggest.mapping, kind: detectKind(biggest.mapping) } };
+  return { confidence: 'medium', preview: { rows, headerIdx: 0, header: biggest.headerRow, mapping: biggest.mapping, kind: detectKind(biggest.mapping), partial: sales.length > 1 } };
 }
 
-/** The column screen's sold-lots table, with the columns the person picked: one table, no sections. */
-export function soldLotsFromTable(rows: string[][], headerIdx: number, mapping: Mapping, fileName: string): ParseResult {
+/**
+ * The column screen's sold-lots table, with the columns the person picked: one table, no sections. Its totals are used
+ * only when they cover the whole report for one tax year. Otherwise it still imports as a Tax P&L (so its exits are
+ * dropped beside a tradebook, never counted twice) but with no totals, and booked gains come from the sales.
+ */
+export function soldLotsFromTable(rows: string[][], headerIdx: number, mapping: Mapping, fileName: string, partial = false): ParseResult {
   const meta: Meta = { broker: null, from: null, to: null, fyStart: null };
   rows.slice(0, headerIdx).map((r) => r.filter(Boolean)).filter((r) => r.length <= 2).forEach((r) => readMeta(r, meta));
   const header = rows[headerIdx] ?? [];
@@ -269,7 +276,12 @@ export function soldLotsFromTable(rows: string[][], headerIdx: number, mapping: 
   };
   const totals = emptyTotals();
   readTable(table, totals);
-  return summarise(totals, meta, fileName, 0, table.fund);
+  const r = summarise(totals, meta, fileName, 0, table.fund);
+  const years = new Set(totals.sellDates.map(fyStartOf)).size;
+  if (!r.brokerSummary || (!partial && years <= 1)) return r;
+  const why = partial ? 'only one of its tables was read' : 'its sales span more than one tax year';
+  const { brokerSummary: _, ...rest } = r;
+  return { ...rest, warnings: [...rest.warnings, `This report's totals are not used, because ${why}. Booked gains come from the sales themselves.`] };
 }
 
 /** Excel cells as text: dates as ISO, numbers as plain strings. */

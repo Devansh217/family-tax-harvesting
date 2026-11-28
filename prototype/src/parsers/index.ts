@@ -19,6 +19,8 @@ export interface TablePreview {
   header: string[];
   mapping: Mapping;
   kind: ReturnType<typeof detectKind>;
+  /** A sold-lots report with more tables than these rows (see `SoldLotsPreview`). */
+  partial?: boolean;
 }
 
 /** Spreadsheet-like text (CSV/TSV, or rows pasted from Excel) → header guess the user can correct. */
@@ -39,7 +41,7 @@ export function previewRows(raw: unknown[][]): TablePreview {
 
 export function parseTablePreview(p: TablePreview, mapping: Mapping, fileName: string): ParseResult {
   const kind = detectKind(mapping);
-  if (kind === 'pnl' || p.kind === 'pnl') return soldLotsFromTable(p.rows, p.headerIdx, mapping, fileName);
+  if (kind === 'pnl' || p.kind === 'pnl') return soldLotsFromTable(p.rows, p.headerIdx, mapping, fileName, p.partial);
   const label = kind === 'trades' ? 'Trade history' : kind === 'holdings' ? 'Holdings' : 'Table';
   return parseTable(p.rows, p.headerIdx, mapping, `${label} · ${fileName}`);
 }
